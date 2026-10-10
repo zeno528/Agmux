@@ -191,8 +191,14 @@ fn find_windows_shell() -> Option<String> {
 /// `&`、`|`、`$`、反引号在单引号内全部无害，只有 `'` 自身需要处理。
 #[cfg(target_os = "windows")]
 fn windows_launch_script(dir: Option<&str>, settings: &str, banner: &str, model: &str) -> String {
-    let mut script =
-        String::from("Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; ");
+    // GUI 父进程可能缺少持久环境变量；只补缺失项，保留 shell/profile 的进程级覆盖。
+    let mut script = String::from(
+        "foreach ($scope in 'User','Machine') { \
+         foreach ($entry in [Environment]::GetEnvironmentVariables($scope).GetEnumerator()) { \
+         if (-not (Test-Path -LiteralPath ('Env:' + $entry.Key))) { \
+         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process') \
+         } } }; Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; ",
+    );
     if let Some(dir) = dir {
         script.push_str(&format!("Set-Location -LiteralPath {}; ", ps_quote(dir)));
     }
@@ -444,9 +450,62 @@ mod tests {
     fn windows_script_skips_set_location_when_no_directory_is_given() {
         let script = windows_launch_script(None, "C:\\t\\claude_p1.json", "banner", "default");
         assert!(!script.contains("Set-Location"));
-        assert!(script.starts_with(
+        assert!(script.contains(
             "Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; Write-Output 'banner'; claude --settings "
         ));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_script_restores_missing_environment_before_starting_claude() {
+        // 在系统环境读取边界提供 fixture，实际执行生成的启动脚本，不修改用户环境。
+        let fixture = r#"
+$ErrorActionPreference = 'Stop'
+class Environment {
+    static [System.Collections.IDictionary] GetEnvironmentVariables([string] $scope) {
+        if ($scope -eq 'User') {
+            return @{ BUDTTY_TEST_MCP_KEY = 'user'; BUDTTY_TEST_INHERITED = 'user' }
+        }
+        return @{ BUDTTY_TEST_MCP_KEY = 'machine'; BUDTTY_TEST_MACHINE = 'machine' }
+    }
+    static [void] SetEnvironmentVariable([string] $key, [string] $value, [string] $scope) {
+        [System.Environment]::SetEnvironmentVariable($key, $value, $scope)
+    }
+}
+function claude {
+    if ($env:BUDTTY_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
+    if ($env:BUDTTY_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
+    if ($env:BUDTTY_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
+    if (($args -join '|') -ne '--settings|C:\t\profile.json|--model|sonnet') { throw 'Profile changed' }
+    if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
+    Write-Output 'claude environment verified'
+}
+"#;
+        let script = format!(
+            "{fixture}\n{}",
+            windows_launch_script(None, r"C:\t\profile.json", "banner", "sonnet")
+        );
+        let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let output = std::process::Command::new(find_windows_shell().unwrap())
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                &base64::engine::general_purpose::STANDARD.encode(bytes),
+            ])
+            .env_remove("BUDTTY_TEST_MCP_KEY")
+            .env_remove("BUDTTY_TEST_MACHINE")
+            .env("BUDTTY_TEST_INHERITED", "process")
+            .env("NO_COLOR", "1")
+            .env("TERM", "dumb")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("claude environment verified"));
     }
 
     #[test]
