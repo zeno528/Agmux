@@ -562,7 +562,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
   const authStatusPending = needsAuthStatus && !authStatusReady;
   const effortField = <div className="min-w-0 w-28">
     <div className="field-label mb-1.5 flex h-6 items-center">{t("modelSelection.effort")}</div>
-    <AppSelect value={selection.effort} disabled={saving || !effortLevels.length} menuWidth="max-content"
+    <AppSelect value={selection.effort} disabled={saving || !effortLevels.length}
       options={[{ value: "", label: t("modelSelection.default") }, ...effortLevels.map((level) => ({ value: level, label: level }))]}
       placeholder={t("modelSelection.effort")}
       onChange={(value) => setConfigText((current) => patchModelValue(current, value, "model_reasoning_effort"))} />
