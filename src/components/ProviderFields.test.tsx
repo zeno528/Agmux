@@ -23,25 +23,32 @@ const findControl = (node: ReactNode, type: ElementType, label: string) => findC
 
 function mappingFields(value: string, onChange: (value: string) => void, displayValue = "", onDisplayChange: (value: string) => void = () => {}) {
   return ProviderModelFields({
-    value, models: [], fetching: false, disabled: false, onFetch: () => {},
+    models: [], fetching: false, disabled: false, onFetch: () => {},
     mappingFields: [{ key: "ANTHROPIC_DEFAULT_OPUS_MODEL", label: "Opus", value, onChange, displayValue, onDisplayChange, oneMillion: hasOneMillionModelSuffix(value), onToggleOneMillion: () => {} }],
     labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取", requestModel: "请求模型", displayName: "显示名", oneMillion: "1M", clear: "清空" },
   });
 }
 
 describe("模型映射行操作", () => {
-  it("手输模型进入映射列表并去重", () => {
+  it("候选列表只来自获取结果并去重，手输映射保留但不混入候选", () => {
     const onChange = vi.fn();
     const tree = ProviderModelFields({
-      value: "manual-model", models: ["fetched-model", "manual-model", "fetched-model"],
+      models: ["fetched-model", "manual-model", "fetched-model"],
       fetching: false, disabled: false, onFetch: vi.fn(),
       mappingFields: [{ key: "opus", label: "Opus", value: "other-model[1M]", onChange }],
       labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取" },
     });
     const selects = findControls(tree, AppSelect);
     expect(selects).toHaveLength(1);
-    expect(selects[0].options!.map((option) => option.value)).toEqual(["fetched-model", "manual-model", "other-model[1M]"]);
-    expect(selects[0].value).toBe("other-model[1M]");
+    expect(selects[0].options!.map((option) => option.value)).toEqual(["fetched-model", "manual-model"]);
+    expect(selects[0].value).toBeNull();
+    expect(findControl(tree, "input", "Opus 模型").value).toBe("other-model");
+  });
+
+  it("未获取列表时不以手输模型填充下拉，选择器禁用", () => {
+    const tree = mappingFields("manual-model", vi.fn());
+    expect(findControls(tree, AppSelect)[0]).toMatchObject({ options: [], value: null, disabled: true });
+    expect(findControl(tree, "input", "Opus 请求模型").value).toBe("manual-model");
   });
 
   it.each(["", "   ", "[1M]"])("请求模型为空（%j）时清空与 1M 都禁用且不选中", (value) => {

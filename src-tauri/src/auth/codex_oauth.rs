@@ -267,6 +267,8 @@ pub struct CodexOAuthManager {
     pending_browser: std::sync::Mutex<Option<PendingBrowserLogin>>,
     /// 非托管 live auth.json 是常态；同一 workspace 每个进程只记一次诊断行。
     last_unmanaged_live_sync_workspace: std::sync::Mutex<Option<String>>,
+    /// workspace 匹配但身份对不上的归属失败：状态会持续整个轮询周期，同 workspace 去重防 Warn 刷屏。
+    last_mismatched_live_sync_workspace: std::sync::Mutex<Option<String>>,
     database: Arc<Database>,
 }
 
@@ -369,6 +371,7 @@ impl CodexOAuthManager {
             last_stale_live_sync_workspace: std::sync::Mutex::new(None),
             pending_browser: std::sync::Mutex::new(None),
             last_unmanaged_live_sync_workspace: std::sync::Mutex::new(None),
+            last_mismatched_live_sync_workspace: std::sync::Mutex::new(None),
             database,
         };
         if let Err(error) = manager.load_accounts() {
@@ -908,18 +911,31 @@ impl CodexOAuthManager {
             return Ok(false);
         }
         let Some(row_id) = self.resolve_external_auth_owner(&auth).await else {
-            // 归属失败分两态：workspace 对得上托管账号但用户身份对不上，是「串号/切完
-            // 掉登录」的前兆，必须 Warn 留痕；workspace 完全陌生（纯桌面端跟随用户）
-            // 是常态，每次刷新都会命中，降 Debug 避免 release 刷屏
-            let same_workspace =
-                self.accounts.read().await.values().any(|account| {
-                    account.workspace_id().as_deref() == Some(auth.account_id.as_str())
-                });
+            // 归属失败分两态：workspace 对得上托管账号但身份或邮箱对不上（真换了人，
+            // 或旧行缺身份记录、email 兜底也没过），是「串号/切完掉登录」的前兆，
+            // Warn 留痕但同 workspace 去重——状态持续时每次轮询都会命中，不去重会刷屏；
+            // workspace 完全陌生（纯桌面端跟随用户）是常态，降 Debug 同样去重。
             let workspace = auth.account_id.as_str();
-            if same_workspace {
-                tauri_plugin_log::log::warn!(
-                    "[auth.live_sync] workspace={workspace:?} outcome=failure failure_kind=auth_error msg=\"live auth.json 已被外部刷新且 workspace 匹配托管账号，但用户身份对不上，跳过同步\""
-                );
+            let same_workspace_accounts: Vec<String> = self
+                .accounts
+                .read()
+                .await
+                .values()
+                .filter(|account| account.workspace_id().as_deref() == Some(workspace))
+                .map(|account| account.account_id.clone())
+                .collect();
+            if !same_workspace_accounts.is_empty() {
+                let should_log = self
+                    .last_mismatched_live_sync_workspace
+                    .lock()
+                    .map(|mut last| should_log_unmanaged_live_sync(&mut last, workspace))
+                    .unwrap_or(false);
+                if should_log {
+                    tauri_plugin_log::log::warn!(
+                        "[auth.live_sync] workspace={workspace:?} account_id={} outcome=failure failure_kind=auth_error msg=\"live auth.json 已被外部刷新且 workspace 匹配托管账号，但身份或邮箱对不上、无法归属，跳过同步\"",
+                        same_workspace_accounts.join(",")
+                    );
+                }
             } else {
                 let should_log = self
                     .last_unmanaged_live_sync_workspace

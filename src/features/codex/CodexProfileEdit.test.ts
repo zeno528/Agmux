@@ -12,6 +12,25 @@ vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: vi.fn() }) }
 // CodeMirror 依赖浏览器 DOM；回归测试仅渲染真实表单和下拉组件。
 vi.mock("../../components/ConfigTextEditor", () => ({ default: () => null }));
 
+it.each([{ models: [] }, { models: ["fetched-model"] }])("可用模型不从手输模型 ID 补入，模型列表为 $models", async ({ models }) => {
+  setupI18n("zh-CN");
+  const profile = await webInvoke<CodexProfileSummary>("codex_add_builtin_profile", { kind: "opencode", apiKey: "fixture-key" });
+  try {
+    await webInvoke("codex_set_profile_fetched_models", { id: profile.id, models });
+    const detail = await webInvoke<CodexProfileDetail>("codex_set_profile_model", { id: profile.id, model: "manual-model", effort: "" });
+    const state = await webInvoke<AppState>("get_state");
+    const markup = renderToStaticMarkup(createElement(CodexProfileEdit, {
+      profile, initialDetail: detail, authStatus: state.auth_status, authStatusReady: true,
+      onBack: () => {}, onChanged: () => {}, onManageChatgptAccounts: () => {},
+    }));
+    const select = markup.match(/<button\b[^>]*aria-label="(?:请先获取模型列表|选择模型)"[^>]*>[\s\S]*?<\/button>/)?.[0];
+    expect(select).toBeDefined();
+    expect(select).not.toContain("manual-model");
+    expect(select!.includes('disabled=""')).toBe(models.length === 0);
+    expect(markup).toContain('value="manual-model"');
+  } finally { await webInvoke("codex_delete_profile", { id: profile.id }); }
+});
+
 it.each([
   { name: "无效对象仍可编辑", catalog: "{", model: null },
   { name: "无效数组仍可编辑", catalog: '{"models": [}', model: null },

@@ -435,7 +435,7 @@ function ClaudeProfileEditor({
           </div>
           <div className="apple-panel-section">
             <ProviderModelFields
-              value={model} models={fetchedModels} fetching={fetchingModels}
+              models={fetchedModels} fetching={fetchingModels}
               disabled={!authToken.trim() || !baseUrl.trim()} onFetch={() => void fetchModelList()}
               onApplyModel={applyModelToMappings}
               mappingFields={modelMappingFields}

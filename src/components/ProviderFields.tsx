@@ -95,8 +95,7 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
   </>;
 }
 
-export function ProviderModelFields({ value, models: fetchedModels, fetching, disabled, onFetch, onApplyModel, mappingFields, labels }: {
-  value: string;
+export function ProviderModelFields({ models: fetchedModels, fetching, disabled, onFetch, onApplyModel, mappingFields, labels }: {
   models: string[];
   fetching: boolean;
   disabled: boolean;
@@ -135,7 +134,7 @@ export function ProviderModelFields({ value, models: fetchedModels, fetching, di
     clear?: string;
   };
 }) {
-  const models = [...new Set([...fetchedModels, value, ...mappingFields.map((field) => field.value)].map((model) => model.trim()))].filter(Boolean);
+  const models = [...new Set(fetchedModels.map((model) => model.trim()))].filter(Boolean);
   // 去重后的模型下拉项建一次给每一行用，别在 map 里重建。
   const optionsByLabel = new Map<string, string>();
   for (const item of models) {
@@ -208,7 +207,7 @@ export function ProviderModelFields({ value, models: fetchedModels, fetching, di
                 options={modelOptions}
                 onChange={field.onChange}
                 placeholder={models.length ? labels.select : labels.fetchFirst}
-                disabled={disabled}
+                disabled={disabled || fetching || !models.length}
                 iconOnly
                 searchable
               />
