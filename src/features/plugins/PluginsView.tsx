@@ -15,7 +15,7 @@ import SourceLink from "./components/SourceLink";
 import { comparePlugins, matchesQuery, originLabels, removableOrigins } from "./pluginMeta";
 import type { AppState, PluginSummary } from "../../types";
 
-export default function PluginsView({ state }: { state: AppState }) {
+export default function PluginsView({ state, popEpoch }: { state: AppState; popEpoch: number }) {
   const feedback = useFeedback();
   const { t } = useTranslation("plugins");
   // 缓存命中即首帧直出，不等微任务回填；未命中时保持加载态走正常请求
@@ -45,6 +45,14 @@ export default function PluginsView({ state }: { state: AppState }) {
     void refresh();
     void refresh(true);
   }, []);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（安装/卸载流程自带刷新）。
+  // addingMarketplace 关闭即卸载市场页，其内部的添加子页随挂载消失。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setSelectedPlugin(null);
+    setAddingMarketplace(false);
+  }, [popEpoch]);
 
   const remove = async (plugin: PluginSummary) => {
     const confirmed = await feedback.confirm({

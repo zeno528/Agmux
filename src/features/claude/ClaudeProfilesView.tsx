@@ -106,7 +106,7 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
 }
 
 // 页面数据只在进页时加载（AppShell 按 view==="claude" 挂载本组件），不入启动关键路径。
-export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo> }) {
+export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache, popEpoch }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo>; popEpoch: number }) {
   const feedback = useFeedback();
   const { t } = useTranslation("claude");
   // 卡片外壳/操作行的悬停文案直接用 profiles 资源（与 Codex 同词），不另造 key
@@ -135,6 +135,14 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
   };
 
   useEffect(() => { void refresh(); }, []);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（保存流程自带刷新，弹回不产生数据变化）。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setEditingProfile(null);
+    setEditDetail(null);
+    setCreatingProfile(false);
+  }, [popEpoch]);
 
   const persistOrder = async (previous: ClaudeProfileSummary[], next: ClaudeProfileSummary[]) => {
     try {

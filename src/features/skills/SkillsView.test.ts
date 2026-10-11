@@ -45,7 +45,7 @@ describe("Skill 双端开关", () => {
       { ...skill, name: "first", enabled: true, claude_enabled: false },
       { ...skill, name: "second", enabled: false, claude_enabled: true },
     ]);
-    const html = renderToStaticMarkup(createElement(FeedbackProvider, null, createElement(SkillsView, { activationEpoch: 0 })));
+    const html = renderToStaticMarkup(createElement(FeedbackProvider, null, createElement(SkillsView, { activationEpoch: 0, popEpoch: 0 })));
     setSkillsCache([]);
     const head = html.match(/<thead>(.*?)<\/thead>/)![1]!;
     expect(head.match(/<th\b/g)).toHaveLength(4);

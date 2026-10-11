@@ -57,6 +57,27 @@ describe("AppShell 布局", () => {
     expect(source).not.toContain("setVisitedViews((prev) => (prev.has(view)");
   });
 
+  it("重复点击当前视图的侧栏按钮弹回该视图一级，切其他视图不弹", () => {
+    // 只有重复点击当前视图才 bump popRequest；目标视图收到递增的 epoch 自行清子页状态
+    expect(source).toContain("if (target !== view) setView(target);");
+    expect(source).toContain("setPopRequest((current) => ({ view: target, epoch: (current?.epoch ?? 0) + 1 }))");
+    // 托盘与编辑页的程序化跳转不参与弹回
+    expect(source).toContain('openSettings={() => setView("settings")}');
+    expect(source).toContain('onManageChatgptAccounts={() => setView("accounts")}');
+    // 有整页子级的五个视图都接了 popEpoch；effect 体逐字锁定：只清子页状态、带零反应守卫、无刷新调用
+    const popEffects: [string, string][] = [
+      ["features/codex/CodexProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
+      ["features/claude/ClaudeProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
+      ["features/mcp/McpView", "if (!popEpoch) return;\n    setEditingServer(null);\n    setCreatingServer(false);\n    setDiffOpen(false);\n  }, [popEpoch]);"],
+      ["features/plugins/PluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
+      ["features/skills/SkillsView", "if (!popEpoch) return;\n    setImporting(false);\n  }, [popEpoch]);"],
+    ];
+    for (const [file, effect] of popEffects) {
+      const viewSource = readFileSync(new URL(`../${file}.tsx`, import.meta.url), "utf8");
+      expect(viewSource, file).toContain(effect);
+    }
+  });
+
   it("一级切页不补播动画，同页内部挂载不重复播", () => {
     // view 改变时重新标记已有内容，只观察后续页内切换。
     expect(source).toContain("}, [mainRef, view]);");

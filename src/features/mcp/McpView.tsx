@@ -34,6 +34,8 @@ interface McpHeaderState {
 
 interface McpClientViewProps {
   activationEpoch: number;
+  /// 侧栏重复点击本视图时递增；视图据此弹回一级。一级时已是初始值，setState 同值跳过，零反应。
+  popEpoch: number;
   onHeaderChange: (header: McpHeaderState) => void;
 }
 
@@ -369,7 +371,7 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
   );
 }
 
-function McpClientView({ target, activationEpoch, onHeaderChange }: McpClientViewProps & { target: McpTarget }) {
+function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: McpClientViewProps & { target: McpTarget }) {
   const feedback = useFeedback();
   const { t } = useTranslation("mcp");
   const cachedServers = target === "codex" ? getCachedMcpServers() : getCachedClaudeMcpServers();
@@ -385,6 +387,14 @@ function McpClientView({ target, activationEpoch, onHeaderChange }: McpClientVie
   const [diffOpen, setDiffOpen] = useState(false);
   const [resolving, setResolving] = useState(false);
   const previewInFlight = useRef(false);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（保存流程自带刷新，弹回不产生数据变化）。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setEditingServer(null);
+    setCreatingServer(false);
+    setDiffOpen(false);
+  }, [popEpoch]);
 
   const loadPreview = async () => {
     if (previewInFlight.current) return;
@@ -604,7 +614,7 @@ function McpClientView({ target, activationEpoch, onHeaderChange }: McpClientVie
   );
 }
 
-export default function McpView({ activationEpoch }: { activationEpoch: number }) {
+export default function McpView({ activationEpoch, popEpoch }: { activationEpoch: number; popEpoch: number }) {
   const { t } = useTranslation("mcp");
   const [target, setTarget] = useState<McpTarget>("codex");
   const [header, setHeader] = useState<McpHeaderState | null>(null);
@@ -639,7 +649,7 @@ export default function McpView({ activationEpoch }: { activationEpoch: number }
           <button type="button" className="apple-inline-btn shrink-0" disabled={!header} onClick={header?.onDiff}>{t("list.viewDiff")}</button>
         </div>
       ) : null}
-      <McpClientView key={target} target={target} activationEpoch={activationEpoch} onHeaderChange={setHeader} />
+      <McpClientView key={target} target={target} activationEpoch={activationEpoch} popEpoch={popEpoch} onHeaderChange={setHeader} />
     </section>
   );
 }

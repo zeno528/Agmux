@@ -20,7 +20,7 @@ export function selectableSkillPaths(candidates: SkillCandidate[]) {
   return candidates.filter((candidate) => !candidate.has_content_conflict).map((candidate) => candidate.store_path);
 }
 
-export default function SkillsView({ activationEpoch }: { activationEpoch: number }) {
+export default function SkillsView({ activationEpoch, popEpoch }: { activationEpoch: number; popEpoch: number }) {
   const feedback = useFeedback();
   const { t } = useTranslation("skills");
   const cached = getCachedSkills();
@@ -34,6 +34,12 @@ export default function SkillsView({ activationEpoch }: { activationEpoch: numbe
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const updateScanInFlight = useRef(false);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，导入完成后有各自的刷新链路。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setImporting(false);
+  }, [popEpoch]);
   const availableCount = candidates.length;
 
   const refresh = async (force = false) => {

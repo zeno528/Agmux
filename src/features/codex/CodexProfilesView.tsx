@@ -26,13 +26,15 @@ interface ProfilesViewProps {
   coldStart: boolean;
   onRefresh: () => Promise<void>;
   onManageChatgptAccounts: () => void;
+  /// 侧栏重复点击本视图时递增；视图据此弹回一级。一级时已是初始值，setState 同值跳过，零反应。
+  popEpoch: number;
 }
 
 export function codexActionFor(running: boolean) {
   return running ? "restart" : "start";
 }
 
-export default function CodexProfilesView({ state, authStatusReady, activationEpoch, coldStart, onRefresh, onManageChatgptAccounts }: ProfilesViewProps) {
+export default function CodexProfilesView({ state, authStatusReady, activationEpoch, coldStart, onRefresh, onManageChatgptAccounts, popEpoch }: ProfilesViewProps) {
   const feedback = useFeedback();
   const { t } = useTranslation("profiles");
   const [items, setItems] = useState(state.codex_profiles);
@@ -47,6 +49,14 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
   const duplicatingProfileRef = useRef(false);
 
   useEffect(() => setItems(state.codex_profiles), [state.codex_profiles]);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（保存流程自带刷新，弹回不产生数据变化）。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setEditingProfile(null);
+    setEditDetail(null);
+    setCreatingProfile(false);
+  }, [popEpoch]);
 
   const persistOrder = async (previous: CodexProfileSummary[], next: CodexProfileSummary[]) => {
     try {

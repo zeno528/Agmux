@@ -175,6 +175,14 @@ export default function AppShell() {
   // 冷启动落页：首帧同步读缓存直出（与 sidebar-collapsed 同款 localStorage 先例），
   // 第二次冷启动起首帧即目标页不闪；settings 到达后由下方 effect 校准真值并刷新缓存。
   const [view, setView] = useState<AppView>(() => asAppView(localStorage.getItem("budtty.startup-view")));
+  // 重复点击当前视图的侧栏按钮 = 弹回该视图一级；点其他按钮 = 正常切换，目标视图保活现场不受影响。
+  // popRequest 只对目标视图递增，各视图自带"无子页时零反应"守卫（一级时 setState 同值跳过）。
+  const [popRequest, setPopRequest] = useState<{ view: AppView; epoch: number } | null>(null);
+  const navTo = (target: AppView) => {
+    if (target !== view) setView(target);
+    else setPopRequest((current) => ({ view: target, epoch: (current?.epoch ?? 0) + 1 }));
+  };
+  const popEpochOf = (pageView: AppView) => (popRequest?.view === pageView ? popRequest.epoch : 0);
   // 切页记忆：进过的页面保活（Activity hidden），未访问页连渲染都不发生，冷启动零新增。
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<AppView>>(() => new Set<AppView>(["codexProfiles"]));
   const [startupReady, setStartupReady] = useState(false);
@@ -366,8 +374,8 @@ export default function AppShell() {
     updateScrollbarSize();
   }, []);
 
-  // 切页 = setView 换 Activity 的显隐，不强制重挂载：重复点击当前页由 setState bail-out
-  // 保证无副作用，进入过的页面保住工作现场（编辑草稿、弹窗、页内滚动）。
+  // 切页 = setView 换 Activity 的显隐，不强制重挂载：进入过的页面保住工作现场（编辑草稿、弹窗、页内滚动）；
+  // 重复点击当前页由 navTo 弹回该页一级（popRequest），托盘等程序化跳转照旧 setView。
   const navClass = "apple-sidebar-nav-button app-selection-state";
 
   // 各页内容唯一清单：Record 保证新增 AppView 分支时漏页是编译错误。
@@ -375,11 +383,11 @@ export default function AppShell() {
   // 清理（不加载、不轮询），state 与 DOM 保留，切回即恢复现场，effects 重跑后数据照常刷新。
   const renderPages = (state: AppState) => {
     const pages: Record<AppView, ReactNode> = {
-      codexProfiles: <CodexProfilesView state={state} authStatusReady={authStatusReady} activationEpoch={activationEpoch} coldStart={!startupReady} onRefresh={refresh} onManageChatgptAccounts={() => setView("accounts")} />,
-      mcp: <McpView activationEpoch={activationEpoch} />,
-      plugins: <PluginsView state={state} />,
-      skills: <SkillsView activationEpoch={activationEpoch} />,
-      claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} />,
+      codexProfiles: <CodexProfilesView state={state} authStatusReady={authStatusReady} activationEpoch={activationEpoch} coldStart={!startupReady} onRefresh={refresh} onManageChatgptAccounts={() => setView("accounts")} popEpoch={popEpochOf("codexProfiles")} />,
+      mcp: <McpView activationEpoch={activationEpoch} popEpoch={popEpochOf("mcp")} />,
+      plugins: <PluginsView state={state} popEpoch={popEpochOf("plugins")} />,
+      skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
+      claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
       agentTools: <AgentToolsView active={view === "agentTools"} />,
@@ -398,24 +406,24 @@ export default function AppShell() {
     {
       key: "clients",
       items: [
-        { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => setView("codexProfiles") },
-        { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => setView("claudeProfiles") },
+        { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
+        { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
       ],
     },
     {
       key: "common",
       items: [
-        { view: "plugins", labelKey: "nav.plugins", icon: <Blocks strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("plugins") },
-        { view: "mcp", labelKey: "nav.mcp", icon: <McpIcon />, badgeDot: Boolean(mcpBadge), titleText: mcpBadgeTitle, onSelect: () => setView("mcp") },
-        { view: "skills", labelKey: "nav.skills", icon: <BookOpenText strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("skills") },
-        { view: "agentTools", labelKey: "nav.agentTools", icon: <Bot strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("agentTools") },
+        { view: "plugins", labelKey: "nav.plugins", icon: <Blocks strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("plugins") },
+        { view: "mcp", labelKey: "nav.mcp", icon: <McpIcon />, badgeDot: Boolean(mcpBadge), titleText: mcpBadgeTitle, onSelect: () => navTo("mcp") },
+        { view: "skills", labelKey: "nav.skills", icon: <BookOpenText strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("skills") },
+        { view: "agentTools", labelKey: "nav.agentTools", icon: <Bot strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("agentTools") },
       ],
     },
     {
       key: "footer",
       items: [
-        { view: "accounts", labelKey: "nav.accounts", icon: <CircleUserRound strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("accounts") },
-        { view: "settings", labelKey: "nav.settings", icon: <SettingsIcon strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("settings") },
+        { view: "accounts", labelKey: "nav.accounts", icon: <CircleUserRound strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("accounts") },
+        { view: "settings", labelKey: "nav.settings", icon: <SettingsIcon strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("settings") },
       ],
     },
   ];

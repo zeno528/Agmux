@@ -38,7 +38,7 @@ describe("MCP 操作入口", () => {
     const frames: { headerType: unknown; switchType: unknown; key: string | null; value: string; contentKey: string | null }[] = [];
     function Capture() {
       // 在 React 的真实服务端渲染中执行父组件，触发同一个 setTarget；不模拟组件状态。
-      const tree = McpView({ activationEpoch: 0 });
+      const tree = McpView({ activationEpoch: 0, popEpoch: 0 });
       const children = Children.toArray(tree.props.children) as ReactElement<{ children: ReactNode }>[];
       const header = children[0];
       const content = children[children.length - 1];
