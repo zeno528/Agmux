@@ -1,4 +1,4 @@
-import { ArrowLeft, CodeXml, ExternalLink, FileBraces, LayoutTemplate, Save, Webhook } from "lucide-react";
+import { ChevronLeft, CodeXml, ExternalLink, FileBraces, LayoutTemplate, Save, Webhook } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -371,7 +371,7 @@ function ClaudeProfileEditor({
     >
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={tProfiles("edit.back")} onClick={create ? onChangeProvider : onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <span className="apple-title">{create ? tProfiles("edit.createTitle") : tProfiles("edit.editTitle")}</span>
         </button>
       </div>

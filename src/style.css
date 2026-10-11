@@ -1434,7 +1434,7 @@ body.drag-active * {
   align-items: center;
   gap: 0.375rem;
   border-radius: 0.5rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
   text-align: left;
   transition: background-color 150ms ease-out;
 }

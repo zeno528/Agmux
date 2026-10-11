@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { presetConnectionName, presetConnections, presetEntries, presetEntryCategory, presetRegionName, type ClientPreset, type PresetConnection } from "../presets";
@@ -25,7 +25,7 @@ export function ProviderCreate({ presets, onBack, children }: {
     {picking ? <section className="apple-scroll-page mx-auto flex w-full max-w-none flex-col">
       <header className="apple-page-bar">
         <button type="button" className="apple-page-header apple-back-button" aria-label={backLabel} onClick={onBack}>
-          <ArrowLeft size={16} strokeWidth={2} className="shrink-0 text-accent" aria-hidden="true" />
+          <ChevronLeft size={16} strokeWidth={2} className="shrink-0 text-accent" aria-hidden="true" />
           <span className="apple-title">{backLabel}</span>
         </button>
         <AppSearchInput className="ml-auto w-64" value={query} onChange={setQuery} placeholder={t("edit.searchProviders")} />
@@ -79,7 +79,7 @@ export function ProviderPresetControls({ preset, baseUrl, disabled, onChangeProv
       <ProfileIconTile name={preset.name} icon={preset.icon} />
       <span className="title-sm min-w-0 flex-1 truncate">{presetConnectionName(preset)}</span>
       <button type="button" className="apple-action-button" disabled={disabled} onClick={onChangeProvider}>
-        {t("edit.changeProvider")}<ChevronRight size={16} strokeWidth={2} aria-hidden="true" />
+        {t("edit.changeProvider")}<ChevronRight size={16} strokeWidth={2} className="-mr-1" aria-hidden="true" />
       </button>
     </div>
     <div className="provider-preset-controls" data-custom={!selected}>

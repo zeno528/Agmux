@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CircleAlert, GitCompare, Undo2 } from "lucide-react";
+import { ChevronLeft, Check, CircleAlert, GitCompare, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -115,7 +115,7 @@ export default function McpDiffPage({ target, preview, previewError, resolving, 
       <div className="apple-page-bar apple-edit-toolbar apple-edit-toolbar--header justify-between">
         <div className="flex min-w-0 items-center gap-2">
           <button type="button" className="apple-page-header apple-back-button" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4 shrink-0 text-accent" />
+            <ChevronLeft className="h-4 w-4 shrink-0 text-accent" />
             <SkillTargetLogo target={target} variant="title" />
             <span className="apple-title">{t("diff.title")}</span>
             {!previewError ? <span className="apple-chip">{entries.length}</span> : null}

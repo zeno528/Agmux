@@ -1,4 +1,4 @@
-import { ArrowLeft, Download } from "lucide-react";
+import { ChevronLeft, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -120,7 +120,7 @@ export default function MarketplaceDetailView({
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("nav.backToMarketplace")} onClick={onBack}>
           <ManagementPageTitle
             className="management-page-title--compact"
-            icon={<ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
+            icon={<ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
             title={marketplace.display_name ?? marketplace.name}
             count={loaded ? installedPluginCount : undefined}
             countLabel={loaded ? t("marketDetail.installedCountAria", { count: installedPluginCount }) : undefined}

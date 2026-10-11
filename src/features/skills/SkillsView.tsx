@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpenText, FolderOpen, PackagePlus, PackageSearch, Trash2 } from "lucide-react";
+import { ChevronLeft, BookOpenText, FolderOpen, PackagePlus, PackageSearch, Trash2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -164,7 +164,7 @@ function ImportPage({ candidates, busy, onBack, onImport, onImportFolder }: { ca
     <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
       <div className="apple-page-bar apple-edit-toolbar apple-edit-toolbar--header justify-between">
         <button type="button" className="apple-page-header apple-back-button" disabled={busy !== null} onClick={onBack}>
-          <ManagementPageTitle className="management-page-title--compact" icon={<ArrowLeft className="h-4 w-4 shrink-0 text-accent" />} title={t("importPageTitle")} count={visibleCandidates.length} />
+          <ManagementPageTitle className="management-page-title--compact" icon={<ChevronLeft className="h-4 w-4 shrink-0 text-accent" />} title={t("importPageTitle")} count={visibleCandidates.length} />
         </button>
         <button type="button" className="apple-action-button" disabled={busy !== null} onClick={onImportFolder}>
           <FolderOpen className="h-4 w-4" />{t("importFromFolder")}

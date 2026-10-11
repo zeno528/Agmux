@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -37,7 +37,7 @@ export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSum
     <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("nav.backToPlugins")} onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
           <span className="apple-title">{plugin.display_name ?? plugin.name}</span>
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { ArrowLeft, CodeXml, Save } from "lucide-react";
+import { ChevronLeft, CodeXml, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -120,7 +120,7 @@ export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved 
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header justify-between">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <SkillTargetLogo target="claude" variant="title" />
           <span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle", { name })}</span>
         </button>
