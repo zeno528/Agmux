@@ -134,10 +134,10 @@ export default function SkillsView({ activationEpoch, popEpoch }: { activationEp
         <tr>
           <th scope="col" className="field-label">{t("nameColumn")}</th>
           <th scope="col" className="field-label" aria-label={t("claudeEnabledCount", { count: claudeEnabledCount })}>
-            <span className="inline-flex items-center gap-1.5"><SkillTargetLogo target="claude" variant="title" /><span className="apple-chip">{claudeEnabledCount}</span></span>
+            <span className="plan-badge gap-1.5"><SkillTargetLogo target="claude" variant="title" /><span>{claudeEnabledCount}</span></span>
           </th>
           <th scope="col" className="field-label" aria-label={t("codexEnabledCount", { count: enabledCount })}>
-            <span className="inline-flex items-center gap-1.5"><SkillTargetLogo target="codex" variant="title" /><span className="apple-chip">{enabledCount}</span></span>
+            <span className="plan-badge gap-1.5"><SkillTargetLogo target="codex" variant="title" /><span>{enabledCount}</span></span>
           </th>
           <th scope="col" className="field-label"><span className="sr-only">{t("delete")}</span></th>
         </tr>

@@ -6,6 +6,7 @@ import { useFeedback } from "../../app/Feedback";
 import { getCachedPlugins, loadPlugins } from "../../app/managementDataCache";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
+import { PlanBadge } from "../../components/PlanBadge";
 import { TrashIcon } from "../../components/TrashIcon";
 import PluginDetailView from "./PluginDetailView";
 import PluginMarketplaceView from "./PluginMarketplaceView";
@@ -94,13 +95,16 @@ export default function PluginsView({ state, popEpoch }: { state: AppState; popE
   return (
     <section className="apple-scroll-page mx-auto w-full max-w-none">
       <header className="apple-page-bar flex-wrap justify-between gap-4">
-        <ManagementPageTitle
-          icon={<span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-accent"><Blocks className="h-[18px] w-[18px]" strokeWidth={2} /></span>}
-          title={t("title")}
-          count={loaded ? plugins.length : undefined}
-          countLabel={loaded ? t("marketDetail.installedCountAria", { count: plugins.length }) : undefined}
-          loadingLabel={t("marketDetail.loadingAria")}
-        />
+        <div className="flex items-center gap-3">
+          <ManagementPageTitle
+            icon={<span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-accent"><Blocks className="h-[18px] w-[18px]" strokeWidth={2} /></span>}
+            title={t("title")}
+            count={loaded ? plugins.length : undefined}
+            countLabel={loaded ? t("marketDetail.installedCountAria", { count: plugins.length }) : undefined}
+            loadingLabel={t("marketDetail.loadingAria")}
+          />
+          <PlanBadge plan="Codex" />
+        </div>
         <div className="flex items-center gap-2">
           <PluginSearchInput value={query} onChange={setQuery} />
           <button type="button" className="apple-action-button app-button--primary" onClick={() => setAddingMarketplace(true)}>
