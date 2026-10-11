@@ -1874,6 +1874,12 @@ body.drag-active * {
   padding: 2px 6px;
 }
 
+/* 整块新增/删除的高亮自身使用小圆角，行级 diff 仍保持连续背景。 */
+pre.mcp-diff-line--del,
+pre.mcp-diff-line--add {
+  border-radius: var(--radius-control-sm);
+}
+
 .mcp-diff-block > div + div { margin-top: 1.5px; }
 
 .mcp-diff-block > .mcp-diff-line--del + .mcp-diff-line--del,
