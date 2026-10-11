@@ -22,7 +22,7 @@ use crate::error::AppResult;
 const CODEX_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const TOKEN_REFRESH_BUFFER_MS: i64 = 60_000;
-const CODEX_USER_AGENT: &str = "budtty-codex-oauth";
+const CODEX_USER_AGENT: &str = "agofra-codex-oauth";
 const REGION_BLOCKED_MARKER: &str = "unsupported_country_region_territory";
 
 // 浏览器授权码登录（PKCE + 本地回环回调，与官方 Codex CLI 的 `codex login` 同款）。
@@ -893,7 +893,7 @@ impl CodexOAuthManager {
     }
 
     /// 把 Codex 运行中刷新过的同账号 auth.json 同步回 OAuth 账号。
-    /// 只接受已在 Budtty 管理中的账号，避免把桌面登录误导入为新账号。
+    /// 只接受已在 Agofra 管理中的账号，避免把桌面登录误导入为新账号。
     /// 归属判定用 (workspace, 用户 sub) 双匹配：同 workspace 多账号时绝不串号。
     /// 新旧判定：live access_token 的 JWT iat 必须比账号的 authenticated_at
     /// （最后一次登录/凭证落库时刻）更新才回写——否则给激活中的账号重新授权时，
@@ -1593,7 +1593,7 @@ pub fn parse_external_auth_json(text: &str) -> Option<ExternalCodexAuth> {
 /// 浏览器授权完成后的本地成功页（双语，避免后端感知界面语言）。
 /// 标签页由系统 shell 拉起、无脚本 opener，window.close 必被拦截，故只做静态提示、不做关闭逻辑。
 const BROWSER_SUCCESS_HTML: &str = r#"<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>Budtty</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Agofra</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f5f5f4;color:#292524}
 main{text-align:center;padding:2rem}
@@ -1606,10 +1606,10 @@ main{text-align:center;padding:2rem}
 </main></body></html>"#;
 
 /// 授权被取消/拒绝后的本地失败页
-const BROWSER_DENIED_HTML: &str = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>Budtty</title>\
+const BROWSER_DENIED_HTML: &str = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>Agofra</title>\
 <style>body{font-family:system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f5f5f4;color:#292524}\
 main{text-align:center;padding:2rem}</style>\
-</head><body><main><h1>授权未完成</h1><p>Authorization was not completed. You can close this page and try again in Budtty.</p></main></body></html>";
+</head><body><main><h1>授权未完成</h1><p>Authorization was not completed. You can close this page and try again in Agofra.</p></main></body></html>";
 
 /// 浏览器回调监听线程：阻塞 accept 直到拿到合法回调、授权被拒、超时或取消。
 /// 只回环监听、只读请求行，不解析请求体；state 不匹配的回调按过期标签页 400 掉后继续等。

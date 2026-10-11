@@ -9,6 +9,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agofra"
+version = "0.33.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "criterion",
+ "directories",
+ "getrandom 0.4.3",
+ "reqwest",
+ "rusqlite",
+ "rusqlite_migration",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sysinfo",
+ "taplo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml_edit 0.25.17+spec-1.1.0",
+ "url",
+ "windows",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -451,41 +486,6 @@ checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
 dependencies = [
  "memchr",
  "serde_core",
-]
-
-[[package]]
-name = "budtty"
-version = "0.33.0"
-dependencies = [
- "base64 0.23.1",
- "chrono",
- "criterion",
- "directories",
- "getrandom 0.4.3",
- "reqwest",
- "rusqlite",
- "rusqlite_migration",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sysinfo",
- "taplo",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "toml_edit 0.25.17+spec-1.1.0",
- "url",
- "windows",
 ]
 
 [[package]]

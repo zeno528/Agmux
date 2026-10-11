@@ -1632,7 +1632,7 @@ impl AppContext {
             ))
             .build()
             .map_err(|_| app_err!("无法创建模型目录请求"))?;
-        // 使用 Codex 实际缓存记录的客户端版本，不把 Budtty 版本冒充 Codex 版本。
+        // 使用 Codex 实际缓存记录的客户端版本，不把 Agofra 版本冒充 Codex 版本。
         let version = std::fs::read_to_string(self.paths.codex_home.join("models_cache.json"))
             .ok()
             .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -1972,7 +1972,7 @@ impl AppContext {
         .await
     }
 
-    /// 供应商级余额缓存：上次成功查询结果写入 ~/.budtty/balance-cache.json，
+    /// 供应商级余额缓存：上次成功查询结果写入 ~/.agofra/balance-cache.json，
     /// 保证卡片首次渲染/切换视图时数字就在，不出现“消失→出现”的闪烁。
     pub fn set_profile_balance(
         &self,

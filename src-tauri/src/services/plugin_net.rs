@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::{app_err, AppResult};
 
-const USER_AGENT: &str = "budtty-plugin-marketplace";
+const USER_AGENT: &str = "agofra-plugin-marketplace";
 const PREVIEW_FILE_LIMIT: usize = 200;
 
 /// 解析后的 GitHub 来源：仓库 + 可选 ref 与插件子目录。

@@ -2,19 +2,19 @@
 //!
 //! 运行：cargo bench --bench config_bench --manifest-path src-tauri/Cargo.toml
 //! CI 解析需要 bencher 输出：加 `-- --output-format bencher`（github-action-benchmark 的 cargo 解析器只认该格式）
-//! 全部使用临时目录（tempfile），不触碰真实 ~/.budtty 与 ~/.codex 数据。
+//! 全部使用临时目录（tempfile），不触碰真实 ~/.agofra 与 ~/.codex 数据。
 
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use budtty_lib::codex::config::{
+use agofra_lib::codex::config::{
     apply_to_document, capture_from_document, format_document, parse_document, validate_document,
 };
-use budtty_lib::database::Database;
-use budtty_lib::models::{CodexProfilePayload, Settings};
-use budtty_lib::paths::from_home;
-use budtty_lib::services::AppContext;
+use agofra_lib::database::Database;
+use agofra_lib::models::{CodexProfilePayload, Settings};
+use agofra_lib::paths::from_home;
+use agofra_lib::services::AppContext;
 
 /// 与真实 ~/.codex/config.toml 结构一致的最小样本（含注释与无关配置，验证保真逻辑）。
 const SAMPLE_CONFIG_TOML: &str = r#"

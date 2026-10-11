@@ -1,7 +1,7 @@
 //! Claude Code 供应商终端：在新终端里起一个只属于某个供应商的 `claude` 会话。
 //!
 //! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的完整 env 写进
-//! `.budtty/terminal/claude_<id>.json`，终端里跑 `claude --settings <该文件>`。
+//! `.agofra/terminal/claude_<id>.json`，终端里跑 `claude --settings <该文件>`。
 //! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
@@ -97,7 +97,7 @@ impl AppContext {
 
         // 启动前回显覆盖文件路径：用户能立刻确认这个终端用的是哪份配置。
         let settings_text = settings.display().to_string();
-        let banner = format!("Budtty Claude terminal: {settings_text}");
+        let banner = format!("Agofra Claude terminal: {settings_text}");
         let model = terminal_model(&profile);
 
         #[cfg(target_os = "windows")]
@@ -413,15 +413,15 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn ghostty_script_quotes_paths_and_stays_single_line() {
         let script = ghostty_launch_script(
-            "Budtty Claude terminal: /Users/u/.budtty/terminal/claude_p1.json",
-            "/Users/u/.budtty/terminal/claude_p1.json",
+            "Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json",
+            "/Users/u/.agofra/terminal/claude_p1.json",
             "sonnet's",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         assert_eq!(
             script,
-            "echo 'Budtty Claude terminal: /Users/u/.budtty/terminal/claude_p1.json'; \
-             claude --settings '/Users/u/.budtty/terminal/claude_p1.json' --model 'sonnet''s'"
+            "echo 'Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json'; \
+             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' --model 'sonnet''s'"
         );
     }
 
@@ -431,17 +431,17 @@ mod tests {
         // 回归：命令行里的换行会终止命令，-NoExit 窗口只执行第一行，
         // Set-Location 与 claude 被丢弃——表现为终端开了却只打印 banner 就回到提示符。
         let script = windows_launch_script(
-            Some("D:\\GitHub project\\Budtty"),
-            "C:\\Users\\u\\.budtty\\terminal\\claude_p1.json",
-            "Budtty Claude terminal: C:\\Users\\u\\.budtty\\terminal\\claude_p1.json",
+            Some("D:\\GitHub project\\Agofra"),
+            "C:\\Users\\u\\.agofra\\terminal\\claude_p1.json",
+            "Agofra Claude terminal: C:\\Users\\u\\.agofra\\terminal\\claude_p1.json",
             "sonnet",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
         assert!(script
-            .contains("Set-Location -LiteralPath 'D:\\GitHub project\\Budtty'; Write-Output "));
+            .contains("Set-Location -LiteralPath 'D:\\GitHub project\\Agofra'; Write-Output "));
         assert!(script
-            .ends_with("; claude --settings 'C:\\Users\\u\\.budtty\\terminal\\claude_p1.json' --model 'sonnet'"));
+            .ends_with("; claude --settings 'C:\\Users\\u\\.agofra\\terminal\\claude_p1.json' --model 'sonnet'"));
         assert!(!script.contains("&&"));
     }
 
@@ -464,18 +464,18 @@ $ErrorActionPreference = 'Stop'
 class Environment {
     static [System.Collections.IDictionary] GetEnvironmentVariables([string] $scope) {
         if ($scope -eq 'User') {
-            return @{ BUDTTY_TEST_MCP_KEY = 'user'; BUDTTY_TEST_INHERITED = 'user' }
+            return @{ AGOFRA_TEST_MCP_KEY = 'user'; AGOFRA_TEST_INHERITED = 'user' }
         }
-        return @{ BUDTTY_TEST_MCP_KEY = 'machine'; BUDTTY_TEST_MACHINE = 'machine' }
+        return @{ AGOFRA_TEST_MCP_KEY = 'machine'; AGOFRA_TEST_MACHINE = 'machine' }
     }
     static [void] SetEnvironmentVariable([string] $key, [string] $value, [string] $scope) {
         [System.Environment]::SetEnvironmentVariable($key, $value, $scope)
     }
 }
 function claude {
-    if ($env:BUDTTY_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
-    if ($env:BUDTTY_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
-    if ($env:BUDTTY_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
+    if ($env:AGOFRA_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
+    if ($env:AGOFRA_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
+    if ($env:AGOFRA_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
     if (($args -join '|') -ne '--settings|C:\t\profile.json|--model|sonnet') { throw 'Profile changed' }
     if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
     Write-Output 'claude environment verified'
@@ -493,9 +493,9 @@ function claude {
                 "-EncodedCommand",
                 &base64::engine::general_purpose::STANDARD.encode(bytes),
             ])
-            .env_remove("BUDTTY_TEST_MCP_KEY")
-            .env_remove("BUDTTY_TEST_MACHINE")
-            .env("BUDTTY_TEST_INHERITED", "process")
+            .env_remove("AGOFRA_TEST_MCP_KEY")
+            .env_remove("AGOFRA_TEST_MACHINE")
+            .env("AGOFRA_TEST_INHERITED", "process")
             .env("NO_COLOR", "1")
             .env("TERM", "dumb")
             .output()

@@ -114,7 +114,7 @@ describe("SettingsSections", () => {
     expect(html.match(/class="apple-group /g)).toHaveLength(1);
     expect(html).not.toContain("数据与路径");
     expect(html).toContain("app-version");
-    expect(html).toContain('class="apple-wordmark">Bifria</span><span class="flex items-center gap-2"><span class="app-version">v');
+    expect(html).toContain('class="apple-wordmark">Agofra</span><span class="flex items-center gap-2"><span class="app-version">v');
     expect(html.indexOf("app-version")).toBeLessThan(html.indexOf("更新日志"));
     expect(html).not.toContain("当前版本");
     expect(html).not.toContain("版本更新");
@@ -139,9 +139,9 @@ describe("SettingsSections", () => {
           backupsEpoch={0}
           onRefresh={() => Promise.resolve()}
           paths={[
-            { label: "about.paths.appData", path: "C:\\Users\\<user>\\.budtty" },
-            { label: "about.paths.backups", path: "C:\\Users\\<user>\\.budtty\\backups\\database" },
-            { label: "about.paths.logs", path: "C:\\Users\\<user>\\.budtty\\logs" },
+            { label: "about.paths.appData", path: "C:\\Users\\<user>\\.agofra" },
+            { label: "about.paths.backups", path: "C:\\Users\\<user>\\.agofra\\backups\\database" },
+            { label: "about.paths.logs", path: "C:\\Users\\<user>\\.agofra\\logs" },
             { label: "about.paths.codexConfig", path: "C:\\Users\\<user>\\.codex\\config.toml" },
           ]}
           onOpenPath={() => undefined}
@@ -153,10 +153,10 @@ describe("SettingsSections", () => {
     expect(html).toContain("数据与路径");
     expect(html).toContain("应用数据目录");
     expect(html).toContain("日志目录");
-    expect(html).toContain("存放 Budtty 的应用数据");
-    expect(html).toContain("查看 Budtty 的运行日志");
+    expect(html).toContain("存放 Agofra 的应用数据");
+    expect(html).toContain("查看 Agofra 的运行日志");
     expect(html).toContain("查看 Codex 的配置文件");
-    expect(html).not.toContain(".budtty");
+    expect(html).not.toContain(".agofra");
     expect(html).not.toContain("config.toml");
     expect(html.match(/备份目录/g)).toHaveLength(1);
     // 三条路径统一为整行可点的链接。

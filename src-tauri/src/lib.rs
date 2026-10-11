@@ -167,14 +167,14 @@ pub fn run() {
         let thread = std::thread::current();
         let thread = thread.name().unwrap_or("<unnamed>").to_string();
         log::error!(
-            "[panic.crash] thread={thread:?} outcome=failure failure_kind=internal error={:?} msg=\"Budtty 崩溃\"",
+            "[panic.crash] thread={thread:?} outcome=failure failure_kind=internal error={:?} msg=\"Agofra 崩溃\"",
             format!("{message} @{location}")
         );
         default_hook(info);
     }));
 
     let paths = paths::app_paths().expect("无法定位用户数据目录");
-    let database = Arc::new(database::Database::open(&paths).expect("无法初始化 Budtty 数据库"));
+    let database = Arc::new(database::Database::open(&paths).expect("无法初始化 Agofra 数据库"));
     let context = AppContext::new_with_database(paths.clone(), database.clone());
     let oauth_state = auth::CodexOAuthState(Arc::new(auth::codex_oauth::CodexOAuthManager::new(
         database,
@@ -196,8 +196,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 // 磁盘封顶：单文件攒到 1MB 才轮转出备份，最多留 10 个旧文件。
-                // 实测单会话日志仅几 KB~几十 KB，平时只会看到一个 budtty.log，
-                // 会话边界靠每次启动的「Budtty v 启动」横幅行分隔
+                // 实测单会话日志仅几 KB~几十 KB，平时只会看到一个 agofra.log，
+                // 会话边界靠每次启动的「Agofra v 启动」横幅行分隔
                 .rotation_strategy(RotationStrategy::KeepSome(10))
                 .max_file_size(1_000_000)
                 // 单文件追加（插件默认行为）：不做按启动分文件，避免日志目录文件堆积
@@ -217,7 +217,7 @@ pub fn run() {
                 // tao（窗口库）在 Windows 上偶发成对 event_loop DEBUG，与业务无关
                 .level_for("tao", log::LevelFilter::Info)
                 // 行格式自定义：时间 + 级别 + 消息。默认格式会注入模块路径
-                // （budtty_lib::services::…），与消息里的域前缀双重定位纯属冗余，
+                // （agofra_lib::services::…），与消息里的域前缀双重定位纯属冗余，
                 // 去掉后每行短 40 字符；导航只认域前缀。
                 .format(|out, message, record| {
                     let now = chrono::Local::now();
@@ -233,7 +233,7 @@ pub fn run() {
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::Folder {
                         path: paths.logs.clone(),
-                        file_name: Some("budtty".into()),
+                        file_name: Some("agofra".into()),
                     }),
                 ])
                 .build(),
@@ -383,7 +383,7 @@ pub fn run() {
                 startup_started.elapsed().as_millis()
             );
             log::info!(
-                "[app.start] version=\"{}\" outcome=success msg=\"Budtty 启动\"",
+                "[app.start] version=\"{}\" outcome=success msg=\"Agofra 启动\"",
                 env!("CARGO_PKG_VERSION")
             );
             // macOS 上窗口配置 visible:false 不生效（创建后实际处于可见状态），
@@ -524,7 +524,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building Budtty")
+        .expect("error while building Agofra")
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             {

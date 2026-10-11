@@ -4,7 +4,7 @@ use crate::error::{app_err, AppResult};
 
 /// 数据目录名。改名发布时旧数据由用户从设置页「导出备份 / 恢复」自行搬过来，
 /// 应用不做目录迁移。
-const ROOT_DIR: &str = ".budtty";
+const ROOT_DIR: &str = ".agofra";
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
@@ -69,7 +69,7 @@ pub fn app_paths() -> AppResult<AppPaths> {
 pub fn from_home(home: &Path) -> AppResult<AppPaths> {
     let root = home.join(ROOT_DIR);
     Ok(AppPaths {
-        database: root.join("budtty.db"),
+        database: root.join("agofra.db"),
         settings: root.join("settings.json"),
         update_marker: root.join("update-marker"),
         config_backup: root.join("backups").join("config"),
@@ -109,22 +109,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn paths_use_budtty_and_codex_directories() {
+    fn paths_use_agofra_and_codex_directories() {
         let home = Path::new("/home/user");
         let paths = from_home(home).unwrap();
-        assert_eq!(paths.root, home.join(".budtty"));
-        assert_eq!(paths.database, home.join(".budtty").join("budtty.db"));
-        assert_eq!(paths.logs, home.join(".budtty").join("logs"));
+        assert_eq!(paths.root, home.join(".agofra"));
+        assert_eq!(paths.database, home.join(".agofra").join("agofra.db"));
+        assert_eq!(paths.logs, home.join(".agofra").join("logs"));
         assert_eq!(
             paths.codex_config(),
             home.join(".codex").join("config.toml")
         );
         assert_eq!(paths.claude_home, home.join(".claude"));
         assert_eq!(paths.claude_mcp_config(), home.join(".claude.json"));
-        assert_eq!(paths.terminal, home.join(".budtty").join("terminal"));
+        assert_eq!(paths.terminal, home.join(".agofra").join("terminal"));
         assert_eq!(
             paths.terminal_settings("p-1"),
-            home.join(".budtty")
+            home.join(".agofra")
                 .join("terminal")
                 .join("claude_p-1.json")
         );

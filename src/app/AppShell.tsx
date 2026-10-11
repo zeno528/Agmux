@@ -174,7 +174,7 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
 export default function AppShell() {
   // 冷启动落页：首帧同步读缓存直出（与 sidebar-collapsed 同款 localStorage 先例），
   // 第二次冷启动起首帧即目标页不闪；settings 到达后由下方 effect 校准真值并刷新缓存。
-  const [view, setView] = useState<AppView>(() => asAppView(localStorage.getItem("budtty.startup-view")));
+  const [view, setView] = useState<AppView>(() => asAppView(localStorage.getItem("agofra.startup-view")));
   // 重复点击当前视图的侧栏按钮 = 弹回该视图一级；点其他按钮 = 正常切换，目标视图保活现场不受影响。
   // popRequest 只对目标视图递增，各视图自带"无子页时零反应"守卫（一级时 setState 同值跳过）。
   const [popRequest, setPopRequest] = useState<{ view: AppView; epoch: number } | null>(null);
@@ -230,7 +230,7 @@ export default function AppShell() {
   useEffect(() => {
     if (startupSetting === undefined) return;
     const target = asAppView(startupSetting);
-    localStorage.setItem("budtty.startup-view", target);
+    localStorage.setItem("agofra.startup-view", target);
     if (startupViewApplied.current) return;
     startupViewApplied.current = true;
     setView((current) => (current === target ? current : target));
@@ -453,7 +453,7 @@ export default function AppShell() {
                 className="apple-sidebar-brand flex w-fit cursor-pointer items-center"
                 role="button"
                 tabIndex={0}
-                aria-label="Bifria"
+                aria-label="Agofra"
                 onClick={sidebar.toggleSidebar}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") sidebar.toggleSidebar();
@@ -461,8 +461,8 @@ export default function AppShell() {
                 onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}
                 onMouseLeave={() => sidebar.setSidebarFlyoutArmed(false)}
               >
-                <img src="/logo.svg" alt="Bifria" className="app-logo" draggable="false" />
-                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Bifrova</span>
+                <img src="/logo.svg" alt="Agofra" className="app-logo" draggable="false" />
+                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agofra</span>
               </div>
               {sidebar.sidebarFlyoutArmed ? (
                 <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>

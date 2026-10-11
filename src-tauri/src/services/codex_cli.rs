@@ -700,7 +700,7 @@ if ($Release -ne '0.1.2') { throw 'checked version was not passed to installer' 
 $package = Join-Path $env:CODEX_HOME 'packages/standalone/current'
 $bin = Join-Path $package 'bin'
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
-Copy-Item -LiteralPath $env:BUDTTY_FIXTURE_BINARY -Destination (Join-Path $bin 'codex.exe')
+Copy-Item -LiteralPath $env:AGOFRA_FIXTURE_BINARY -Destination (Join-Path $bin 'codex.exe')
 Set-Content -LiteralPath (Join-Path $package 'codex-package.json') -Value '{}' -Encoding ASCII
 New-Item -ItemType Junction -Path $env:CODEX_INSTALL_DIR -Target $bin | Out-Null
 "#;
@@ -714,7 +714,7 @@ New-Item -ItemType Junction -Path $env:CODEX_INSTALL_DIR -Target $bin | Out-Null
             "0.1.2",
         )
         .unwrap();
-        child.env("BUDTTY_FIXTURE_BINARY", &prototype);
+        child.env("AGOFRA_FIXTURE_BINARY", &prototype);
         run_cli(child, Duration::from_secs(10)).await.unwrap();
         let visible = temp.path().join("visible");
         let codex_home = temp.path().join(".codex");

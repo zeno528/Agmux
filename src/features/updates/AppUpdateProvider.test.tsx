@@ -82,8 +82,8 @@ describe("AppUpdateProvider", () => {
   });
 
   it("更新日志直达对应版本的 Release 页面", () => {
-    expect(releaseNotesUrl("0.13.10")).toBe("https://github.com/zeno528/CGswitch/releases/tag/v0.13.10");
-    expect(releaseNotesUrl("v0.13.10")).toBe("https://github.com/zeno528/CGswitch/releases/tag/v0.13.10");
+    expect(releaseNotesUrl("0.13.10")).toBe("https://github.com/zeno528/Agofra/releases/tag/v0.13.10");
+    expect(releaseNotesUrl("v0.13.10")).toBe("https://github.com/zeno528/Agofra/releases/tag/v0.13.10");
   });
 
   it("启动自动发现更新时不自动弹窗，图标点击直达确认弹窗", () => {

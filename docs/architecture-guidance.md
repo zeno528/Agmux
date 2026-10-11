@@ -1,6 +1,6 @@
-# Budtty 架构与目录演进指导
+# Agofra 架构与目录演进指导
 
-> 本文用于后续开发决策。当前结论基于 Budtty 现有 Tauri 2 + React 19/Vite + Rust + SQLite 实现，以及未来适配 Codex CLI / WSL2 的规划。
+> 本文用于后续开发决策。当前结论基于 Agofra 现有 Tauri 2 + React 19/Vite + Rust + SQLite 实现，以及未来适配 Codex CLI / WSL2 的规划。
 
 ## 当前结论
 
@@ -12,11 +12,11 @@
 ## 用户数据目录
 
 ```text
-~/.budtty/
+~/.agofra/
 ├── settings.json
-├── budtty.db
-├── budtty.db-wal
-├── budtty.db-shm
+├── agofra.db
+├── agofra.db-wal
+├── agofra.db-shm
 └── backups/
     ├── config/
     ├── codex-files/
@@ -26,8 +26,8 @@
 ### 目录职责
 
 - `settings.json`：应用级设置。
-- `budtty.db`：供应商配置数据、账号和切换事件。
-- `budtty.db-wal`、`budtty.db-shm`：SQLite WAL 运行文件，应用运行时不得手动删除。
+- `agofra.db`：供应商配置数据、账号和切换事件。
+- `agofra.db-wal`、`agofra.db-shm`：SQLite WAL 运行文件，应用运行时不得手动删除。
 - `backups/config/`：自动备份 `config.toml`。
 - `backups/codex-files/`：自动备份 `auth.json`、`models.json`、catalog 等 Codex 配套文件。
 - `backups/database/`：用户主动导出的数据库快照，用于列表、恢复、删除和重命名。
@@ -64,7 +64,7 @@
 
 未来接入 Codex CLI / WSL2 时：
 
-1. Budtty 的 SQLite 数据库仍保存在 Windows 用户目录的 `~/.budtty/`。
+1. Agofra 的 SQLite 数据库仍保存在 Windows 用户目录的 `~/.agofra/`。
 2. 不要让 Windows 程序通过 `\\wsl$` 直接高频读写 SQLite 数据库。
 3. WSL2 下的 Codex 配置、认证文件和进程操作应通过 WSL 目标适配器执行。
 4. 只有在真正开始实现第二个目标时，才新增：

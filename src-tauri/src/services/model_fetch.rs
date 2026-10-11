@@ -1,7 +1,7 @@
 //! 模型列表获取服务
 //!
 //! 通过 OpenAI 兼容的 GET /models 端点拉取供应商可用模型列表。
-//! URL 候选策略参考 cc-switch 的 model_fetch.rs，按 Budtty 只做
+//! URL 候选策略参考 cc-switch 的 model_fetch.rs，按 Agofra 只做
 //! Responses（原生）直连的场景做了简化：无 Anthropic/Google 协议头，
 //! 无兼容子路径剥离。
 

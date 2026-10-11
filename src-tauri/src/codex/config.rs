@@ -12,7 +12,7 @@ pub fn parse_document(text: &str) -> AppResult<DocumentMut> {
         .map_err(|error| app_err!("Codex 配置不是有效 TOML: {error}"))
 }
 
-/// 从 Budtty 快照中移除 Codex 自己管理的 MCP，避免重启时把插件状态写回 live。
+/// 从 Agofra 快照中移除 Codex 自己管理的 MCP，避免重启时把插件状态写回 live。
 pub fn without_managed_mcp_servers(text: &str) -> AppResult<String> {
     let mut document = parse_document(text)?;
     remove_managed_mcp_servers(&mut document);
@@ -506,7 +506,7 @@ pub fn merge_mcp_section(raw: &str, live: &DocumentMut) -> String {
     }
 }
 
-/// 统一收拢 config.toml 中的全局运行时段，供所有 Budtty 写入路径复用。
+/// 统一收拢 config.toml 中的全局运行时段，供所有 Agofra 写入路径复用。
 pub fn normalize_global_section_order(text: &str) -> String {
     consolidate_plugin_blocks(&consolidate_mcp_blocks(text))
 }

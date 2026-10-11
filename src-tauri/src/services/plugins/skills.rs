@@ -236,7 +236,7 @@ pub(super) fn distribute_skill(
 }
 
 pub(super) fn replace_skill(source: &Path, target: &Path) -> AppResult<()> {
-    let staged = target.with_extension(format!("budtty-{}", now_ms()));
+    let staged = target.with_extension(format!("agofra-{}", now_ms()));
     if staged.exists() {
         skill_io(fs::remove_dir_all(&staged))?;
     }

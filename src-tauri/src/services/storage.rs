@@ -1,6 +1,7 @@
 use super::{app_err, now_ms, now_secs, prune_backups, AppContext, AppResult, Path, PathBuf};
 
 pub(super) const DATABASE_BACKUP_PREFIX: &str = "cg-backup-";
+// 历史备份的文件名固定，品牌改名不能改变识别前缀。
 const LEGACY_DATABASE_BACKUP_PREFIX: &str = "budtty-export-";
 
 // 手动备份带 manual- 标记，自动备份保持纯时间戳：前端靠文件名区分记录行的"手动/自动"前缀

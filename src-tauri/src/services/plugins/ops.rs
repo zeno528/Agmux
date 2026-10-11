@@ -34,7 +34,7 @@ use super::{
 // ==================== AppContext 服务 ====================
 
 impl AppContext {
-    /// Codex CLI 直接写 config.toml 后，收拢 Budtty 管理的全局段；无变化不落盘。
+    /// Codex CLI 直接写 config.toml 后，收拢 Agofra 管理的全局段；无变化不落盘。
     fn normalize_plugin_config_order(&self) -> AppResult<()> {
         let config_path = self.paths.codex_config();
         let text = self.read_live_config()?;

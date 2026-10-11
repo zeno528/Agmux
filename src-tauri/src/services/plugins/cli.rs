@@ -70,7 +70,7 @@ pub(super) fn plugin_timeout_message(args: &[&str], timeout: Duration) -> String
     } else {
         format!(
             "插件操作超时（{} 秒）：codex CLI 长时间无响应，已终止。请重试；\
-             若持续出现请重启 Budtty 后再试",
+             若持续出现请重启 Agofra 后再试",
             timeout.as_secs()
         )
     }
@@ -314,7 +314,7 @@ mod tests {
 
     /// 管道排水回归测试的子进程入口：父测试以本环境变量拉起当前测试二进制，
     /// 正常跑测试时无此变量，直接通过。
-    const TEST_CHILD_MODE_ENV: &str = "BUDTTY_PLUGINS_TEST_CHILD_MODE";
+    const TEST_CHILD_MODE_ENV: &str = "AGOFRA_PLUGINS_TEST_CHILD_MODE";
     #[test]
     fn plugins_test_child_entry() {
         let Some(mode) = std::env::var(TEST_CHILD_MODE_ENV).ok() else {

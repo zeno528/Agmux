@@ -3,7 +3,7 @@
     "performance": {"phrases": ["性能", "performance", "性能测试", "基准", "benchmark"], "weight": 0.35},
     "measurement": {"phrases": ["测量", "跑一次", "运行", "criterion", "构建"], "weight": 0.25},
     "history": {"phrases": ["基线", "对比", "回归", "历史", "保留", "回溯", "报告"], "weight": 0.25},
-    "budtty": {"phrases": ["budtty", "cg switch"], "weight": 0.15}
+    "agofra": {"phrases": ["agofra", "cg switch"], "weight": 0.15}
   },
   "negative_concepts": {
     "implementation": {"phrases": ["直接优化", "修改代码", "实现功能"], "weight": 0.55, "exclusive": true},
