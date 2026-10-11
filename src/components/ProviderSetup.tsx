@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronRight, Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { presetConnectionName, presetConnections, presetEntries, presetEntryCategory, type ClientPreset, type PresetConnection } from "../presets";
+import { presetConnectionName, presetConnections, presetEntries, presetEntryCategory, presetRegionName, type ClientPreset, type PresetConnection } from "../presets";
 import { AppSegmentedControl } from "./AppSegmentedControl";
 import { ProfileIconTile } from "./ProfileIconTile";
 import PresetGrid from "./PresetGrid";
@@ -17,7 +17,7 @@ export function ProviderCreate({ presets, onBack, children }: {
   const [visited, setVisited] = useState<string[]>([]);
   const [selectedKind, setSelectedKind] = useState("");
   const [picking, setPicking] = useState(true);
-  const [category, setCategory] = useState<"all" | "api" | "plans">("all");
+  const [category, setCategory] = useState<"all" | "api" | "plans" | "accounts">("all");
   const [query, setQuery] = useState("");
   const backLabel = t("edit.createTitle");
   return <>
@@ -36,8 +36,9 @@ export function ProviderCreate({ presets, onBack, children }: {
       </header>
       <AppTabBar selected={category} onSelect={setCategory} label={t("edit.selectProvider")} items={[
         { id: "all", label: t("edit.providerFilterAll", { count: entries.length }) },
-        { id: "api", label: t("edit.providerFilterApi", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "api").length }) },
+        { id: "accounts", label: t("edit.providerFilterAccounts", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "accounts").length }) },
         { id: "plans", label: t("edit.providerFilterPlans", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "plans").length }) },
+        { id: "api", label: t("edit.providerFilterApi", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "api").length }) },
       ]} />
       <div className="apple-edit-content">
         <div className="apple-edit-surface">
@@ -67,7 +68,16 @@ export function ProviderPresetControls({ preset, baseUrl, disabled, onChangeProv
   const connections = presetConnections(preset, [preset]);
   const selected = connections.find((item) => item.base_url === baseUrl);
   const current = selected ?? connections[0];
-  const regions = [...new Set(connections.map((item) => item.region))];
+  const plans = [...new Set(connections.map((item) => item.label))];
+  const multiplePlans = plans.length > 1;
+  const samePlan = connections.filter((item) => item.label === current.label);
+  const versions = multiplePlans
+    ? plans.map((plan) => connections.find((item) => item.label === plan && item.region === current.region) ?? connections.find((item) => item.label === plan)!)
+    : samePlan;
+  const controls = [
+    { label: t("edit.versionLabel"), description: t(multiplePlans ? "edit.billingDescription" : "edit.versionDescription"), versions, billing: multiplePlans },
+    ...(multiplePlans && samePlan.length > 1 ? [{ label: t("edit.regionLabel"), description: t("edit.versionDescription"), versions: samePlan, billing: false }] : []),
+  ];
   return <div className="apple-panel-section" onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}>
     <div className="flex items-center gap-3">
       <ProfileIconTile name={preset.name} icon={preset.icon} />
@@ -77,18 +87,18 @@ export function ProviderPresetControls({ preset, baseUrl, disabled, onChangeProv
       </button>
     </div>
     <div className="provider-preset-controls" data-custom={!selected}>
-      {regions.length > 1 ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      {controls.filter((control) => control.versions.length > 1).map((control) => <div key={control.label} className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <span className="field-label">{t("edit.versionLabel")}</span>
-          <p className="setting-description mt-1">{t("edit.versionDescription")}</p>
+          <span className="field-label">{control.label}</span>
+          <p className="setting-description mt-1">{control.description}</p>
         </div>
-        <AppSegmentedControl className="h-9 w-72 max-w-full" label={t("edit.versionLabel")} selectedIndex={regions.indexOf(current.region)}>
-          {regions.map((region) => <button key={region} type="button" className="text-sm" aria-pressed={selected?.region === region} disabled={disabled}
-            onClick={() => onSelect(connections.find((item) => item.region === region)!)}>
-            {t(region === "cn" ? "edit.endpointRegionCn" : "edit.endpointRegionGlobal")}
+        <AppSegmentedControl className="h-9 w-72 max-w-full" label={control.label} selectedIndex={control.versions.findIndex((version) => version.base_url === selected?.base_url)}>
+          {control.versions.map((version) => <button key={version.base_url} type="button" className="text-sm" aria-pressed={selected?.base_url === version.base_url} disabled={disabled}
+            onClick={() => onSelect(version)}>
+            {control.billing ? version.label === "API" ? t("edit.payAsYouGo") : version.label : presetRegionName(version.region)}
           </button>)}
         </AppSegmentedControl>
-      </div> : null}
+      </div>)}
       {!selected && baseUrl ? <p className="setting-description mt-3">{t("edit.customEndpoint")}</p> : null}
     </div>
   </div>;

@@ -462,7 +462,7 @@ export default function AppShell() {
                 onMouseLeave={() => sidebar.setSidebarFlyoutArmed(false)}
               >
                 <img src="/logo.svg" alt="Bifria" className="app-logo" draggable="false" />
-                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Bifria</span>
+                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Enkori</span>
               </div>
               {sidebar.sidebarFlyoutArmed ? (
                 <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>

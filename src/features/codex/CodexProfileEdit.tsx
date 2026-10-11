@@ -629,7 +629,7 @@ function CodexProfileEditor({
                 </div>
                 <label className="field-label mb-1.5 mt-4 block">{t("edit.requestUrlLabel")}</label>
                 {presetEndpoints ? (
-                  <EndpointField value={baseUrl} onChange={setBaseUrl} endpoints={presetEndpoints} onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }} placeholder="https://api.example.com/v1" label={t("edit.requestUrlLabel")} regionCn={t("edit.endpointRegionCn")} regionGlobal={t("edit.endpointRegionGlobal")} />
+                  <EndpointField value={baseUrl} onChange={setBaseUrl} endpoints={presetEndpoints} onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }} placeholder="https://api.example.com/v1" label={t("edit.requestUrlLabel")} />
                 ) : (
                   baseUrlField("app-input")
                 )}

@@ -69,7 +69,7 @@ describe("供应商创建的两步流程", () => {
     const grid = () => {
       const node = elements(page).find((item) => item.type === PresetGrid)!;
       return PresetGrid({ presets, selectedKind: "", onSelect: vi.fn(),
-        category: node.props.category as "all" | "api" | "plans", query: node.props.query as string });
+        category: node.props.category as "all" | "api" | "plans" | "accounts", query: node.props.query as string });
     };
     const names = () => elements(grid()).filter((node) => node.type === "button").map((node) =>
       elements(node).find((child) => child.props.className === "setting-title block truncate font-medium!")!.props.children);
@@ -81,10 +81,13 @@ describe("供应商创建的两步流程", () => {
     expect(names()).toEqual(["MiniMax · M Plan"]);
     search("Token Plan");
     expect(names().length).toBeGreaterThan(0);
-    expect(names().every((name) => String(name).includes("Token Plan"))).toBe(true);
+    expect(names()).toContain("小米 MiMo");
+    expect(names().every((name) => String(name).includes("Token Plan") || name === "小米 MiMo")).toBe(true);
     const bar = elements(page).find((node) => node.type === AppTabBar)!;
     (bar.props.onSelect as (id: string) => void)("api");
     page = render();
+    expect(names()).toEqual([]);
+    search("不存在的供应商");
     expect(names()).toEqual([]);
     expect(elements(grid()).find((node) => node.props.role === "status")!.props.children).toBe("没有匹配项");
     search("");
@@ -169,15 +172,15 @@ describe("供应商创建的两步流程", () => {
   });
 
   it.each([
-    { presets: codexPresets, total: 16, apiCount: 7, planCount: 7, account: "ChatGPT", plan: "火山方舟豆包 · Agent Plan", planKey: "doubao:Agent Plan" },
-    { presets: claudePresets, total: 20, apiCount: 9, planCount: 9, account: "Claude Account", plan: "Kimi · Kimi Code", planKey: "kimi:Kimi Code" },
+    { presets: codexPresets, total: 20, apiCount: 9, planCount: 9, account: "ChatGPT", plan: "火山方舟豆包 · Agent Plan", planKey: "doubao:Agent Plan" },
+    { presets: claudePresets, total: 26, apiCount: 11, planCount: 13, account: "Claude Account", plan: "Kimi · Kimi Code", planKey: "kimi:Kimi Code" },
   ])("分类数量与筛选结果一致，不重复计算区域且保留账号与自定义", ({ presets, total, apiCount, planCount, account, plan, planKey }) => {
     const onSelect = vi.fn();
     const render = () => {
       hooks.cursor = 0;
       const page = ProviderCreate({ presets, onBack: vi.fn(), children: () => null });
       const grid = elements(page).find((node) => node.type === PresetGrid)!;
-      return <>{page}{PresetGrid({ presets, category: grid.props.category as "all" | "api" | "plans", selectedKind: planKey, onSelect })}</>;
+      return <>{page}{PresetGrid({ presets, category: grid.props.category as "all" | "api" | "plans" | "accounts", selectedKind: planKey, onSelect })}</>;
     };
     let tree = render();
     const names = () => elements(tree).filter((node) => node.props.className === "setting-title block truncate font-medium!").map((node) => node.props.children);
@@ -191,16 +194,23 @@ describe("供应商创建的两步流程", () => {
     expect(names()).toEqual(expect.arrayContaining(["自定义", account, "DeepSeek", plan]));
     const allLabel = `全部（${total}）`;
     expect(elements(tree).find((node) => node.type === AppTabBar)!.props.items).toEqual(expect.arrayContaining([{ id: "all", label: allLabel }]));
-    selectCategory(`按量 API（${apiCount}）`);
+    expect((elements(tree).find((node) => node.type === AppTabBar)!.props.items as Array<{id: string}>).map((item) => item.id)).toEqual(["all", "accounts", "plans", "api"]);
+    expect(elements(tree).filter((node) => node.type === "h2").map((node) => node.props.children)).toEqual(["账号授权（1）", `订阅套餐（${planCount}）`, `按量付费（${apiCount}）`, "自定义（1）"]);
+    selectCategory("账号授权（1）");
+    expect(names()).toEqual([account]);
+    expect(elements(tree).some((node) => node.type === "h2")).toBe(false);
+    selectCategory(`按量付费（${apiCount}）`);
     const apiNames = names();
     expect(apiNames).toHaveLength(apiCount);
     expect(apiNames).toContain("DeepSeek");
     expect(apiNames).not.toContain("自定义");
     expect(apiNames).not.toContain(account);
     expect(apiNames).not.toContain(plan);
-    selectCategory(`套餐服务（${planCount}）`);
+    expect(apiNames).not.toContain("小米 MiMo");
+    selectCategory(`订阅套餐（${planCount}）`);
     expect(names()).toHaveLength(planCount);
     expect(names()).toContain(plan);
+    expect(names()).toContain("小米 MiMo");
     expect(names().some((name) => apiNames.includes(name))).toBe(false);
     expect(names()).not.toContain("自定义");
     expect(names()).not.toContain(account);
@@ -274,7 +284,7 @@ describe("供应商套餐入口与区域", () => {
     }
   });
 
-  it("Claude 独立套餐完整编辑页保存正确 kind 和鉴权键，并保留名称、模型与高级设置", async () => {
+  it.each(["cn", "global"])("Claude Kimi Code %s 版本保存正确端点、kind 和鉴权键，并保留名称、模型与高级设置", async (region) => {
     const preset = presetEntries(claudePresets).find((entry) => entry.preset.kind === "kimi-code")!.preset;
     const onBack = vi.fn();
     const onChangeProvider = vi.fn();
@@ -285,7 +295,7 @@ describe("供应商套餐入口与区域", () => {
       return editor.type(editor.props) as ReactNode;
     };
     const field = (tree: ReactNode, type: unknown) => elements(tree).find((node) => node.type === type)!.props;
-    const code = presetConnections(preset, [preset])[0];
+    const code = presetConnections(preset, [preset]).find((connection) => connection.region === region)!;
     let tree = render();
     (field(tree, ProviderPresetControls).onSelect as (connection: PresetConnection) => void)(code);
     tree = render();
@@ -350,15 +360,29 @@ describe("供应商套餐入口与区域", () => {
     select("版本", 0);
     expect(selected).toMatchObject({ kind: "qwen", region: "cn", label: "Token Plan" });
     const coding = entries.find((entry) => entry.key === "qwen:Coding Plan")!.preset;
-    expect(elements(ProviderPresetControls({ preset: coding, baseUrl: coding.base_url, disabled: false, onChangeProvider: vi.fn(), onSelect: vi.fn() })).some((node) => node.type === AppSegmentedControl)).toBe(false);
+    const codingControls = ProviderPresetControls({ preset: coding, baseUrl: coding.base_url, disabled: false, onChangeProvider: vi.fn(), onSelect: vi.fn() });
+    expect(elements(codingControls).filter((node) => node.type === AppSegmentedControl)).toHaveLength(1);
+    expect(coding.endpoints.map((endpoint) => endpoint.base_url)).toEqual(["https://coding.dashscope.aliyuncs.com/apps/anthropic", "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"]);
   });
 
-  it("同区域的套餐各自进入配置；手动地址不冒充官方档位", () => {
-    const entries = presetEntries(claudePresets).filter((entry) => entry.preset.kind === "mimo");
-    expect(entries).toHaveLength(2);
+  it.each([{ presets: codexPresets }, { presets: claudePresets }])("小米只切换按量付费和 Token Plan，不展示区域；手动地址不冒充官方档位", ({ presets }) => {
+    const entries = presetEntries(presets).filter((entry) => entry.preset.kind === "mimo");
+    expect(entries).toHaveLength(1);
     const preset = entries[0].preset;
-    const render = (baseUrl: string) => ProviderPresetControls({ preset, baseUrl, disabled: false, onChangeProvider: vi.fn(), onSelect: vi.fn() });
-    expect(elements(render(preset.base_url)).filter((node) => node.type === AppSegmentedControl)).toHaveLength(0);
+    expect(entries[0].name).toBe("小米 MiMo");
+    expect(preset.endpoints).toHaveLength(2);
+    const onSelect = vi.fn();
+    const render = (baseUrl: string) => ProviderPresetControls({ preset, baseUrl, disabled: false, onChangeProvider: vi.fn(), onSelect });
+    const group = elements(render(preset.base_url)).find((node) => node.type === AppSegmentedControl)!;
+    const buttons = Children.toArray(group.props.children) as ReactElement<Props>[];
+    expect(buttons.map((button) => button.props.children)).toEqual(["按量付费", "Token Plan"]);
+    click(buttons[1]);
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "mimo", base_url: preset.endpoints![1].base_url }));
+    expect(elements(render(preset.endpoints![1].base_url)).find((node) => node.type === AppSegmentedControl)?.props.selectedIndex).toBe(1);
+    expect(elements(render(preset.endpoints![1].base_url)).filter((node) => node.type === AppSegmentedControl)).toHaveLength(1);
+    click(buttons[0]);
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "mimo", base_url: preset.base_url }));
+    expect(elements(render(preset.base_url)).filter((node) => node.type === AppSegmentedControl)).toHaveLength(1);
     const custom = renderToStaticMarkup(render("https://custom.example.test"));
     expect(custom).toContain('data-custom="true"');
     expect(custom).not.toContain('aria-pressed="true"');

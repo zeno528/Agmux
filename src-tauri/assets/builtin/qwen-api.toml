@@ -1,0 +1,8 @@
+model_provider = "qwen-api"
+disable_response_storage = true
+
+[model_providers.qwen-api]
+name = "Qwen"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+wire_api = "responses"
+experimental_bearer_token = "<YOUR_API_KEY>"

@@ -405,8 +405,6 @@ function ClaudeProfileEditor({
                 onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }}
                 placeholder={t("baseUrlPlaceholder")}
                 label={t("baseUrlLabel")}
-                regionCn={t("endpointCn")}
-                regionGlobal={t("endpointGlobal")}
               />
             ) : (
               <input className="app-input" placeholder={t("baseUrlPlaceholder")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />

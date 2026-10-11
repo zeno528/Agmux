@@ -1,0 +1,8 @@
+model_provider = "doubao-api"
+disable_response_storage = true
+
+[model_providers.doubao-api]
+name = "Volcengine"
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+wire_api = "responses"
+experimental_bearer_token = "<YOUR_API_KEY>"

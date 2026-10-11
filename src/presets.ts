@@ -3,13 +3,18 @@ import i18next from "i18next";
 // 展示元数据：网格选择时的展示 / provider id 推断 / "测试连通" 按钮可用性判定。
 // config.toml 原文由后端 builtin 模板单一来源，模型目录同。
 
-/** 官方多区域端点档（cn/全球）；region 只用于下拉展示，写入配置的永远是 URL 本身。 */
+/** 官方区域端点档；region 只用于展示，写入配置的永远是 URL 本身。 */
 export interface PresetEndpoint {
-  region: "cn" | "global";
+  region: "cn" | "global" | "sg" | "us" | "hk";
   /** 同一区域存在多条计费通道时的档位名（如 Coding Plan / Agent Plan）；缺省时菜单只显示区域徽标。 */
   label?: string;
   base_url: string;
   admin_url: string | null;
+}
+
+export function presetRegionName(region: PresetEndpoint["region"]): string {
+  const keys = { cn: "endpointRegionCn", global: "endpointRegionGlobal", sg: "endpointRegionSg", us: "endpointRegionUs", hk: "endpointRegionHk" } as const;
+  return i18next.t(`profiles:edit.${keys[region]}`);
 }
 
 export interface ClientPreset {
@@ -17,13 +22,15 @@ export interface ClientPreset {
   /** 同一供应商的其他套餐指向主条目；仅用于创建页分组，不改变保存的 kind。 */
   group?: string;
   plan?: string;
+  /** 声明后不按套餐拆入口，在版本滑块内切换计费方式（如小米按量 / Token Plan 共用卡片）。 */
+  combine_plans?: boolean;
   name: string;
   provider: string | null;
   icon: string;
   base_url: string;
   admin_url: string | null;
   model: string;
-  /** 双区域供应商的端点档；首项必须与 base_url/admin_url（默认区域）一致，单区域供应商不带。 */
+  /** 区域或计费通道端点档；首项必须与 base_url/admin_url（默认选项）一致。 */
   endpoints?: readonly PresetEndpoint[];
 }
 
@@ -193,6 +200,7 @@ export const providerPresets: ProviderPreset[] = [
       admin_url: "https://opencode.ai/go",
       model: "grok-4.6",
     },
+    claude: { plan: "Go", provider: "opencode-go", base_url: "https://opencode.ai/zen/go", admin_url: "https://opencode.ai/go", model: "" },
   },
   { kind: "openrouter", name: "OpenRouter", icon: "openrouter",
     codex: {
@@ -211,18 +219,24 @@ export const providerPresets: ProviderPreset[] = [
   { kind: "mimo", get name() { return i18next.t("preset.mimo"); }, icon: "xiaomi-mimo",
     codex: {
       provider: "mimo",
+      combine_plans: true,
       base_url: "https://api.xiaomimimo.com/v1",
       admin_url: "https://platform.xiaomimimo.com/#/console/api-keys",
       model: "mimo-v2.5-pro",
+      endpoints: [
+        { region: "cn", base_url: "https://api.xiaomimimo.com/v1", admin_url: "https://platform.xiaomimimo.com/#/console/api-keys" },
+        { region: "cn", label: "Token Plan", base_url: "https://token-plan-cn.xiaomimimo.com/v1", admin_url: "https://platform.xiaomimimo.com/#/console/plan-manage" },
+      ],
     },
     claude: {
       provider: "mimo",
+      combine_plans: true,
       base_url: "https://api.xiaomimimo.com/anthropic",
       admin_url: "https://platform.xiaomimimo.com/#/console/api-keys",
       model: "",
       endpoints: [
         { region: "cn", base_url: "https://api.xiaomimimo.com/anthropic", admin_url: "https://platform.xiaomimimo.com/#/console/api-keys" },
-        { region: "cn", label: "Token Plan", base_url: "https://token-plan-cn.xiaomimimo.com/anthropic", admin_url: "https://platform.xiaomimimo.com/#/console/api-keys" },
+        { region: "cn", label: "Token Plan", base_url: "https://token-plan-cn.xiaomimimo.com/anthropic", admin_url: "https://platform.xiaomimimo.com/#/console/plan-manage" },
       ],
     },
   },
@@ -249,12 +263,24 @@ export const providerPresets: ProviderPreset[] = [
     },
   },
   { kind: "kimi-code", group: "kimi", get name() { return i18next.t("preset.kimiCode"); }, icon: "kimi",
+    codex: {
+      plan: "Kimi Code", provider: "kimi-code", base_url: "https://api.kimi.com/coding/v1",
+      admin_url: "https://www.kimi.com/code/docs/third-party-tools/codex", model: "k3-256k",
+      endpoints: [
+        { region: "cn", base_url: "https://api.kimi.com/coding/v1", admin_url: "https://www.kimi.com/code/docs/third-party-tools/codex" },
+        { region: "global", base_url: "https://api.kimi.ai/coding/v1", admin_url: "https://www.kimi.com/code/docs/en/third-party-tools/codex" },
+      ],
+    },
     claude: {
       plan: "Kimi Code",
       provider: "kimi-code",
       base_url: "https://api.kimi.com/coding/",
       admin_url: "https://www.kimi.com/code/docs/third-party-tools/claude-code.html",
       model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://api.kimi.com/coding/", admin_url: "https://www.kimi.com/code/docs/third-party-tools/claude-code.html" },
+        { region: "global", base_url: "https://api.kimi.ai/coding/", admin_url: "https://www.kimi.com/code/docs/en/" },
+      ],
     },
   },
   { kind: "qwen", get name() { return i18next.t("preset.qwen"); }, icon: "qwen",
@@ -288,6 +314,10 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
       admin_url: "https://bailian.console.aliyun.com",
       model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic", admin_url: "https://bailian.console.aliyun.com" },
+        { region: "global", base_url: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic", admin_url: "https://modelstudio.console.alibabacloud.com/ap-southeast-1" },
+      ],
     },
   },
   { kind: "hunyuan", get name() { return i18next.t("preset.hunyuan"); }, icon: "hunyuan",
@@ -321,6 +351,10 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://api.lkeap.cloud.tencent.com/plan/anthropic",
       admin_url: "https://cloud.tencent.com/document/product/1823/130060",
       model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://api.lkeap.cloud.tencent.com/plan/anthropic", admin_url: "https://cloud.tencent.com/document/product/1823/130060" },
+        { region: "global", base_url: "https://tokenhub-intl.tencentcloudmaas.com/plan/anthropic", admin_url: "https://console.tencentcloud.com/tokenhub/tokenplan" },
+      ],
     },
   },
   { kind: "tencent-token-plan-enterprise", group: "hunyuan", get name() { return i18next.t("preset.tencentTokenPlanEnterprise"); }, icon: "hunyuan",
@@ -333,6 +367,14 @@ export const providerPresets: ProviderPreset[] = [
       endpoints: [
         { region: "cn", base_url: "https://tokenhub.tencentmaas.com/plan/v3", admin_url: "https://cloud.tencent.com/document/product/1823/130660" },
         { region: "global", base_url: "https://tokenhub-intl.tencentmaas.com/plan/v3", admin_url: "https://cloud.tencent.com/document/product/1823/130660" },
+      ],
+    },
+    claude: {
+      plan: "Token Plan Enterprise", provider: "Token_Plan_Ent", base_url: "https://tokenhub.tencentmaas.com/plan/anthropic",
+      admin_url: "https://cloud.tencent.com/document/product/1823/130659", model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://tokenhub.tencentmaas.com/plan/anthropic", admin_url: "https://cloud.tencent.com/document/product/1823/130659" },
+        { region: "global", base_url: "https://tokenhub-intl.tencentmaas.com/plan/anthropic", admin_url: "https://cloud.tencent.com/document/product/1823/130659" },
       ],
     },
   },
@@ -355,6 +397,11 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://ark.cn-beijing.volces.com/api/coding",
       admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey",
       model: "",
+      endpoints: [
+        { region: "cn", label: "Coding Plan", base_url: "https://ark.cn-beijing.volces.com/api/coding", admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey" },
+        { region: "cn", label: "Agent Plan", base_url: "https://ark.cn-beijing.volces.com/api/plan", admin_url: "https://console.volcengine.com/ark/region:cn-beijing/openManagement?advancedActiveKey=agentPlan" },
+        { region: "global", label: "Coding Plan", base_url: "https://ark.ap-southeast.bytepluses.com/api/coding", admin_url: "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey" },
+      ],
     },
   },
   { kind: "qianfan", get name() { return i18next.t("preset.qianfan"); }, icon: "baiducloud",
@@ -388,6 +435,10 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://api.siliconflow.cn/",
       admin_url: "https://cloud.siliconflow.cn/account/ak",
       model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://api.siliconflow.cn/", admin_url: "https://cloud.siliconflow.cn/account/ak" },
+        { region: "global", base_url: "https://api.siliconflow.com/", admin_url: "https://cloud.siliconflow.com/account/ak" },
+      ],
     },
   },
   { kind: "longcat", get name() { return i18next.t("preset.longcat"); }, icon: "longcat",
@@ -404,6 +455,66 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://api.x.ai/v1",
       admin_url: "https://console.x.ai/team/default/api-keys",
       model: "grok-4.7",
+      endpoints: [
+        { region: "global", base_url: "https://api.x.ai/v1", admin_url: "https://console.x.ai/team/default/api-keys" },
+        { region: "us", base_url: "https://us.api.x.ai/v1", admin_url: "https://console.x.ai/team/default/api-keys" },
+      ],
+    },
+  },
+  { kind: "opencode-zen", group: "opencode", name: "OpenCode", icon: "opencode",
+    codex: {
+      plan: "API", provider: "opencode-zen", base_url: "https://opencode.ai/zen/v1",
+      admin_url: "https://opencode.ai/zen", model: "gpt-5.6-sol",
+    },
+    claude: {
+      plan: "API", provider: "opencode-zen", base_url: "https://opencode.ai/zen",
+      admin_url: "https://opencode.ai/zen", model: "",
+    },
+  },
+  { kind: "qwen-api", group: "qwen", get name() { return i18next.t("preset.qwen"); }, icon: "qwen",
+    codex: {
+      plan: "API", provider: "qwen-api", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      admin_url: "https://bailian.console.aliyun.com", model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", admin_url: "https://bailian.console.aliyun.com" },
+        { region: "sg", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", admin_url: "https://modelstudio.console.alibabacloud.com/ap-southeast-1" },
+        { region: "us", base_url: "https://dashscope-us.aliyuncs.com/compatible-mode/v1", admin_url: "https://modelstudio.console.alibabacloud.com/us-east-1" },
+        { region: "hk", base_url: "https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1", admin_url: "https://bailian.console.aliyun.com" },
+      ],
+    },
+    claude: {
+      plan: "API", provider: "qwen-api", base_url: "https://dashscope.aliyuncs.com/apps/anthropic",
+      admin_url: "https://bailian.console.aliyun.com", model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://dashscope.aliyuncs.com/apps/anthropic", admin_url: "https://bailian.console.aliyun.com" },
+        { region: "sg", base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic", admin_url: "https://modelstudio.console.alibabacloud.com/ap-southeast-1" },
+        { region: "us", base_url: "https://dashscope-us.aliyuncs.com/apps/anthropic", admin_url: "https://modelstudio.console.alibabacloud.com/us-east-1" },
+        { region: "hk", base_url: "https://cn-hongkong.dashscope.aliyuncs.com/apps/anthropic", admin_url: "https://bailian.console.aliyun.com" },
+      ],
+    },
+  },
+  { kind: "doubao-api", group: "doubao", get name() { return i18next.t("preset.doubao"); }, icon: "volcengine",
+    codex: {
+      plan: "API", provider: "doubao-api", base_url: "https://ark.cn-beijing.volces.com/api/v3",
+      admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey", model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://ark.cn-beijing.volces.com/api/v3", admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey" },
+        { region: "global", base_url: "https://ark.ap-southeast.bytepluses.com/api/v3", admin_url: "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey" },
+      ],
+    },
+    claude: {
+      plan: "API", provider: "doubao-api", base_url: "https://ark.cn-beijing.volces.com/api/compatible",
+      admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey", model: "",
+      endpoints: [
+        { region: "cn", base_url: "https://ark.cn-beijing.volces.com/api/compatible", admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey" },
+        { region: "global", base_url: "https://ark.ap-southeast.bytepluses.com/api/compatible", admin_url: "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey" },
+      ],
+    },
+  },
+  { kind: "tencent-coding-plan", group: "hunyuan", get name() { return i18next.t("preset.hunyuan"); }, icon: "tencentcloud",
+    claude: {
+      plan: "Coding Plan", provider: "tencent-coding-plan", base_url: "https://api.lkeap.cloud.tencent.com/coding/anthropic",
+      admin_url: "https://cloud.tencent.com/document/product/1823/130092", model: "",
     },
   },
 ];
@@ -438,17 +549,18 @@ export function presetConnections(preset: ClientPreset, presets: readonly Client
   ).map((endpoint) => ({ ...endpoint, kind: item.kind, label: endpoint.label ?? item.plan ?? "API" })));
 }
 
-/** 创建入口按套餐拆分，区域留在入口内；原 kind 继续用于模板读取和保存。 */
+/** 创建入口按套餐拆分；声明 combine_plans 的供应商保留单入口，在版本内切换计费方式。原 kind 继续用于模板读取和保存。 */
 export function presetEntries(presets: readonly ClientPreset[]) {
   return presets.filter((preset) => !preset.group).flatMap((primary) => {
     const connections = presetConnections(primary, presets);
-    const plans = [...new Set(connections.map((connection) => connection.label))];
+    const combined = Boolean(primary.combine_plans);
+    const plans = combined ? ["API"] : [...new Set(connections.map((connection) => connection.label))];
     return plans.map((plan) => {
-      const endpoints = connections.filter((connection) => connection.label === plan);
+      const endpoints = combined ? connections : connections.filter((connection) => connection.label === plan);
       const source = presets.find((preset) => preset.kind === endpoints[0].kind)!;
       return {
         key: plans.length > 1 ? `${primary.kind}:${plan}` : primary.kind,
-        get name() { return primary.plan || plan !== "API" || plans.length > 1 ? `${primary.name} · ${plan}` : primary.name; },
+        get name() { return plan !== "API" || plans.length > 1 ? `${primary.name} · ${plan === "API" ? i18next.t("profiles:edit.payAsYouGo") : plan}` : primary.name; },
         preset: {
           ...source,
           group: undefined,
@@ -463,9 +575,10 @@ export function presetEntries(presets: readonly ClientPreset[]) {
   });
 }
 
-/** 分类数量与列表筛选共用；账号登录、自定义只在全部中显示。 */
+/** 分类数量、筛选和全部视图分组共用；自定义只在全部中显示。 */
 export function presetEntryCategory(preset: ClientPreset) {
-  return !preset.base_url ? null : preset.plan && preset.plan !== "API" ? "plans" : "api";
+  if (!preset.base_url) return preset.kind === "custom" ? null : "accounts";
+  return preset.combine_plans || preset.plan && preset.plan !== "API" ? "plans" : "api";
 }
 
 /** 入口默认名：非按量套餐带套餐名后缀；区域由版本滑块展示，不进名称。 */
@@ -483,7 +596,7 @@ export function claudePresetByKind(kind: string | null | undefined): ClientPrese
 
 /** 哪些内置供应商自带静态模型目录档。models.json 槽位的存在判定统一走这里。 */
 export const CODEX_BUILTINS_WITH_CATALOG: ReadonlySet<string> = new Set([
-  "deepseek", "minimax", "zhipu", "opencode", "mimo",
+  "deepseek", "minimax", "zhipu", "opencode", "mimo", "kimi-code",
 ]);
 
 export function codexBuiltinHasCatalog(kind: string | null | undefined): boolean {

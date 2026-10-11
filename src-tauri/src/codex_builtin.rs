@@ -38,6 +38,16 @@ pub const DOUBAO_CONFIG: &[u8] = include_bytes!("../assets/builtin/doubao.toml")
 pub const QIANFAN_CONFIG: &[u8] = include_bytes!("../assets/builtin/qianfan.toml");
 pub const XAI_CONFIG: &[u8] = include_bytes!("../assets/builtin/xai.toml");
 
+pub const KIND_KIMI_CODE: &str = "kimi-code";
+pub const KIMI_CODE_CONFIG: &[u8] = include_bytes!("../assets/builtin/kimi-code.toml");
+pub const KIND_QWEN_API: &str = "qwen-api";
+pub const QWEN_API_CONFIG: &[u8] = include_bytes!("../assets/builtin/qwen-api.toml");
+pub const KIND_DOUBAO_API: &str = "doubao-api";
+pub const DOUBAO_API_CONFIG: &[u8] = include_bytes!("../assets/builtin/doubao-api.toml");
+pub const KIND_OPENCODE_ZEN: &str = "opencode-zen";
+pub const OPENCODE_ZEN_CONFIG: &[u8] = include_bytes!("../assets/builtin/opencode-zen.toml");
+pub const KIMI_CODE_MODELS: &[u8] = include_bytes!("../assets/builtin/kimi-code-models.json");
+
 pub struct BuiltinTemplate {
     pub kind: &'static str,
     pub name: &'static str,
@@ -52,7 +62,7 @@ pub struct BuiltinTemplate {
     pub insert_catalog_line: bool,
 }
 
-pub const BUILTINS: [BuiltinTemplate; 14] = [
+pub const BUILTINS: [BuiltinTemplate; 18] = [
     BuiltinTemplate {
         kind: KIND_DEEPSEEK,
         name: "DeepSeek",
@@ -118,7 +128,7 @@ pub const BUILTINS: [BuiltinTemplate; 14] = [
     // 小米 MiMo：官方支持 Responses API 并提供 Codex 配置文档，config 与
     // model-catalogs.json 均取自官方示例（web_search 按官方要求禁用；目录
     // 不带 apply_patch_tool_type——该网关拒绝 freeform 自定义工具）。
-    // 默认走按量付费端点；Token Plan 用户需自行改 base_url（token-plan-cn.xiaomimimo.com/v1）
+    // 默认按量付费，Token Plan 与区域选择由前端预设写入。
     BuiltinTemplate {
         kind: KIND_MIMO,
         name: "小米 MiMo",
@@ -195,6 +205,42 @@ pub const BUILTINS: [BuiltinTemplate; 14] = [
         name: "xAI",
         icon: "xai",
         config: XAI_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_KIMI_CODE,
+        name: "Kimi Code",
+        icon: "kimi",
+        config: KIMI_CODE_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: Some(("models.json", KIMI_CODE_MODELS)),
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_QWEN_API,
+        name: "Qwen",
+        icon: "qwen",
+        config: QWEN_API_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_DOUBAO_API,
+        name: "Volcengine",
+        icon: "volcengine",
+        config: DOUBAO_API_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_OPENCODE_ZEN,
+        name: "OpenCode Zen",
+        icon: "opencode",
+        config: OPENCODE_ZEN_CONFIG,
         placeholder: Some("<YOUR_API_KEY>".as_bytes()),
         catalog: None,
         insert_catalog_line: false,
@@ -469,17 +515,9 @@ mod tests {
     }
 
     #[test]
-    fn new_responses_presets_are_wire_responses_without_catalog() {
-        for kind in [
-            KIND_KIMI,
-            KIND_QWEN,
-            KIND_HUNYUAN,
-            KIND_TENCENT_TOKEN_PLAN_ENTERPRISE,
-            KIND_DOUBAO,
-        ] {
-            let t = template(kind).unwrap();
-            assert_eq!(t.catalog, None, "{kind} 首版不内置静态模型目录");
-            assert!(!t.insert_catalog_line);
+    fn api_presets_render_responses_configs_and_replace_keys() {
+        for t in BUILTINS.iter().filter(|t| t.placeholder.is_some()) {
+            let kind = t.kind;
             let cfg = String::from_utf8_lossy(t.config);
             assert!(
                 cfg.contains("wire_api = \"responses\""),
@@ -504,6 +542,14 @@ mod tests {
                 "{kind} 占位符应被替换"
             );
             assert!(rendered.windows(b"sk-test".len()).any(|w| w == b"sk-test"));
+            if let Some((_, bytes)) = t.catalog {
+                let catalog: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                for model in catalog["models"].as_array().unwrap() {
+                    assert!(model["slug"].is_string(), "{kind}");
+                    assert!(model["base_instructions"].is_string(), "{kind}");
+                    assert!(model["supports_reasoning_summaries"].is_boolean(), "{kind}");
+                }
+            }
         }
     }
 
