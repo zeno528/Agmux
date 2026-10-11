@@ -24,6 +24,7 @@ pub const MIMO_MODELS: &[u8] = include_bytes!("../assets/builtin/mimo-models.jso
 pub const KIND_KIMI: &str = "kimi";
 pub const KIND_QWEN: &str = "qwen";
 pub const KIND_HUNYUAN: &str = "hunyuan";
+pub const KIND_TENCENT_TOKEN_PLAN_ENTERPRISE: &str = "tencent-token-plan-enterprise";
 pub const KIND_DOUBAO: &str = "doubao";
 pub const KIND_QIANFAN: &str = "qianfan";
 pub const KIND_XAI: &str = "xai";
@@ -31,6 +32,8 @@ pub const KIND_XAI: &str = "xai";
 pub const KIMI_CONFIG: &[u8] = include_bytes!("../assets/builtin/kimi.toml");
 pub const QWEN_CONFIG: &[u8] = include_bytes!("../assets/builtin/qwen.toml");
 pub const HUNYUAN_CONFIG: &[u8] = include_bytes!("../assets/builtin/hunyuan.toml");
+pub const TENCENT_TOKEN_PLAN_ENTERPRISE_CONFIG: &[u8] =
+    include_bytes!("../assets/builtin/tencent-token-plan-enterprise.toml");
 pub const DOUBAO_CONFIG: &[u8] = include_bytes!("../assets/builtin/doubao.toml");
 pub const QIANFAN_CONFIG: &[u8] = include_bytes!("../assets/builtin/qianfan.toml");
 pub const XAI_CONFIG: &[u8] = include_bytes!("../assets/builtin/xai.toml");
@@ -49,7 +52,7 @@ pub struct BuiltinTemplate {
     pub insert_catalog_line: bool,
 }
 
-pub const BUILTINS: [BuiltinTemplate; 13] = [
+pub const BUILTINS: [BuiltinTemplate; 14] = [
     BuiltinTemplate {
         kind: KIND_DEEPSEEK,
         name: "DeepSeek",
@@ -146,13 +149,22 @@ pub const BUILTINS: [BuiltinTemplate; 13] = [
         catalog: None,
         insert_catalog_line: false,
     },
-    // 腾讯混元：仅 TokenHub 按量 Hy3/Hy4 原生 Responses，无状态需禁 store；
-    // 订阅 Coding Plan 只走 chat（Codex 已移除 chat wire），不可用。
+    // 腾讯混元按量 Hy3/Hy4 原生 Responses，无状态需禁 store。
     BuiltinTemplate {
         kind: KIND_HUNYUAN,
         name: "腾讯混元",
         icon: "hunyuan",
         config: HUNYUAN_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    // Token Plan 企业版支持 Responses；个人版仍只支持 chat，不能共用其端点。
+    BuiltinTemplate {
+        kind: KIND_TENCENT_TOKEN_PLAN_ENTERPRISE,
+        name: "腾讯云 Token Plan 企业版",
+        icon: "hunyuan",
+        config: TENCENT_TOKEN_PLAN_ENTERPRISE_CONFIG,
         placeholder: Some("<YOUR_API_KEY>".as_bytes()),
         catalog: None,
         insert_catalog_line: false,
@@ -458,7 +470,13 @@ mod tests {
 
     #[test]
     fn new_responses_presets_are_wire_responses_without_catalog() {
-        for kind in [KIND_KIMI, KIND_QWEN, KIND_HUNYUAN, KIND_DOUBAO] {
+        for kind in [
+            KIND_KIMI,
+            KIND_QWEN,
+            KIND_HUNYUAN,
+            KIND_TENCENT_TOKEN_PLAN_ENTERPRISE,
+            KIND_DOUBAO,
+        ] {
             let t = template(kind).unwrap();
             assert_eq!(t.catalog, None, "{kind} 首版不内置静态模型目录");
             assert!(!t.insert_catalog_line);
@@ -472,6 +490,14 @@ mod tests {
                 "{kind} 应遵循项目 experimental_bearer_token 惯例"
             );
             let rendered = t.render_config(Some("sk-test")).unwrap();
+            let parsed = String::from_utf8_lossy(&rendered)
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap();
+            let provider = parsed["model_provider"].as_str().unwrap();
+            assert_eq!(
+                parsed["model_providers"][provider]["wire_api"].as_str(),
+                Some("responses")
+            );
             let ph = t.placeholder.expect("新模板必须有密钥占位符");
             assert!(
                 !rendered.windows(ph.len()).any(|w| w == ph),

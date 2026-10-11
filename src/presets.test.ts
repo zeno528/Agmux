@@ -1,8 +1,30 @@
 import { describe, expect, it } from "vitest";
 import i18next from "i18next";
-import { codexPresets, claudePresets, clientPresets, codexCustomCatalogTemplate, providerPresets, type ProviderPreset } from "./presets";
+import { codexPresets, claudePresets, clientPresets, codexCustomCatalogTemplate, providerPresets, presetEntries, presetEntryCategory, type ProviderPreset } from "./presets";
 
 describe("供应商目录的客户端边界", () => {
+  it.each([{ presets: codexPresets }, { presets: claudePresets }])("套餐入口标题完整，套餐与普通 API 分类准确", ({ presets }) => {
+    const entries = presetEntries(presets);
+    for (const entry of entries) {
+      if (entry.preset.plan !== "API") {
+        expect(entry.name).toContain(` · ${entry.preset.plan}`);
+        expect(presetEntryCategory(entry.preset)).toBe("plans");
+      }
+    }
+    for (const [kind, plan] of [["minimax", "M Plan"], ["zhipu", "Coding Plan"], ["qwen", "Token Plan"]]) {
+      expect(entries.find((entry) => entry.preset.kind === kind)?.preset.plan).toBe(plan);
+    }
+    for (const kind of ["kimi", "hunyuan"]) {
+      const entry = entries.find((entry) => entry.preset.kind === kind && entry.preset.plan === "API");
+      expect(entry, `${kind} 的普通 API 不能误标为会员套餐`).toBeDefined();
+      expect(presetEntryCategory(entry!.preset)).toBe("api");
+    }
+    for (const kind of ["hunyuan", "qianfan"]) {
+      const entry = entries.find((item) => item.preset.kind === kind && item.preset.plan === "API")!;
+      expect(entry.name).toContain(" · API");
+    }
+  });
+
   it("支持获取模型列表的四个 Codex 预设不预填模型 ID", () => {
     for (const kind of ["chatgpt", "deepseek", "zhipu", "minimax"]) {
       expect(codexPresets.find((preset) => preset.kind === kind)?.model).toBe("");
@@ -121,6 +143,7 @@ describe("codexPresets 新增 responses 供应商", () => {
       kimi: "https://api.moonshot.cn/v1",
       qwen: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
       hunyuan: "https://tokenhub.tencentmaas.com/v1",
+      "tencent-token-plan-enterprise": "https://tokenhub.tencentmaas.com/plan/v3",
       doubao: "https://ark.cn-beijing.volces.com/api/coding/v3",
     };
     for (const [kind, base] of Object.entries(expected)) {
@@ -134,7 +157,7 @@ describe("codexPresets 新增 responses 供应商", () => {
 
 describe("codexPresets 双区域端点档", () => {
   it("仅官方双端点供应商携带 cn+global 档，且首项与默认 base_url/admin_url 一致", () => {
-    const dual = ["doubao", "hunyuan", "kimi", "minimax", "qwen", "zhipu"];
+    const dual = ["doubao", "hunyuan", "kimi", "minimax", "qwen", "tencent-token-plan-enterprise", "zhipu"];
     const carried = codexPresets.filter((p) => p.endpoints).map((p) => p.kind).sort();
     expect(carried, "只有官方文档确认的双区域供应商才带端点档").toEqual(dual);
 
@@ -175,7 +198,7 @@ describe("claudePresets Claude Code 模板", () => {
       longcat: "https://api.longcat.chat/anthropic",
       "kimi-code": "https://api.kimi.com/coding/",
       siliconflow: "https://api.siliconflow.cn/",
-      "qianfan-coding-plan": "https://qianfan.cloud.baidu.com/api/coding",
+      "qianfan-coding-plan": "https://qianfan.baidubce.com/anthropic/coding",
     };
     for (const [kind, baseUrl] of Object.entries(expected)) {
       const preset = claudePresets.find((item) => item.kind === kind);

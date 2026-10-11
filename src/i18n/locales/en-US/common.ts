@@ -60,6 +60,7 @@ export default {
     kimiCode: "Kimi Code",
     qwenCodingPlan: "Alibaba Cloud Bailian Coding Plan",
     tencentTokenPlan: "Tencent Cloud General Token Plan",
+    tencentTokenPlanEnterprise: "Tencent Cloud Token Plan Enterprise",
     qianfanCodingPlan: "Baidu Qianfan Coding Plan",
     siliconflow: "SiliconFlow",
     longcat: "LongCat",

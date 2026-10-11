@@ -810,12 +810,12 @@ body:has(.app-dialog-overlay) .window-control-button {
   overflow: hidden;
 }
 
-/* 按钮周围的留白属于操作区，点偏时不触发整卡编辑。 */
+/* 按钮周围留白属于操作区；左侧缩窄，负 margin 同步抵消 padding，内容位置不变。 */
 .profile-list .profile-card-actions {
   align-self: stretch;
   cursor: default;
-  margin: -1.125rem -1.25rem;
-  padding: 1.125rem 1.25rem;
+  margin: -1.125rem -1.25rem -1.125rem calc(var(--gap-section) * -0.25);
+  padding: 1.125rem 1.25rem 1.125rem calc(var(--gap-section) * 0.25);
 }
 
 /* 操作行的模型/推理档位信息与常显按钮组保持间距 */
@@ -1346,9 +1346,8 @@ body.drag-active * {
   padding-bottom: 0;
 }
 
-/* 平铺网格：列数随可用宽度自适应（auto-fill），不写断点阶梯——阶梯让密度随窗口
-   跳变，且末行按固定列数留空。图标选择页（图标主导）与预设网格（图标+名称）共用，
-   行距与列宽策略只在此定义，页面不得内联重写。 */
+/* 平铺网格默认随可用宽度自适应（auto-fill），供应商选择按下方窗口状态规则固定列数。
+   图标选择页与供应商网格共用基础行距；列宽策略集中在此，页面不内联重写。 */
 .apple-tile-grid {
   display: grid;
   gap: 0.375rem;
@@ -1358,6 +1357,16 @@ body.drag-active * {
 /* 图标 + 名称的预设行需要更宽的最小列（默认值服务图标主导的纯方块网格） */
 .apple-tile-grid--labeled {
   grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+}
+
+/* 供应商网格普通窗口两列，视口超过 96rem（最大化、全屏或手动拉宽）时四列。 */
+.apple-tile-grid--providers {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 96rem) {
+  .apple-tile-grid--providers {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* 结构性防呆：首卡片间距只来自上方 padding-top（--gap-page），任何首子元素
@@ -1652,6 +1661,9 @@ body.drag-active * {
 .app-segmented-control > button:hover { background: transparent; color: var(--text-primary); }
 .app-segmented-control > button:is([aria-pressed="true"], [aria-selected="true"]) { color: var(--text-primary); }
 .app-segmented-control > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 手动输入的供应商地址不冒充已选官方端点；保留分段按钮以便恢复预设。 */
+.provider-preset-controls[data-custom="true"] .app-segmented-control::before { opacity: 0; }
 
 .apple-action-button {
   align-items: center;

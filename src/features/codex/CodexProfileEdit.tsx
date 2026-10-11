@@ -12,7 +12,7 @@ import { codexEffortLevels } from "../../components/ReasoningEffortSlider";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import { DiagnosticsChip } from "../../components/DiagnosticsChip";
 import EndpointField from "../../components/EndpointField";
-import PresetGrid from "../../components/PresetGrid";
+import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
 import { ProviderIdentityFields, ProviderSecretField } from "../../components/ProviderFields";
 import {
   balanceQueryProviders,
@@ -20,6 +20,9 @@ import {
   codexPresets,
   codexCustomCatalogTemplate,
   codexCustomConfigTemplate,
+  presetConnectionName,
+  type ClientPreset,
+  type PresetConnection,
 } from "../../presets";
 import {
   chatgptModelOptions,
@@ -58,7 +61,19 @@ function normalizeNewlines(text: string) {
   return text.replace(/\r\n/g, "\n");
 }
 
-export default function CodexProfileEdit({ profile, create = false, initialDetail = null, authStatus, authStatusReady, onBack, onChanged, onManageChatgptAccounts }: CodexProfileEditProps) {
+export default function CodexProfileEdit(props: CodexProfileEditProps) {
+  return props.create ? <ProviderCreate presets={codexPresets} onBack={props.onBack}>
+    {(preset, onChangeProvider) => <CodexProfileEditor {...props} initialPreset={preset} onChangeProvider={onChangeProvider} />}
+  </ProviderCreate> : <CodexProfileEditor {...props} />;
+}
+
+function CodexProfileEditor({
+  profile, create = false, initialDetail = null, authStatus, authStatusReady,
+  onBack, onChanged, onManageChatgptAccounts, initialPreset, onChangeProvider,
+}: CodexProfileEditProps & {
+  initialPreset?: ClientPreset;
+  onChangeProvider?: () => void;
+}) {
   const feedback = useFeedback();
   const { t } = useTranslation("profiles");
   const initialConfigText = useMemo(
@@ -85,7 +100,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
   const authAccounts = authStatus.accounts;
   const [boundAccountId, setBoundAccountId] = useState<string | null>(() => initialDetail?.account_id ?? null);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(profile?.icon ?? null);
-  const [presetKind, setPresetKind] = useState(create ? "custom" : "");
+  const [presetKind, setPresetKind] = useState(initialPreset?.kind ?? "");
   const [activeTab, setActiveTab] = useState<EditTab>("config");
   const [configText, setConfigText] = useState(() => initialConfigText);
   const [catalogText, setCatalogText] = useState(() => initialDetail?.raw_catalog ?? initialDetail?.catalog_content ?? "");
@@ -111,12 +126,10 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const editorMinLines = Math.max(configText.split(/\r?\n/).length, catalogText.split(/\r?\n/).length, authText.split(/\r?\n/).length);
 
-  const selectedPreset = useMemo(() => codexPresets.find((preset) => preset.kind === presetKind) ?? null, [presetKind]);
-  // 双区域供应商的端点档：创建态取所选预设；编辑态 profile 不携带预设 kind，按 provider id 反查
-  // （5 家双端点供应商的 provider id 互不相同）
-  const presetEndpoints = (create
-    ? selectedPreset?.endpoints
-    : codexPresets.find((item) => item.provider != null && item.provider === detail?.provider)?.endpoints) ?? null;
+  const selectedPreset = initialPreset ?? null;
+  // 创建态由分段控件选择端点；已有配置仍按 provider id 反查地址输入框的端点档。
+  const presetEndpoints = (!create
+    ? codexPresets.find((item) => item.provider != null && item.provider === detail?.provider)?.endpoints : null) ?? null;
   // 端点地址输入：双区域档（EndpointField combobox）与普通输入共用同一受控值，只差形态
   const baseUrlField = (className: string) => (
     <input className={className} placeholder="https://api.example.com/v1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
@@ -184,7 +197,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
       <span className="whitespace-nowrap font-medium">{t("edit.format")}</span>
     </button>
   );
-  const canSave = (!create || (isCustom ? Boolean(configText.trim()) : Boolean(selectedPreset))) && (!isOfficial || !authPreviewOnly || authPreviewReady);
+  const canSave = (!create || Boolean(presetFragment) && (isCustom ? Boolean(configText.trim()) : Boolean(selectedPreset))) && (!isOfficial || !authPreviewOnly || authPreviewReady);
   const accountOptions = [
     { label: t("card.authDesktop"), value: "" },
     ...authAccounts.map((account) => ({ label: account.login, value: account.id })),
@@ -234,21 +247,14 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
   }, [authText, authSource]);
 
   useEffect(() => {
+    if (create && initialized.current) return;
     let cancelled = false;
     void (async () => {
       if (create) {
         let initialMcpSection = "";
         try { initialMcpSection = (await api.codexGetMcpSectionToml()).trim(); setMcpSection(initialMcpSection); } catch { /* backend falls back on save */ }
-        setPresetKind("custom");
-        setName("");
-        setDescription("");
-        setSelectedIcon("custom");
-        setConfigText(withMcpSection(codexCustomConfigTemplate, initialMcpSection));
-        setPresetFragment(codexCustomConfigTemplate);
-        setCatalogText(codexCustomCatalogTemplate);
-        setConfigInitial(withMcpSection(codexCustomConfigTemplate, initialMcpSection));
-        setCatalogInitial(codexCustomCatalogTemplate);
-        setModelValue("");
+        if (cancelled) return;
+        await selectPreset(initialMcpSection);
       } else if (profile) {
         try {
           const loaded = await api.codexGetProfile(profile.id);
@@ -304,6 +310,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
   }, []);
 
   useEffect(() => {
+    if (create && catalogDirty) return;
     if (!create || !presetKind || isCustom) {
       if (create && !isCustom) setCatalogText("");
       return;
@@ -316,7 +323,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
       setCatalogText(text ?? "");
       setCatalogInitial(text ?? "");
     }).catch(() => setCatalogText(""));
-  }, [create, isCustom, presetKind, selectedPreset]);
+  }, [create, isCustom, presetKind]);
 
   useEffect(() => {
     if (!initialized.current) return;
@@ -361,10 +368,11 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
     if (create && configText !== liveConfigFragment) setConfigTouched(true);
   }, [configText, create, liveConfigFragment]);
 
-  const selectPreset = async (kind: string) => {
+  const selectPreset = async (currentMcpSection = mcpSection) => {
+    if (!initialPreset) return;
+    const preset = initialPreset;
+    const kind = preset.kind;
     modelListRequest.current++;
-    const preset = codexPresets.find((item) => item.kind === kind);
-    if (!preset) return;
     // 模板取回后才一次性更新全部状态：避免"表单已切、configText 未切"的中间渲染
     // 触发 configText !== liveConfigFragment 的 configTouched 误判
     const requestId = ++presetTemplateRequest.current;
@@ -372,10 +380,11 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
     try {
       template = kind === "custom" ? codexCustomConfigTemplate : await api.codexGetBuiltinConfig(kind);
     } catch (error) {
-      if (requestId === presetTemplateRequest.current) feedback.error(t("edit.errorTemplateRead", { error: String(error) }));
+      if (requestId === presetTemplateRequest.current) setLoadError(t("edit.errorTemplateRead", { error: String(error) }));
       return;
     }
     if (requestId !== presetTemplateRequest.current) return;
+    setLoadError("");
     setPresetKind(kind);
     // 重置为该预设的默认值：支持余额查询的预设默认开启（与 supportsBalance 渲染条件同一规则）
     setShowBalance(kind === "chatgpt" || balanceQueryProviders.has(preset.provider ?? ""));
@@ -384,10 +393,11 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
     setCatalogTouched(false);
     setAuthText("");
     setAuthInitial("");
-    setName(kind === "custom" ? "" : preset.name);
+    setName(kind === "custom" ? "" : presetConnectionName(preset));
     setDescription("");
     setBaseUrl(preset.base_url);
     setApiKey("");
+    setShowApiKey(false);
     setModelValue(kind === "custom" ? "" : preset.model);
     setFetchedModels([]);
     fetchedModelEfforts.current = {};
@@ -395,11 +405,25 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
     setAdminUrl(preset.admin_url ?? "");
     setSelectedIcon(preset.icon);
     setPresetFragment(template);
-    const nextConfig = withMcpSection(patchProviderFields(template, preset.base_url, ""), mcpSection);
+    if (kind === "custom") {
+      setCatalogText(codexCustomCatalogTemplate);
+      setCatalogInitial(codexCustomCatalogTemplate);
+    }
+    const nextConfig = withMcpSection(patchProviderFields(template, preset.base_url, ""), currentMcpSection);
     setConfigText(nextConfig);
     setConfigInitial(nextConfig);
     advanced.syncFromConfig(nextConfig, kind === "chatgpt");
     setActiveTab("config");
+  };
+
+  const selectConnection = (connection: PresetConnection) => {
+    setBaseUrl(connection.base_url);
+    setAdminUrl(connection.admin_url ?? "");
+    modelListRequest.current++;
+    setFetchingModels(false);
+    setFetchedModels([]);
+    fetchedModelEfforts.current = {};
+    fetchedModelDefaults.current = {};
   };
 
   const formatCurrentDocument = async () => {
@@ -578,15 +602,19 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
       }
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
-        <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={onBack}><ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle")}</span></button>
+        <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={create ? onChangeProvider : onBack}><ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle")}</span></button>
       </div>
       <div className="apple-edit-content">
-        {loadError ? <p className="muted mt-4 text-sm">{loadError}</p> : null}
+        {loadError ? <p className="muted mt-4 text-sm">{loadError}{create ? <button type="button" className="apple-inline-btn ml-2" onClick={() => void selectPreset()}>{t("edit.retryTemplate")}</button> : null}</p> : null}
         <div className="apple-edit-surface">
-          {create ? <PresetGrid presets={codexPresets} selectedKind={presetKind} onSelect={(kind) => void selectPreset(kind)} title={t("edit.selectProvider")} /> : null}
+          {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
+            disabled={saving || !presetFragment && !loadError} onChangeProvider={onChangeProvider} onSelect={selectConnection} /> : null}
+          {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
+            {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
+          </div> : <>
           <div className="apple-panel-section">
             <ProviderIdentityFields
-              idPrefix="profile" name={name} description={description} icon={selectedIcon}
+              idPrefix={create ? `profile-${initialPreset!.kind}-${initialPreset!.plan?.replace(/ /g, "-")}` : "profile"} name={name} description={description} icon={selectedIcon}
               iconName={detail?.name ?? name} onIcon={() => setPickingIcon(true)}
               onName={setName} onDescription={setDescription}
               labels={{
@@ -674,6 +702,7 @@ export default function CodexProfileEdit({ profile, create = false, initialDetai
               <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
               </div>
             </div>
+          </>}
         </div>
       </div>
       <div className="apple-edit-toolbar apple-edit-toolbar--footer"><DiagnosticsChip diagnostics={editorDiagnostics} onFocusFirst={() => editorRef.current?.focusFirstDiagnostic()} /><button type="button" className="apple-action-button" onClick={onBack}>{t("dialog.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={saving || !canSave} onClick={() => void save()}><Save className="h-4 w-4" strokeWidth={2} />{saving ? t("edit.saving") : t("dialog.save")}</button></div>

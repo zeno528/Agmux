@@ -14,6 +14,9 @@ export interface PresetEndpoint {
 
 export interface ClientPreset {
   kind: string;
+  /** 同一供应商的其他套餐指向主条目；仅用于创建页分组，不改变保存的 kind。 */
+  group?: string;
+  plan?: string;
   name: string;
   provider: string | null;
   icon: string;
@@ -90,9 +93,9 @@ export const codexCustomCatalogTemplate = `{
 
 // 共享身份信息；只声明实际支持的客户端，每边独立填写地址、模型和区域端点。
 // 中文展示名继续用 getter，避免语言切换后名称停留在模块加载时的语言。
-export interface ProviderPreset extends Pick<ClientPreset, "kind" | "name" | "icon"> {
-  codex?: Omit<ClientPreset, "kind" | "name" | "icon">;
-  claude?: Omit<ClientPreset, "kind" | "name" | "icon">;
+export interface ProviderPreset extends Pick<ClientPreset, "kind" | "group" | "name" | "icon"> {
+  codex?: Omit<ClientPreset, "kind" | "group" | "name" | "icon">;
+  claude?: Omit<ClientPreset, "kind" | "group" | "name" | "icon">;
 }
 
 export const providerPresets: ProviderPreset[] = [
@@ -133,8 +136,10 @@ export const providerPresets: ProviderPreset[] = [
       model: "",
     },
   },
+  // M Plan 与按量 API 共用端点，套餐计费由订阅 Key 区分。
   { kind: "minimax", name: "MiniMax", icon: "minimax",
     codex: {
+      plan: "M Plan",
       provider: "minimax",
       base_url: "https://api.minimax.cn/v1",
       admin_url: "https://platform.minimax.cn",
@@ -145,6 +150,7 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
     claude: {
+      plan: "M Plan",
       provider: "minimax",
       base_url: "https://api.minimax.cn/anthropic",
       admin_url: "https://platform.minimax.cn",
@@ -157,6 +163,7 @@ export const providerPresets: ProviderPreset[] = [
   },
   { kind: "zhipu", get name() { return i18next.t("preset.zhipu"); }, icon: "zhipu",
     codex: {
+      plan: "Coding Plan",
       provider: "ZAI",
       base_url: "https://open.bigmodel.cn/api/v1",
       admin_url: "https://open.bigmodel.cn",
@@ -167,6 +174,7 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
     claude: {
+      plan: "Coding Plan",
       provider: "ZAI",
       base_url: "https://open.bigmodel.cn/api/anthropic",
       admin_url: "https://open.bigmodel.cn",
@@ -179,9 +187,10 @@ export const providerPresets: ProviderPreset[] = [
   },
   { kind: "opencode", name: "OpenCode", icon: "opencode",
     codex: {
+      plan: "Go",
       provider: "opencode-go",
       base_url: "https://opencode.ai/zen/go/v1",
-      admin_url: null,
+      admin_url: "https://opencode.ai/go",
       model: "grok-4.6",
     },
   },
@@ -239,8 +248,9 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
   },
-  { kind: "kimi-code", get name() { return i18next.t("preset.kimiCode"); }, icon: "kimi",
+  { kind: "kimi-code", group: "kimi", get name() { return i18next.t("preset.kimiCode"); }, icon: "kimi",
     claude: {
+      plan: "Kimi Code",
       provider: "kimi-code",
       base_url: "https://api.kimi.com/coding/",
       admin_url: "https://www.kimi.com/code/docs/third-party-tools/claude-code.html",
@@ -249,6 +259,7 @@ export const providerPresets: ProviderPreset[] = [
   },
   { kind: "qwen", get name() { return i18next.t("preset.qwen"); }, icon: "qwen",
     codex: {
+      plan: "Token Plan",
       provider: "Model_Studio_Token_Plan_Personal",
       base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
       admin_url: "https://bailian.console.aliyun.com",
@@ -259,6 +270,7 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
     claude: {
+      plan: "Token Plan",
       provider: "Model_Studio_Token_Plan_Personal",
       base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
       admin_url: "https://bailian.console.aliyun.com",
@@ -269,8 +281,9 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
   },
-  { kind: "qwen-coding-plan", get name() { return i18next.t("preset.qwenCodingPlan"); }, icon: "qwen",
+  { kind: "qwen-coding-plan", group: "qwen", get name() { return i18next.t("preset.qwenCodingPlan"); }, icon: "qwen",
     claude: {
+      plan: "Coding Plan",
       provider: "Model_Studio_Coding_Plan",
       base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
       admin_url: "https://bailian.console.aliyun.com",
@@ -279,6 +292,7 @@ export const providerPresets: ProviderPreset[] = [
   },
   { kind: "hunyuan", get name() { return i18next.t("preset.hunyuan"); }, icon: "hunyuan",
     codex: {
+      plan: "API",
       provider: "hy3-tokenhub",
       base_url: "https://tokenhub.tencentmaas.com/v1",
       admin_url: "https://console.cloud.tencent.com/tokenhub/apikey",
@@ -289,6 +303,7 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
     claude: {
+      plan: "API",
       provider: "hy3-tokenhub",
       base_url: "https://tokenhub.tencentmaas.com",
       admin_url: "https://console.cloud.tencent.com/tokenhub/apikey",
@@ -299,12 +314,26 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
   },
-  { kind: "tencent-token-plan", get name() { return i18next.t("preset.tencentTokenPlan"); }, icon: "tencentcloud",
+  { kind: "tencent-token-plan", group: "hunyuan", get name() { return i18next.t("preset.tencentTokenPlan"); }, icon: "tencentcloud",
     claude: {
+      plan: "Token Plan",
       provider: "tencent-token-plan",
       base_url: "https://api.lkeap.cloud.tencent.com/plan/anthropic",
       admin_url: "https://cloud.tencent.com/document/product/1823/130060",
       model: "",
+    },
+  },
+  { kind: "tencent-token-plan-enterprise", group: "hunyuan", get name() { return i18next.t("preset.tencentTokenPlanEnterprise"); }, icon: "hunyuan",
+    codex: {
+      plan: "Token Plan Enterprise",
+      provider: "Token_Plan_Ent",
+      base_url: "https://tokenhub.tencentmaas.com/plan/v3",
+      admin_url: "https://cloud.tencent.com/document/product/1823/130660",
+      model: "auto",
+      endpoints: [
+        { region: "cn", base_url: "https://tokenhub.tencentmaas.com/plan/v3", admin_url: "https://cloud.tencent.com/document/product/1823/130660" },
+        { region: "global", base_url: "https://tokenhub-intl.tencentmaas.com/plan/v3", admin_url: "https://cloud.tencent.com/document/product/1823/130660" },
+      ],
     },
   },
   // Codex 国内提供 Coding Plan / Agent Plan，海外仅 Coding Plan；bytepluses.com 的 /api/v3 按量另计。
@@ -321,6 +350,7 @@ export const providerPresets: ProviderPreset[] = [
       ],
     },
     claude: {
+      plan: "Coding Plan",
       provider: "volcengine-coding-plan",
       base_url: "https://ark.cn-beijing.volces.com/api/coding",
       admin_url: "https://ark.volcengine.com/region:cn-beijing/apikey",
@@ -329,22 +359,25 @@ export const providerPresets: ProviderPreset[] = [
   },
   { kind: "qianfan", get name() { return i18next.t("preset.qianfan"); }, icon: "baiducloud",
     codex: {
+      plan: "API",
       provider: "qianfan",
       base_url: "https://qianfan.baidubce.com/v2",
       admin_url: "https://console.bce.baidu.com/qianfan/",
       model: "glm-5.1",
     },
     claude: {
+      plan: "API",
       provider: "qianfan",
       base_url: "https://qianfan.baidubce.com/anthropic",
       admin_url: "https://console.bce.baidu.com/qianfan/",
       model: "",
     },
   },
-  { kind: "qianfan-coding-plan", get name() { return i18next.t("preset.qianfanCodingPlan"); }, icon: "baiducloud",
+  { kind: "qianfan-coding-plan", group: "qianfan", get name() { return i18next.t("preset.qianfanCodingPlan"); }, icon: "baiducloud",
     claude: {
+      plan: "Coding Plan",
       provider: "qianfan-coding-plan",
-      base_url: "https://qianfan.cloud.baidu.com/api/coding",
+      base_url: "https://qianfan.baidubce.com/anthropic/coding",
       admin_url: "https://cloud.baidu.com/product/codingplan",
       model: "",
     },
@@ -381,6 +414,7 @@ export function clientPresets(providers: readonly ProviderPreset[], client: "cod
     const connection = preset[client];
     return connection ? [{
       kind: preset.kind,
+      group: preset.group,
       get name() { return preset.name; },
       icon: preset.icon,
       ...connection,
@@ -390,6 +424,54 @@ export function clientPresets(providers: readonly ProviderPreset[], client: "cod
 
 export const codexPresets = clientPresets(providerPresets, "codex");
 export const claudePresets = clientPresets(providerPresets, "claude");
+
+export interface PresetConnection extends PresetEndpoint {
+  kind: string;
+  label: string;
+}
+
+/** 合并同品牌套餐与区域端点，仍保留每个客户端原本的 kind 和接入配置。 */
+export function presetConnections(preset: ClientPreset, presets: readonly ClientPreset[]): PresetConnection[] {
+  const group = preset.group ?? preset.kind;
+  return presets.filter((item) => (item.group ?? item.kind) === group).flatMap((item) => (
+    item.endpoints ?? [{ region: "cn" as const, base_url: item.base_url, admin_url: item.admin_url }]
+  ).map((endpoint) => ({ ...endpoint, kind: item.kind, label: endpoint.label ?? item.plan ?? "API" })));
+}
+
+/** 创建入口按套餐拆分，区域留在入口内；原 kind 继续用于模板读取和保存。 */
+export function presetEntries(presets: readonly ClientPreset[]) {
+  return presets.filter((preset) => !preset.group).flatMap((primary) => {
+    const connections = presetConnections(primary, presets);
+    const plans = [...new Set(connections.map((connection) => connection.label))];
+    return plans.map((plan) => {
+      const endpoints = connections.filter((connection) => connection.label === plan);
+      const source = presets.find((preset) => preset.kind === endpoints[0].kind)!;
+      return {
+        key: plans.length > 1 ? `${primary.kind}:${plan}` : primary.kind,
+        get name() { return primary.plan || plan !== "API" || plans.length > 1 ? `${primary.name} · ${plan}` : primary.name; },
+        preset: {
+          ...source,
+          group: undefined,
+          plan,
+          get name() { return primary.name; },
+          base_url: endpoints[0].base_url,
+          admin_url: endpoints[0].admin_url,
+          endpoints,
+        } satisfies ClientPreset,
+      };
+    });
+  });
+}
+
+/** 分类数量与列表筛选共用；账号登录、自定义只在全部中显示。 */
+export function presetEntryCategory(preset: ClientPreset) {
+  return !preset.base_url ? null : preset.plan && preset.plan !== "API" ? "plans" : "api";
+}
+
+/** 入口默认名：非按量套餐带套餐名后缀；区域由版本滑块展示，不进名称。 */
+export function presetConnectionName(preset: ClientPreset): string {
+  return preset.plan && preset.plan !== "API" ? `${preset.name} · ${preset.plan}` : preset.name;
+}
 
 export function codexPresetByKind(kind: string): ClientPreset | undefined {
   return codexPresets.find((preset) => preset.kind === kind);

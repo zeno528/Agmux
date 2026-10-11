@@ -78,7 +78,8 @@ function animatePageEnter(el: Element) {
   el.animate(frames, { duration: Math.round(total) });
 }
 
-/// 一级切页时将已有内容标记为已播放，不补播动画；observer 只播放页内进入和返回的新内容。
+/// 一级切页时将已有内容标记为已播放，不补播动画；observer 播放页内进入和返回的新内容，
+/// 页面容器被移除（换供应商的保活草稿页重进）时给重新可见的已播页补播。
 /// 隐藏保活页按 offsetParent 跳过。
 function usePageEnterAnimation(mainRef: { current: HTMLElement | null }, view: AppView) {
   useLayoutEffect(() => {
@@ -90,10 +91,19 @@ function usePageEnterAnimation(mainRef: { current: HTMLElement | null }, view: A
       const peerSwitch = (["addedNodes", "removedNodes"] as const).every((key) =>
         mutations.some((mutation) => Array.from(mutation[key]).some((node) => node instanceof Element && node.matches(".apple-edit-content"))),
       );
+      // 页面容器被移除 = 发生了一次页内导航；换供应商流程保活编辑页（草稿保留），
+      // 重进时是已播过的老节点，靠这个信号补播。
+      const pageClosed = mutations.some((mutation) =>
+        Array.from(mutation.removedNodes).some((node) => node instanceof Element && node.matches(".apple-scroll-page, .apple-edit-page")),
+      );
       for (const el of main.querySelectorAll(PAGE_ENTER_TARGET)) {
-        if ((el as HTMLElement).offsetParent === null || played.has(el)) continue;
-        played.add(el);
-        if (!peerSwitch) animatePageEnter(el);
+        if ((el as HTMLElement).offsetParent === null) continue;
+        if (!played.has(el)) {
+          played.add(el);
+          if (!peerSwitch) animatePageEnter(el);
+        } else if (pageClosed && !peerSwitch) {
+          animatePageEnter(el);
+        }
       }
     };
     const observer = new MutationObserver(scan);

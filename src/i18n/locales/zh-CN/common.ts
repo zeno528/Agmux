@@ -58,6 +58,7 @@ export default {
     kimiCode: "Kimi Code",
     qwenCodingPlan: "阿里云百炼 Coding Plan",
     tencentTokenPlan: "腾讯云通用 Token Plan",
+    tencentTokenPlanEnterprise: "腾讯云 Token Plan 企业版",
     qianfanCodingPlan: "百度千帆 Coding Plan",
     siliconflow: "SiliconFlow",
     longcat: "LongCat",

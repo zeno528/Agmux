@@ -7,14 +7,17 @@ import { AppSelect } from "../../components/AppSelect";
 import { AppSwitch } from "../../components/AppSwitch";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import EndpointField from "../../components/EndpointField";
-import PresetGrid from "../../components/PresetGrid";
+import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "../../components/ProviderFields";
-import { claudeBalanceQueryKinds, claudePresets, claudePresetByKind } from "../../presets";
+import {
+  claudeBalanceQueryKinds, claudePresets, claudePresetByKind,
+  presetConnectionName, type ClientPreset, type PresetConnection,
+} from "../../presets";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import ClaudeCommonTemplateDialog from "./ClaudeCommonTemplateDialog";
 import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBypassPermissions } from "./profileEnvText";
-import { buildSettingsText, emptyModelMappings, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
+import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
 import type { ClaudeProfileDetail, ClaudeProfileSummary } from "../../types";
 
 function sameModelMappings(left: ClaudeModelMappings, right: ClaudeModelMappings) {
@@ -43,14 +46,25 @@ interface ClaudeProfileEditProps {
   onChanged: () => void;
 }
 
-export default function ClaudeProfileEdit({ profile, create = false, initialDetail = null, onBack, onChanged }: ClaudeProfileEditProps) {
+export default function ClaudeProfileEdit(props: ClaudeProfileEditProps) {
+  return props.create ? <ProviderCreate presets={claudePresets} onBack={props.onBack}>
+    {(preset, onChangeProvider) => <ClaudeProfileEditor {...props} initialPreset={preset} onChangeProvider={onChangeProvider} />}
+  </ProviderCreate> : <ClaudeProfileEditor {...props} />;
+}
+
+function ClaudeProfileEditor({
+  profile, create = false, initialDetail = null, onBack, onChanged, initialPreset, onChangeProvider,
+}: ClaudeProfileEditProps & {
+  initialPreset?: ClientPreset;
+  onChangeProvider?: () => void;
+}) {
   const feedback = useFeedback();
   const { t } = useTranslation("claude");
   // 图标编辑复用 Codex 的 ProfileIconEdit 页（文案也直接用 profiles 资源，不另造 key）
   const { t: tProfiles } = useTranslation("profiles");
   // 新建从干净 settings.json 开始；只有编辑已有配置才回显已保存全文。
   const initialEnvText = useMemo(
-    () => create ? "{}" : buildSettingsText({
+    () => create ? patchEnvFields("{}", { baseUrl: initialPreset!.base_url, authToken: "", model: "" }, initialPreset!.kind) : buildSettingsText({
       raw_settings: initialDetail?.raw_settings ?? null,
       base_url: initialDetail?.base_url ?? null,
       auth_token: initialDetail?.auth_token ?? null,
@@ -58,25 +72,25 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
       extra_env: initialDetail?.extra_env ?? null,
       kind: initialDetail?.kind ?? null,
     }),
-    [create, initialDetail],
+    [create, initialDetail, initialPreset],
   );
-  const [name, setName] = useState(profile?.name ?? "");
-  const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? "");
+  const [name, setName] = useState(() => profile?.name ?? (create && initialPreset!.kind !== "custom"
+    ? presetConnectionName(initialPreset!) : ""));
+  const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? initialPreset?.base_url ?? "");
   const [authToken, setAuthToken] = useState(() => initialDetail?.auth_token ?? "");
   const [showToken, setShowToken] = useState(false);
   const [description, setDescription] = useState(() => initialDetail?.description ?? "");
   const [fetchedModels, setFetchedModels] = useState<string[]>(() => initialDetail?.fetched_models ?? []);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? "");
-  const [kind, setKind] = useState(() => initialDetail?.kind ?? null);
-  const [presetKind, setPresetKind] = useState(create ? "custom" : "");
-  const [showBalance, setShowBalance] = useState(() => Boolean(initialDetail?.show_balance ?? profile?.show_balance));
+  const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? initialPreset?.admin_url ?? "");
+  const [kind, setKind] = useState(() => initialDetail?.kind ?? (create && initialPreset!.kind !== "custom" ? initialPreset!.kind : null));
+  const [showBalance, setShowBalance] = useState(() => Boolean(initialDetail?.show_balance ?? profile?.show_balance ?? (create && claudeBalanceQueryKinds.has(initialPreset!.kind))));
   const [savingBalance, setSavingBalance] = useState(false);
   const [saving, setSaving] = useState(false);
   // 图标编辑：复用 Codex 的铅笔角标 + ProfileIconEdit 选择页，立即落库（create 态只记本地）
   const [pickingIcon, setPickingIcon] = useState(false);
-  const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? profile?.icon ?? (create ? "custom" : null));
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
   const [modelMappings, setModelMappings] = useState<ClaudeModelMappings>(() => readModelMappings(initialEnvText));
   const [modelDisplayNames, setModelDisplayNames] = useState<ClaudeModelDisplayNames>(() => readModelDisplayNames(initialEnvText));
   const model = modelMappings.ANTHROPIC_MODEL;
@@ -84,6 +98,7 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
   const envTextRef = useRef(envText);
   envTextRef.current = envText;
   const templateRequest = useRef(0);
+  const modelListRequest = useRef(0);
   const [fillingTemplate, setFillingTemplate] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [editorDiagnostics, setEditorDiagnostics] = useState({ count: 0, firstLine: null as number | null });
@@ -123,12 +138,12 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
   };
   // 创建态取所选预设；编辑态行的 kind 反查（对齐 Codex 双区域端点按 provider 反查的思路）
   const selectedPreset = useMemo(
-    () => (create ? claudePresets.find((preset) => preset.kind === presetKind) ?? null : claudePresetByKind(kind)),
-    [create, kind, presetKind],
+    () => (create ? initialPreset ?? null : claudePresetByKind(kind)),
+    [create, kind, initialPreset],
   );
-  const presetEndpoints = selectedPreset?.endpoints ?? null;
+  const presetEndpoints = !create ? selectedPreset?.endpoints ?? null : null;
   const accountLogin = kind === "claude-account";
-  const supportsBalance = claudeBalanceQueryKinds.has(create ? presetKind : kind ?? "");
+  const supportsBalance = claudeBalanceQueryKinds.has(kind ?? "");
 
   const updateModelMapping = (key: ClaudeModelMappingKey, value: string) => {
     setModelMappings((current) => current[key] === value ? current : { ...current, [key]: value });
@@ -174,27 +189,14 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
     };
   });
 
-  const selectPreset = (nextKind: string) => {
-    const preset = claudePresets.find((item) => item.kind === nextKind);
-    if (!preset) return;
-    const nextModelMappings = emptyModelMappings();
-    setPresetKind(preset.kind);
-    setName(preset.kind === "custom" ? "" : preset.name);
-    setBaseUrl(preset.base_url);
-    setAuthToken("");
-    setEnvText((current) => {
-      const next = patchEnvFields(patchEnvValue(current, "ANTHROPIC_API_KEY", null), {
-        baseUrl: preset.base_url, authToken: "", model: preset.model,
-      }, preset.kind);
-      return patchModelMappings(next, nextModelMappings);
-    });
+  const selectConnection = (connection: PresetConnection) => {
+    setKind(connection.kind);
+    setBaseUrl(connection.base_url);
+    setAdminUrl(connection.admin_url ?? "");
+    setEnvText((current) => patchEnvFields(current, { baseUrl: connection.base_url, authToken, model }, connection.kind));
+    modelListRequest.current++;
+    setFetchingModels(false);
     setFetchedModels([]);
-    setModelMappings(nextModelMappings);
-    setAdminUrl(preset.admin_url ?? "");
-    // 自定义不记 kind：编辑态端点档随 URL 自由填写
-    setKind(preset.kind === "custom" ? null : preset.kind);
-    setShowBalance(claudeBalanceQueryKinds.has(preset.kind));
-    setSelectedIcon(preset.icon);
   };
 
   // 表单三键 ↔ env 编辑器双向同步（与 Codex 地址/密钥/model 的 effect 对同一模式）：
@@ -230,17 +232,19 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
       return [];
     }
     setFetchingModels(true);
+    const request = ++modelListRequest.current;
     try {
       const models = await api.claudeFetchModels(baseUrl.trim(), authToken.trim());
+      if (request !== modelListRequest.current) return [];
       setFetchedModels(models);
       if (!models.length) feedback.info(t("noModelsReturned"));
       else feedback.success(t("modelsFetched", { count: models.length }));
       return models;
     } catch (error) {
-      feedback.error(t("fetchFailed", { error: connectionExceptionMessage(error, tProfiles) }));
+      if (request === modelListRequest.current) feedback.error(t("fetchFailed", { error: connectionExceptionMessage(error, tProfiles) }));
       return [];
     } finally {
-      setFetchingModels(false);
+      if (request === modelListRequest.current) setFetchingModels(false);
     }
   };
 
@@ -366,17 +370,18 @@ export default function ClaudeProfileEdit({ profile, create = false, initialDeta
       }}
     >
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
-        <button type="button" className="apple-page-header apple-back-button" aria-label={tProfiles("edit.back")} onClick={onBack}>
+        <button type="button" className="apple-page-header apple-back-button" aria-label={tProfiles("edit.back")} onClick={create ? onChangeProvider : onBack}>
           <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <span className="apple-title">{create ? tProfiles("edit.createTitle") : tProfiles("edit.editTitle")}</span>
         </button>
       </div>
       <div className="apple-edit-content">
         <div className="apple-edit-surface">
-          {create ? <PresetGrid presets={claudePresets} selectedKind={presetKind} onSelect={selectPreset} title={tProfiles("edit.selectProvider")} /> : null}
+          {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
+            disabled={saving || fillingTemplate} onChangeProvider={onChangeProvider} onSelect={selectConnection} /> : null}
           <div className="apple-panel-section">
             <ProviderIdentityFields
-              idPrefix="claude-profile" name={name} description={description}
+              idPrefix={create ? `claude-profile-${initialPreset!.kind}-${initialPreset!.plan?.replace(/ /g, "-")}` : "claude-profile"} name={name} description={description}
               icon={selectedIcon ?? claudePresetByKind(kind)?.icon ?? null}
               onIcon={() => setPickingIcon(true)} onName={setName} onDescription={setDescription}
               labels={{

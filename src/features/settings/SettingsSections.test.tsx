@@ -189,7 +189,7 @@ describe("SettingsSections", () => {
   });
 
   it("设置顶部标签栏底线复用全局分割线", () => {
-    expect(settingsViewSource).toContain("settings-tab-bar");
+    expect(settingsViewSource).toContain("<AppTabBar<Section>");
     expect(styles).toContain(".settings-tab-bar {");
     expect(settingsViewSource).not.toContain("border-b border-[var(--panel-divider)]");
     expect(settingsViewSource).not.toContain("border-b border-[var(--panel-border)]");

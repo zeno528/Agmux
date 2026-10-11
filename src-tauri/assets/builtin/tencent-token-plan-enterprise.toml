@@ -1,0 +1,8 @@
+model_provider = "Token_Plan_Ent"
+model = "auto"
+
+[model_providers.Token_Plan_Ent]
+name = "Token_Plan_Ent"
+base_url = "https://tokenhub.tencentmaas.com/plan/v3"
+experimental_bearer_token = "<YOUR_API_KEY>"
+wire_api = "responses"
