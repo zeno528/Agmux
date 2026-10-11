@@ -3158,6 +3158,9 @@ button:focus-visible {
   color: inherit;
   font: inherit;
   outline: none;
+  /* 常驻与聚焦光环（:focus 的 0 0 0 3px）等大的透明外阴影：聚焦/失焦切换时阴影绘制区域不变，
+     规避 WebView2 150% 缩放下失焦重绘圆整漏掉光环最外一行 AA 像素、留下描边残留的问题。 */
+  box-shadow: 0 0 0 3px transparent;
 }
 
 /* 药丸形输入变体：搜索框等筛选入口用，高度对齐标题栏胶囊、预留左侧图标位，其余沿用 .app-input */
@@ -3167,6 +3170,9 @@ button:focus-visible {
   border-radius: 999px;
   padding-left: 2rem;
 }
+
+/* 搜索框灰色描边画在内部，避免缩放后边框外侧出现浅色细线。 */
+.app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border), 0 0 0 3px transparent; }
 
 /* 文本域沿用旧版 NInput：隐藏原生滚动条，保留滚轮滚动和右下角调整大小。 */
 textarea.app-input {

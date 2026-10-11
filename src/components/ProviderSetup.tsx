@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { presetConnectionName, presetConnections, presetEntries, presetEntryCategory, presetRegionName, type ClientPreset, type PresetConnection } from "../presets";
@@ -6,6 +6,7 @@ import { AppSegmentedControl } from "./AppSegmentedControl";
 import { ProfileIconTile } from "./ProfileIconTile";
 import PresetGrid from "./PresetGrid";
 import { AppTabBar } from "./AppTabBar";
+import { AppSearchInput } from "./AppSearchInput";
 
 export function ProviderCreate({ presets, onBack, children }: {
   presets: readonly ClientPreset[];
@@ -27,12 +28,7 @@ export function ProviderCreate({ presets, onBack, children }: {
           <ArrowLeft size={16} strokeWidth={2} className="shrink-0 text-accent" aria-hidden="true" />
           <span className="apple-title">{backLabel}</span>
         </button>
-        <div className="relative ml-auto w-64 shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--text-secondary)" strokeWidth={2} aria-hidden="true" />
-          <input type="search" className="app-input app-input--pill" value={query}
-            placeholder={t("edit.searchProviders")} aria-label={t("edit.searchProviders")}
-            onChange={(event) => setQuery(event.target.value)} />
-        </div>
+        <AppSearchInput className="ml-auto w-64" value={query} onChange={setQuery} placeholder={t("edit.searchProviders")} />
       </header>
       <AppTabBar selected={category} onSelect={setCategory} label={t("edit.selectProvider")} items={[
         { id: "all", label: t("edit.providerFilterAll", { count: entries.length }) },

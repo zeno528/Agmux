@@ -7,6 +7,7 @@ import { claudePresets, codexPresets, presetConnections, presetConnectionName, p
 import { AppSegmentedControl } from "./AppSegmentedControl";
 import PresetGrid from "./PresetGrid";
 import { AppTabBar } from "./AppTabBar";
+import { AppSearchInput } from "./AppSearchInput";
 import { ProviderCreate, ProviderPresetControls } from "./ProviderSetup";
 import { api } from "../api";
 import { webInvoke } from "../api/web-mock";
@@ -62,8 +63,8 @@ describe("供应商创建的两步流程", () => {
     };
     let page = render();
     const search = (value: string) => {
-      const input = elements(page).find((node) => node.type === "input" && node.props.type === "search")!;
-      (input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } });
+      const input = elements(page).find((node) => node.type === AppSearchInput)!;
+      (input.props.onChange as (value: string) => void)(value);
       page = render();
     };
     const grid = () => {
@@ -74,7 +75,7 @@ describe("供应商创建的两步流程", () => {
     const names = () => elements(grid()).filter((node) => node.type === "button").map((node) =>
       elements(node).find((child) => child.props.className === "setting-title block truncate font-medium!")!.props.children);
     const header = elements(page).find((node) => node.type === "header")!;
-    expect(elements(header).some((node) => node.type === "input" && node.props["aria-label"] === "搜索供应商、套餐或官网地址")).toBe(true);
+    expect(elements(header).some((node) => node.type === AppSearchInput && node.props.placeholder === "搜索供应商、套餐或官网地址")).toBe(true);
     search("  mINimAx  ");
     expect(names()).toEqual(["MiniMax · M Plan"]);
     search("platform.minimax.cn");
@@ -91,6 +92,7 @@ describe("供应商创建的两步流程", () => {
     expect(names()).toEqual([]);
     expect(elements(grid()).find((node) => node.props.role === "status")!.props.children).toBe("没有匹配项");
     search("");
+    expect(elements(page).find((node) => node.type === AppSearchInput)!.props.value).toBe("");
     expect(names()).toContain("DeepSeek");
     expect(names().some((name) => String(name).includes("Token Plan"))).toBe(false);
   });
@@ -155,7 +157,7 @@ describe("供应商创建的两步流程", () => {
   it("列表拆分同品牌套餐，保留自定义与官方账号入口", () => {
     const markup = renderToStaticMarkup(<PresetGrid presets={claudePresets} category="all" selectedKind="" onSelect={() => {}} />);
     expect(markup).toContain("Kimi");
-    expect(markup).toContain("多个版本");
+    expect(markup).toContain("多版本");
     expect(markup).toContain("Kimi · Kimi Code");
     expect(markup).not.toContain("阿里云百炼 Coding Plan");
     expect(markup).not.toContain("百度千帆 Coding Plan");
@@ -168,7 +170,7 @@ describe("供应商创建的两步流程", () => {
     hooks.values = [];
     hooks.cursor = 0;
     expect(renderToStaticMarkup(<PresetGrid presets={[single]} category="all" selectedKind="" onSelect={() => {}} />))
-      .toContain('<span class="invisible shrink-0" aria-hidden="true"><span class="plan-badge font-normal!">多个版本</span></span>');
+      .toContain('<span class="invisible shrink-0" aria-hidden="true"><span class="plan-badge font-normal!">多版本</span></span>');
   });
 
   it.each([

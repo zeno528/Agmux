@@ -139,7 +139,7 @@ export default {
     billingDescription: "选择计费方式，并使用对应的 API Key",
     payAsYouGo: "按量付费",
     versionDescription: "选择 API Key 所属的平台",
-    multipleVersions: "多个版本",
+    multipleVersions: "多版本",
     customProviderSubtitle: "手动配置 API 地址与密钥",
     customEndpoint: "当前使用自定义地址，选择版本可恢复预设",
     retryTemplate: "重新读取模板",

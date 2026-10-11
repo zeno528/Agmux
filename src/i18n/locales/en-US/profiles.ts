@@ -139,7 +139,7 @@ export default {
     billingDescription: "Choose a billing method and use its API key",
     payAsYouGo: "Pay as you go",
     versionDescription: "Choose the platform your API key belongs to",
-    multipleVersions: "Multiple versions",
+    multipleVersions: "Versions",
     customProviderSubtitle: "Manually configure the API URL and key",
     customEndpoint: "Using a custom URL. Select a version to restore a preset",
     retryTemplate: "Reload template",
