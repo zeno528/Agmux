@@ -418,10 +418,11 @@ mod tests {
             "sonnet's",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
+        // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
         assert_eq!(
             script,
             "echo 'Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json'; \
-             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' --model 'sonnet''s'"
+             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' --model 'sonnet'\\''s'"
         );
     }
 
