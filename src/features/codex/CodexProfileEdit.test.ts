@@ -150,11 +150,11 @@ describe("ProfileEdit 用量查询", () => {
     expect(source).toContain('const [configInitial, setConfigInitial] = useState(() => initialConfigText);');
     expect(source).toContain('const [catalogInitial, setCatalogInitial] = useState(() => initialDetail?.raw_catalog ?? initialDetail?.catalog_content ?? "");');
     expect(source).toContain('const [authInitial, setAuthInitial] = useState(() => initialDetail?.raw_auth ?? "");');
-    expect(source).toContain('const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? "");');
+    expect(source).toContain('const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? initialPreset?.base_url ?? "");');
     expect(source).toContain('const [apiKey, setApiKey] = useState(() => initialDetail?.api_key ?? "");');
-    expect(source).toContain('const [modelValue, setModelValue] = useState(() => readModelValue(initialConfigText) ?? "");');
+    expect(source).toContain('const [modelValue, setModelValue] = useState(() => readModelValue(initialConfigText) ?? initialPreset?.model ?? "");');
     expect(source).toContain("const [fetchedModels, setFetchedModels] = useState<string[]>(() => initialDetail?.fetched_models ?? []);");
-    expect(source).toContain('const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? "");');
+    expect(source).toContain('const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? initialPreset?.admin_url ?? "");');
     expect(source).toContain("const [boundAccountId, setBoundAccountId] = useState<string | null>(() => initialDetail?.account_id ?? null);");
   });
 });

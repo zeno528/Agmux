@@ -248,13 +248,20 @@ describe("供应商套餐入口与区域", () => {
       const flow = CodexProfileEdit({ profile: null, create: true, authStatus: { authenticated: false, default_account_id: null, accounts: [], external: [] }, authStatusReady: true, onBack, onChanged: vi.fn(), onManageChatgptAccounts: vi.fn() });
       const editor = flow.props.children(preset, onChangeProvider);
       const render = () => { hooks.cursor = 0; return editor.type(editor.props) as ReactNode; };
-      render();
+      const initialTree = render();
+      const identity = elements(initialTree).find((node) => node.type === ProviderIdentityFields)!.props;
+      expect(identity.name).toContain(plan);
+      expect(identity.icon).toBe(preset.icon);
+      expect(elements(initialTree).find((node) => node.type === "fieldset")?.props.disabled).toBe(true);
+      expect(elements(initialTree).find((node) => node.type === ConfigTextEditor)).toBeUndefined();
       for (const effect of hooks.effects.splice(0)) effect();
       await vi.waitFor(() => {
         const tree = render();
-        expect(elements(tree).find((node) => node.type === ProviderIdentityFields)?.props.name).toContain(plan);
+        expect(elements(tree).find((node) => node.type === ConfigTextEditor)?.props.value).toContain(preset.base_url);
       });
       const tree = render();
+      expect(elements(tree).find((node) => node.type === ProviderIdentityFields)?.props.icon).toBe(identity.icon);
+      expect(elements(tree).find((node) => node.type === "fieldset")?.props.disabled).toBe(false);
       expect(builtin).toHaveBeenCalledExactlyOnceWith("doubao");
       expect(elements(tree).find((node) => node.type === ProviderPresetControls)?.props.baseUrl).toBe(preset.base_url);
       expect(elements(tree).find((node) => node.type === ConfigTextEditor)?.props.value).toContain(preset.base_url);

@@ -88,18 +88,18 @@ function CodexProfileEditor({
   const [formatting, setFormatting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [pickingIcon, setPickingIcon] = useState(false);
-  const [name, setName] = useState(profile?.name ?? "");
+  const [name, setName] = useState(() => profile?.name ?? (initialPreset && initialPreset.kind !== "custom" ? presetConnectionName(initialPreset) : ""));
   const [description, setDescription] = useState(initialDetail?.description ?? "");
-  const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? "");
+  const [baseUrl, setBaseUrl] = useState(() => initialDetail?.base_url ?? initialPreset?.base_url ?? "");
   const [apiKey, setApiKey] = useState(() => initialDetail?.api_key ?? "");
   const [showApiKey, setShowApiKey] = useState(false);
-  const [modelValue, setModelValue] = useState(() => readModelValue(initialConfigText) ?? "");
+  const [modelValue, setModelValue] = useState(() => readModelValue(initialConfigText) ?? initialPreset?.model ?? "");
   const [fetchedModels, setFetchedModels] = useState<string[]>(() => initialDetail?.fetched_models ?? []);
   const [fetchingModels, setFetchingModels] = useState(false);
-  const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? "");
+  const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? initialPreset?.admin_url ?? "");
   const authAccounts = authStatus.accounts;
   const [boundAccountId, setBoundAccountId] = useState<string | null>(() => initialDetail?.account_id ?? null);
-  const [selectedIcon, setSelectedIcon] = useState<string | null>(profile?.icon ?? null);
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
   const [presetKind, setPresetKind] = useState(initialPreset?.kind ?? "");
   const [activeTab, setActiveTab] = useState<EditTab>("config");
   const [configText, setConfigText] = useState(() => initialConfigText);
@@ -609,10 +609,7 @@ function CodexProfileEditor({
         <div className="apple-edit-surface">
           {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
             disabled={saving || !presetFragment && !loadError} onChangeProvider={onChangeProvider} onSelect={selectConnection} /> : null}
-          {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
-            {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
-          </div> : <>
-          <div className="apple-panel-section">
+          <fieldset className="apple-panel-section min-w-0" disabled={create && !presetFragment}>
             <ProviderIdentityFields
               idPrefix={create ? `profile-${initialPreset!.kind}-${initialPreset!.plan?.replace(/ /g, "-")}` : "profile"} name={name} description={description} icon={selectedIcon}
               iconName={detail?.name ?? name} onIcon={() => setPickingIcon(true)}
@@ -677,8 +674,10 @@ function CodexProfileEditor({
             </div> : null}
             {(!create || Boolean(selectedPreset?.admin_url)) ? <div className="mt-4"><div className="mb-1.5 flex items-center gap-2"><span className="field-label">{t("edit.adminUrlLabel")}</span><button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-5 shrink-0" disabled={!adminUrl.trim()} aria-label={t("card.openWebsite")} onClick={() => void api.openUrl(adminUrl.trim()).catch((error) => feedback.error(String(error)))}><ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden="true" />{t("card.openWebsite")}</button></div><input className="app-input" placeholder={t("edit.adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} /></div> : null}
               {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving || savingBalance} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
-          </div>
-            <div className="apple-panel-section flex flex-col">
+          </fieldset>
+          {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
+            {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
+          </div> : <div className="apple-panel-section flex flex-col">
               <div className="flex min-h-8 items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap gap-1">
                   {tabs.map((tab) => <button key={tab.id} type="button" className={`relative flex h-8 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-semibold transition-colors ${activeTab === tab.id ? "bg-(--active-bg) text-accent" : "muted hover:bg-(--hover-bg)"}`} aria-pressed={activeTab === tab.id} title={tab.title} onClick={() => { setActiveTab(tab.id); setEditorDiagnostics({ count: 0, firstLine: null }); }}>{tab.id === "config" ? <Settings className="h-3.5 w-3.5" strokeWidth={2} /> : <FileBraces className="h-3.5 w-3.5" strokeWidth={2} />}<span>{tab.label}</span>{((tab.id === "config" && configDirty) || (tab.id === "models" && catalogDirty) || (tab.id === "auth" && authDirty)) ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}</button>)}
@@ -701,8 +700,7 @@ function CodexProfileEditor({
                 </div>
               <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
               </div>
-            </div>
-          </>}
+            </div>}
         </div>
       </div>
       <div className="apple-edit-toolbar apple-edit-toolbar--footer"><DiagnosticsChip diagnostics={editorDiagnostics} onFocusFirst={() => editorRef.current?.focusFirstDiagnostic()} /><button type="button" className="apple-action-button" onClick={onBack}>{t("dialog.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={saving || !canSave} onClick={() => void save()}><Save className="h-4 w-4" strokeWidth={2} />{saving ? t("edit.saving") : t("dialog.save")}</button></div>
