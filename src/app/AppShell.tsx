@@ -468,15 +468,17 @@ export default function AppShell() {
                 <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
               ) : null}
               {!sidebar.sidebarCollapsed ? (
-                <button
-                  type="button"
-                  className="apple-icon-button muted absolute right-1.5 top-0"
-                  aria-label={t("sidebar.collapse")}
-                  title={t("sidebar.collapse")}
-                  onClick={sidebar.toggleSidebar}
-                >
-                  <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="apple-sidebar-collapse apple-icon-button muted absolute right-1.5 top-0"
+                    aria-label={t("sidebar.collapse")}
+                    onClick={sidebar.toggleSidebar}
+                  >
+                    <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
+                  </button>
+                  <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span>
+                </>
               ) : null}
             </div>
             <nav className="mx-1.5 mt-3 flex flex-1 flex-col gap-3">

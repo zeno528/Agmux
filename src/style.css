@@ -1072,16 +1072,19 @@ body.drag-active * {
   transform: translate(0, -50%);
 }
 
-/* 侧边栏品牌按钮浮标：锚定品牌行（宽度随侧边栏自适应），
+/* 侧边栏品牌和收起按钮浮标：锚定品牌行（宽度随侧边栏自适应），
    展开时浮标在侧边栏右缘外、收缩时在栏外右侧；两种状态悬停都显示动作提示 */
-.apple-sidebar-brand + .apple-sidebar-flyout {
+.apple-sidebar-brand + .apple-sidebar-flyout,
+.apple-sidebar-collapse + .apple-sidebar-flyout {
   /* 品牌行高 36px，浮标保持在行垂直中心（基类 top: 50%） */
   /* 与其他按钮浮标一致：距侧边栏右缘 3.6px（导航按钮 mx-1.5 内缩 6px + 0.6rem 间距） */
   left: calc(100% + 0.225rem);
 }
 
 .apple-sidebar-brand:hover + .apple-sidebar-flyout,
-.apple-sidebar-brand:focus-visible + .apple-sidebar-flyout {
+.apple-sidebar-brand:focus-visible + .apple-sidebar-flyout,
+.apple-sidebar-collapse:hover + .apple-sidebar-flyout,
+.apple-sidebar-collapse:focus-visible + .apple-sidebar-flyout {
   opacity: 1;
   transform: translate(0, -50%);
 }
