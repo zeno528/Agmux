@@ -403,6 +403,7 @@ function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: Mc
       const preview = await (target === "codex" ? api.codexMcpSyncPreview() : api.claudeMcpSyncPreview());
       setSyncPreview(preview);
       setPreviewError("");
+      if (!preview.entries.length) setDiffOpen(false);
       // 侧栏角标与页面同源：页面查到就写回共享缓存
       setMcpDiffBadge({ count: preview.entries.length, error: false }, target);
     }
