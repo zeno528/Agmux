@@ -46,26 +46,30 @@ describe("Claude 通用模板", () => {
     expect(extractClaudeCommonSettings('{"env":{"ANTHROPIC_AUTH_TOKEN":"secret"},"attribution":{"commit":"","pr":""}}')).toBe("{}");
   });
 
-  it("逐层补缺失项，保留现有值、空数组与 hooks，重复填充不改动文本", () => {
+  it("通用字段以模板为准，保留供应商字段与模板未声明项，重复填充不改动文本", () => {
     const current = {
       env: { ANTHROPIC_AUTH_TOKEN: "current-token", KEEP: "current" },
       permissions: { allow: [], deny: ["Write"] },
-      hooks: { Stop: [{ hooks: [{ command: "current" }] }] },
+      hooks: { Stop: [{ hooks: [{ command: "current" }] }], PostToolUse: [{ matcher: "Write|Edit", hooks: [{ command: "lint" }] }] },
+      enabledPlugins: { shared: false, local: true },
       nullable: null, disabled: false, empty: "",
     };
     const template = {
       env: { ANTHROPIC_AUTH_TOKEN: "template-token", DISABLE_AUTO_COMPACT: "1", KEEP: "template", EXTRA: "new" },
       attribution: { commit: "template", sessionUrl: "https://example.test/session" },
       permissions: { allow: ["Read"], ask: ["Bash"] },
-      hooks: { Stop: [{ hooks: [{ command: "duplicate" }] }], SessionStart: [] },
+      hooks: { Stop: [{ hooks: [{ command: "summary", timeout: 10 }] }], SessionStart: [],
+        PostToolUse: [{ matcher: "Write|Edit", hooks: [{ command: "lint" }] }, { matcher: "Write|Edit|MultiEdit|NotebookEdit", hooks: [{ command: "count", timeout: 10 }] }] },
+      enabledPlugins: { shared: true },
       nullable: { nested: true }, disabled: true, empty: "fallback", unknown: [1],
     };
     const filled = fillClaudeCommonSettings(JSON.stringify(current), JSON.stringify(template))!;
     expect(JSON.parse(filled)).toEqual({
-      ...current, env: { ...current.env, EXTRA: "new" },
+      ...current, env: { ...current.env, KEEP: "template", EXTRA: "new" },
       attribution: { sessionUrl: "https://example.test/session" },
-      permissions: { ...current.permissions, ask: ["Bash"] },
-      hooks: { ...current.hooks, SessionStart: [] }, unknown: [1],
+      permissions: { ...current.permissions, allow: ["Read"], ask: ["Bash"] },
+      hooks: template.hooks, enabledPlugins: { shared: true, local: true },
+      nullable: { nested: true }, disabled: true, empty: "fallback", unknown: [1],
     });
     expect(fillClaudeCommonSettings(filled, JSON.stringify(template))).toBe(filled);
     expect(fillClaudeCommonSettings("{\n  \"env\": {}\n}\n", "{}")).toBe("{\n  \"env\": {}\n}\n");

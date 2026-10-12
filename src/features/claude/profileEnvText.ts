@@ -395,11 +395,11 @@ function fillMissingSettings(current: Record<string, unknown>, template: Record<
   ]);
 }
 
-/** 仅补缺失值，数组整体保留；再次过滤模板，避免旧模板覆盖新增加的表单字段。 */
+/** 通用字段以模板为准，数组整体替换；再次过滤模板，保留当前表单托管字段。 */
 export function fillClaudeCommonSettings(text: string, templateText: string): string | null {
   const settings = parseSettingsWithEnv(text);
   const common = extractClaudeCommonSettings(templateText);
   if (!settings || common === null) return null;
-  const merged = fillMissingSettings(settings, JSON.parse(common) as Record<string, unknown>);
+  const merged = fillMissingSettings(JSON.parse(common) as Record<string, unknown>, settings);
   return JSON.stringify(merged) === JSON.stringify(settings) ? text : JSON.stringify(merged, null, 2);
 }

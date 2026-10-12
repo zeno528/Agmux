@@ -2,7 +2,7 @@
 export default {
   commonTemplate: {
     title: "Common template",
-    description: "Editing or extracting only updates the preview. Save writes the common template. Endpoint, credentials, model mappings and app-controlled fields are excluded; filling only adds missing fields and template changes do not affect existing profiles",
+    description: "Editing or extracting only updates the preview. Save writes the common template. Endpoint, credentials, model mappings and app-controlled fields are excluded; filling uses the template's common values and replaces arrays in full. Save the profile to apply",
     extract: "Extract current common fields",
     fill: "Fill",
     edit: "Edit",
@@ -10,7 +10,7 @@ export default {
     saved: "Common template saved",
     filled: "Common fields filled; save the profile to keep them",
     empty: "No common fields saved; extract or edit the common template first",
-    noChange: "This profile already contains the template fields",
+    noChange: "This profile's common fields already match the template",
   },
   modelMappings: {
     current: "Main",

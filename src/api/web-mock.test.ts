@@ -229,7 +229,7 @@ describe("web mock", () => {
       await webInvoke("claude_save_common_settings", { text: draft });
       const next = await webInvoke<string>("claude_get_common_settings");
       expect(next).toBe(draft);
-      const filled = fillClaudeCommonSettings('{"env":{"ANTHROPIC_AUTH_TOKEN":"current"}}', next)!;
+      const filled = fillClaudeCommonSettings('{"hooks":{"Stop":[{"command":"old"}]},"env":{"ANTHROPIC_AUTH_TOKEN":"current","CUSTOM":"old"}}', next)!;
       expect(JSON.parse(filled)).toEqual({ hooks: { Stop: [{ command: "new" }] }, env: { ANTHROPIC_AUTH_TOKEN: "current", CUSTOM: "new" } });
     } finally {
       await webInvoke("claude_save_common_settings", { text: previous });
