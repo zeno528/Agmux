@@ -666,7 +666,7 @@ function CodexProfileEditor({
                   </button>
                   {!!models.length && <span className="muted text-xs">{t("edit.modelsAvailable", { count: models.length })}</span>}
                 </div>
-                <AppSelect value={selection.model} options={getModelChoices("", models).map((value) => ({ value, label: value }))}
+                <AppSelect value={selection.model} options={getModelChoices(models.length ? selection.model : "", models).map((value) => ({ value, label: value }))}
                   onChange={setModelValue} disabled={saving || !models.length || (!isOfficial && (!apiKey.trim() || !baseUrl.trim()))} menuWidth="max-content" searchable
                   placeholder={t(models.length ? "edit.selectModel" : "edit.fetchModelsFirst")} />
               </div>

@@ -12,7 +12,7 @@ vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: vi.fn() }) }
 // CodeMirror 依赖浏览器 DOM；回归测试仅渲染真实表单和下拉组件。
 vi.mock("../../components/ConfigTextEditor", () => ({ default: () => null }));
 
-it.each([{ models: [] }, { models: ["fetched-model"] }])("可用模型不从手输模型 ID 补入，模型列表为 $models", async ({ models }) => {
+it.each([{ models: [] }, { models: ["fetched-model"] }])("仅有缓存时可用模型补入手输 ID，模型列表为 $models", async ({ models }) => {
   setupI18n("zh-CN");
   const profile = await webInvoke<CodexProfileSummary>("codex_add_builtin_profile", { kind: "opencode", apiKey: "fixture-key" });
   try {
@@ -25,7 +25,7 @@ it.each([{ models: [] }, { models: ["fetched-model"] }])("可用模型不从手�
     }));
     const select = markup.match(/<button\b[^>]*aria-label="(?:请先获取模型列表|选择模型)"[^>]*>[\s\S]*?<\/button>/)?.[0];
     expect(select).toBeDefined();
-    expect(select).not.toContain("manual-model");
+    expect(select!.includes("manual-model")).toBe(models.length > 0);
     expect(select!.includes('disabled=""')).toBe(models.length === 0);
     expect(markup).toContain('value="manual-model"');
   } finally { await webInvoke("codex_delete_profile", { id: profile.id }); }

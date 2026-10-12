@@ -30,19 +30,26 @@ function mappingFields(value: string, onChange: (value: string) => void, display
 }
 
 describe("模型映射行操作", () => {
-  it("候选列表只来自获取结果并去重，手输映射保留但不混入候选", () => {
-    const onChange = vi.fn();
-    const tree = ProviderModelFields({
-      models: ["fetched-model", "manual-model", "fetched-model"],
+  it("有缓存时手输模型进入候选，替换或清空后消失且不修改缓存", () => {
+    const models = ["fetched-model", "manual-model", "fetched-model"];
+    let value = "";
+    const onChange = (next: string) => { value = next; };
+    const render = () => ProviderModelFields({
+      models,
       fetching: false, disabled: false, onFetch: vi.fn(),
-      mappingFields: [{ key: "opus", label: "Opus", value: "other-model[1M]", onChange }],
+      mappingFields: [{ key: "opus", label: "Opus", value, onChange }],
       labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取" },
     });
-    const selects = findControls(tree, AppSelect);
-    expect(selects).toHaveLength(1);
-    expect(selects[0].options!.map((option) => option.value)).toEqual(["fetched-model", "manual-model"]);
-    expect(selects[0].value).toBeNull();
-    expect(findControl(tree, "input", "Opus 模型").value).toBe("other-model");
+    for (const next of ["preview-model[1M]", "replacement", "manual-model", ""]) {
+      const input = findControl(render(), "input", "Opus 模型") as { onChange: (event: { target: { value: string } }) => void };
+      input.onChange({ target: { value: next } });
+      const select = findControls(render(), AppSelect)[0];
+      const expected = ["fetched-model", "manual-model"];
+      if (next && next !== "manual-model") expected.push(next.replace("[1M]", ""));
+      expect(select.options!.map((option) => option.value)).toEqual(expected);
+      expect(select.value).toBe(next.replace("[1M]", "") || null);
+    }
+    expect(models).toEqual(["fetched-model", "manual-model", "fetched-model"]);
   });
 
   it("未获取列表时不以手输模型填充下拉，选择器禁用", () => {

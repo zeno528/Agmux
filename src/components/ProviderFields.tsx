@@ -134,7 +134,10 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
     clear?: string;
   };
 }) {
-  const models = [...new Set(fetchedModels.map((model) => model.trim()))].filter(Boolean);
+  const models = [...new Set([
+    ...fetchedModels,
+    ...(fetchedModels.length ? mappingFields.map((field) => displayModelLabel(field.value)) : []),
+  ].map((model) => model.trim()))].filter(Boolean);
   // 去重后的模型下拉项建一次给每一行用，别在 map 里重建。
   const optionsByLabel = new Map<string, string>();
   for (const item of models) {

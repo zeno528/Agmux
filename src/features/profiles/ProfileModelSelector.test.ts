@@ -41,6 +41,8 @@ it("Claude 模型按隐藏 1M 后的名称去重，保留当前请求值；Codex
 it("当前模型保留目录位置，未收录的手输模型追加到末尾", () => {
   expect(getModelChoices("second", ["first", "second", "third"])).toEqual(["first", "second", "third"]);
   expect(getModelChoices("manual", ["first", "second"])).toEqual(["first", "second", "manual"]);
+  expect(getModelChoices("replacement", ["first", "second"])).toEqual(["first", "second", "replacement"]);
+  expect(getModelChoices("", ["first", "second"])).toEqual(["first", "second"]);
   expect(getModelChoices("second[1M]", ["first", "second", "third"], (value) => setOneMillionModelSuffix(value, false)))
     .toEqual(["first", "second[1M]", "third"]);
 });
