@@ -1,6 +1,6 @@
 [package]
 name = "agofra"
-version = "0.33.0"
+version = "0.34.0"
 description = "A lightweight Codex model profile switcher"
 authors = ["zeno528"]
 license = "MIT"
