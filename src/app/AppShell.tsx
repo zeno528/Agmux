@@ -186,6 +186,7 @@ export default function AppShell() {
   // 切页记忆：进过的页面保活（Activity hidden），未访问页连渲染都不发生，冷启动零新增。
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<AppView>>(() => new Set<AppView>(["codexProfiles"]));
   const [startupReady, setStartupReady] = useState(false);
+  const [windowControlsHovered, setWindowControlsHovered] = useState(false);
   const { t } = useTranslation();
   // 侧栏角标复用 MCP 页的差异计数文案，避免同一件事在两处各写一份
   const { t: tMcp } = useTranslation("mcp");
@@ -286,6 +287,8 @@ export default function AppShell() {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     const onActive = () => {
+      // 隐藏到托盘可能收不到 pointerleave，恢复后等鼠标移动再启用悬停样式。
+      setWindowControlsHovered(false);
       if (!activate()) return;
       void refresh();
       void refreshAuthStatus();
@@ -295,6 +298,7 @@ export default function AppShell() {
       startPolling();
     };
     const onInactive = () => {
+      setWindowControlsHovered(false);
       if (!deactivate()) return;
       stopPolling();
     };
@@ -438,7 +442,12 @@ export default function AppShell() {
           {isMacWindow ? <div className="apple-chrome-inset" data-tauri-drag-region aria-hidden="true" /> : null}
           <div data-tauri-drag-region className="min-w-0 flex-1 self-stretch" />
           {!isMacWindow ? (
-            <div className="flex h-full items-center">
+            <div
+              className="flex h-full items-center"
+              data-window-controls-hover={windowControlsHovered}
+              onPointerMove={() => setWindowControlsHovered(true)}
+              onPointerLeave={() => setWindowControlsHovered(false)}
+            >
               <button type="button" className="window-control-button" aria-label={t("window.minimize")} onClick={() => void appWindow?.minimize()}><Minus strokeWidth={2} aria-hidden="true" /></button>
               <button type="button" className="window-control-button" aria-label={t("window.maximize")} onClick={() => void appWindow?.toggleMaximize()}><Square strokeWidth={2} aria-hidden="true" /></button>
               <button type="button" className="window-control-button window-control-button--close" aria-label={t("window.close")} onClick={() => void appWindow?.close()}><X strokeWidth={2} aria-hidden="true" /></button>

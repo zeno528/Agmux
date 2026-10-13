@@ -734,7 +734,7 @@ body:has(.app-dialog-overlay) .window-control-button {
   transition: background-color var(--motion-fast) ease-out, color var(--motion-fast) ease-out;
 }
 
-.window-control-button:hover {
+[data-window-controls-hover="true"] .window-control-button:hover {
   background: var(--hover-bg);
 }
 
@@ -743,7 +743,7 @@ body:has(.app-dialog-overlay) .window-control-button {
   height: 1rem;
 }
 
-.window-control-button--close:hover {
+[data-window-controls-hover="true"] .window-control-button--close:hover {
   background: #e81123;
   color: #ffffff;
 }

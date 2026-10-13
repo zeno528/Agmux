@@ -247,7 +247,7 @@ describe("AppShell 布局", () => {
     expect(styles).toMatch(/:root \{[^}]*--hover-bg: rgb\(0 0 0 \/ 0\.05\);/);
     expect(styles).toMatch(/:root\.dark \{[^}]*--hover-bg: rgb\(255 255 255 \/ 0\.08\);/);
     expect(styles.match(/--hover-bg:/g)).toHaveLength(2);
-    for (const selector of [".window-control-button:hover", ".apple-back-button:hover", ".editor-ghost-group:hover", ".app-dialog-close:hover", ".app-toast__close:hover"]) {
+    for (const selector of ['[data-window-controls-hover="true"] .window-control-button:hover', ".apple-back-button:hover", ".editor-ghost-group:hover", ".app-dialog-close:hover", ".app-toast__close:hover"]) {
       expect(styles).toContain(`${selector} {\n  background: var(--hover-bg);`);
     }
     expect(styles).toContain(":where(.apple-icon-button:hover:not(:disabled), .apple-icon-button:focus-visible:not(:disabled)) {\n  background: var(--hover-bg);");
