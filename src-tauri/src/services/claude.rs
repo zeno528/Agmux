@@ -166,7 +166,7 @@ fn extra_env_keys(raw: Option<&str>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn parse_settings_document(raw: &str) -> AppResult<Value> {
+pub(super) fn parse_settings_document(raw: &str) -> AppResult<Value> {
     let document: Value = serde_json::from_str(raw)
         .map_err(|error| app_err!("settings.json 不是有效 JSON: {error}"))?;
     let object = document
@@ -191,7 +191,7 @@ fn parse_settings_document(raw: &str) -> AppResult<Value> {
 }
 
 /// 账号模式仅使用 Claude Code 自己管理的登录；不触碰凭证文件。
-fn clear_account_auth_overrides(document: &mut Value) {
+pub(super) fn clear_account_auth_overrides(document: &mut Value) {
     if let Some(env) = document.get_mut("env").and_then(Value::as_object_mut) {
         for key in [
             "ANTHROPIC_BASE_URL",
@@ -213,7 +213,7 @@ fn clear_account_auth_overrides(document: &mut Value) {
     }
 }
 
-fn read_raw_settings(raw: &str, input: &mut ClaudeProfileInput) -> AppResult<()> {
+fn read_raw_settings(raw: &str, input: &mut ClaudeProfileInput) -> AppResult<Value> {
     let document = parse_settings_document(raw)?;
     let env = document.get("env").and_then(Value::as_object);
     let field = |key: &str| {
@@ -231,7 +231,7 @@ fn read_raw_settings(raw: &str, input: &mut ClaudeProfileInput) -> AppResult<()>
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     input.extra_env = (!extra.is_empty()).then(|| Value::Object(extra).to_string());
-    Ok(())
+    Ok(document)
 }
 
 fn legacy_matches_live(raw: &str, profile: &StoredClaudeProfile) -> bool {
@@ -256,7 +256,7 @@ fn legacy_matches_live(raw: &str, profile: &StoredClaudeProfile) -> bool {
 /// 新建供应商的 raw_settings 默认 "{}"（claude-account 保存时也强制 "{}"），
 /// 属于从未捕获过真实文件的全新配置——整文件替换会静默清空用户 settings.json
 /// 里的 permissions/hooks/statusLine 等现场，必须落入 merge 路径保住它们。
-fn is_trivial_settings_snapshot(raw: &str) -> bool {
+pub(super) fn is_trivial_settings_snapshot(raw: &str) -> bool {
     let Ok(Value::Object(object)) = serde_json::from_str(raw) else {
         return false;
     };
@@ -924,25 +924,35 @@ impl AppContext {
                 .and_then(|text| serde_json::from_str(text).ok()),
             ..Default::default()
         };
-        if let Err(error) = read_raw_settings(&raw, &mut live) {
-            // serde_json 的报错只含行列、不含原文（与 toml_edit 不同），
-            // 因此可以安全落日志定位到具体行；harvest 那条 Warn 讲"为什么没回写"，
-            // 这条讲"坏在哪一行"，两件事不重复。外部动态文本统一按 {:?} 编码并截断。
-            let brief: String = error.0.chars().take(120).collect();
-            tauri_plugin_log::log::warn!(
-                "[sync.claude.parse] client={:?} profile={:?} outcome=failure failure_kind=parse_error error={brief:?} msg=\"settings.json 不是有效 JSON\"",
-                sync::ClientId::Claude.label(),
-                stored.name
-            );
-            return Ok(sync::SyncOutcome::of(
-                sync::SyncKind::LiveParseError,
-                &stored.name,
-            ));
-        }
+        let document = match read_raw_settings(&raw, &mut live) {
+            Ok(document) => document,
+            Err(error) => {
+                // serde_json 的报错只含行列、不含原文（与 toml_edit 不同），
+                // 因此可以安全落日志定位到具体行；harvest 那条 Warn 讲"为什么没回写"，
+                // 这条讲"坏在哪一行"，两件事不重复。外部动态文本统一按 {:?} 编码并截断。
+                let brief: String = error.0.chars().take(120).collect();
+                tauri_plugin_log::log::warn!(
+                    "[sync.claude.parse] client={:?} profile={:?} outcome=failure failure_kind=parse_error error={brief:?} msg=\"settings.json 不是有效 JSON\"",
+                    sync::ClientId::Claude.label(),
+                    stored.name
+                );
+                return Ok(sync::SyncOutcome::of(
+                    sync::SyncKind::LiveParseError,
+                    &stored.name,
+                ));
+            }
+        };
+        // 外部工具（Claude Code）会整文件重写 live 且格式不定（实测吸收过紧凑单行），
+        // 逐字节比较会把每次格式抖动都当成变化写库。先把 live 规范化成存储形态
+        // （pretty + 末尾换行）再比：内容相同的格式漂移只在首次吸收时规范化一次，
+        // 之后稳定收敛到 Unchanged。
+        let mut canonical = serde_json::to_string_pretty(&document)
+            .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
+        canonical.push('\n');
         let unchanged = live.base_url == stored.base_url
             && live.auth_token == stored.auth_token
             && live.model == stored.model
-            && stored.raw_settings.as_deref() == Some(raw.as_str())
+            && stored.raw_settings.as_deref() == Some(canonical.as_str())
             && match (live.extra_env.as_deref(), stored.extra_env.as_deref()) {
                 (Some(l), Some(s)) => {
                     serde_json::from_str::<Value>(l).ok() == serde_json::from_str::<Value>(s).ok()
@@ -956,7 +966,7 @@ impl AppContext {
                 &stored.name,
             ));
         }
-        live.raw_settings = Some(raw);
+        live.raw_settings = Some(canonical);
         self.database
             .update_claude_profile(&id, &live, &now_ms().to_string(), |_| Ok(()))?;
         Ok(sync::SyncOutcome::of(sync::SyncKind::Wrote, &stored.name))
@@ -2614,6 +2624,11 @@ mod tests {
         );
     }
 
+    /// 快照存规范化形态后，内容断言用语义相等，不锁外部写盘的字节格式。
+    fn same_json(a: &str, b: &str) -> bool {
+        serde_json::from_str::<Value>(a).ok() == serde_json::from_str::<Value>(b).ok()
+    }
+
     #[test]
     fn full_settings_edit_updates_top_level_and_managed_fields() {
         let (home, context) = test_context();
@@ -2659,14 +2674,13 @@ mod tests {
                 }
             )
             .is_err());
-        assert_eq!(
-            context
-                .claude_get(&created.id)
-                .unwrap()
-                .raw_settings
-                .as_deref(),
-            Some(edited)
-        );
+        // 同步吸收会把快照规范化成 pretty 形态：断言语义相同而不是逐字节
+        let synced_raw = context
+            .claude_get(&created.id)
+            .unwrap()
+            .raw_settings
+            .unwrap();
+        assert!(same_json(&synced_raw, edited));
     }
 
     /// 外部改过 ~/.claude/settings.json：进列表/开编辑页把 live 回写进激活快照（对齐 Codex 同步语义）；
@@ -2694,7 +2708,11 @@ mod tests {
         assert_eq!(synced.base_url.as_deref(), Some("https://changed.example"));
         assert_eq!(synced.model.as_deref(), Some("glm-a"));
         assert_eq!(synced.extra_env.as_deref(), Some(r#"{"CUSTOM":"keep"}"#));
-        assert_eq!(synced.raw_settings.as_deref(), Some(external));
+        // 吸收进快照的是规范化 pretty 形态：内容保真、不锁字节格式
+        assert!(same_json(
+            synced.raw_settings.as_deref().unwrap_or_default(),
+            external
+        ));
         assert_eq!(synced.description.as_deref(), Some("保留元数据"));
         assert_eq!(
             context.database.active_claude_profile().unwrap().as_deref(),
@@ -2712,14 +2730,12 @@ mod tests {
         // live 损坏：同步静默跳过，快照保持最后一次有效内容
         std::fs::write(&settings, "invalid {").unwrap();
         context.claude_list().unwrap();
-        assert_eq!(
-            context
-                .claude_get(&stored.id)
-                .unwrap()
-                .raw_settings
-                .as_deref(),
-            Some(external)
-        );
+        let healed = context
+            .claude_get(&stored.id)
+            .unwrap()
+            .raw_settings
+            .unwrap();
+        assert!(same_json(&healed, external));
     }
 
     #[test]
@@ -3636,6 +3652,44 @@ API_KEY = "secret"
         // 紧接着再收割必须幂等收敛到 Unchanged。
         std::fs::write(context.claude_settings_path(), &applied).unwrap();
         context.sync_active_claude_settings().unwrap();
+        assert_eq!(
+            context.sync_active_claude_settings().unwrap().kind,
+            sync::SyncKind::Unchanged
+        );
+    }
+
+    /// 回归：Claude Code 会整文件重写 live 且格式不定（DeepSeek 快照曾被吸收成
+    /// 紧凑单行）。内容相同的纯格式重写只在首次吸收时规范化一次，之后稳定。
+    #[test]
+    fn sync_normalizes_external_format_churn_once_then_stays_stable() {
+        let (_home, context) = test_context();
+        let profile = context
+            .database
+            .insert_claude_profile(
+                &draft("Provider", Some("https://api.example"), Some("key"), None),
+                "1",
+            )
+            .unwrap();
+        context.claude_apply(&profile.id).unwrap();
+
+        // 外部把 live 重写成紧凑单行：内容与快照语义相同、只有格式不同
+        let compact =
+            r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"key","ANTHROPIC_BASE_URL":"https://api.example"}}"#;
+        std::fs::write(context.claude_settings_path(), compact).unwrap();
+        assert_eq!(
+            context.sync_active_claude_settings().unwrap().kind,
+            sync::SyncKind::Wrote
+        );
+        let stored = context
+            .database
+            .claude_profile(&profile.id)
+            .unwrap()
+            .raw_settings
+            .unwrap();
+        // 吸收进快照的是规范化 pretty 形态，内容保真
+        assert!(stored.contains('\n'));
+        assert!(stored.contains("api.example"));
+        // 同样的紧凑 live 再收割：不再翻新
         assert_eq!(
             context.sync_active_claude_settings().unwrap().kind,
             sync::SyncKind::Unchanged

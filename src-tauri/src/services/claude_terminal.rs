@@ -1,7 +1,14 @@
 //! Claude Code 供应商终端：在新终端里起一个只属于某个供应商的 `claude` 会话。
 //!
-//! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的完整 env 写进
-//! `.agofra/terminal/claude_<id>.json`，终端里跑 `claude --settings <该文件>`。
+//! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的配置写进
+//! `.agofra/terminal/claude_<id>.json`，终端里跑
+//! `claude --settings <该文件> --setting-sources project,local`。
+//! 覆盖文件与「使用」写 live 同构（write_claude_settings 双路）：非平凡快照整文档
+//! 进覆盖文件（hooks、permissions 等随配置走），平凡快照只写托管 env、未写的键由
+//! `--settings` 的键级合并继承全局。`--setting-sources` 不加载 user 来源（live），
+//! live 的任何键（含 hooks）都不再参与（实测 `--settings` 带 hooks 时是整键替换，
+//! 平凡快照不带 hooks 时则靠本 flag 排除 live）——终端会话等价于把该配置激活后
+//! 运行的世界。
 //! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
@@ -17,7 +24,10 @@ use serde_json::{Map, Value};
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
-use super::claude::managed_env;
+use super::claude::{
+    clear_account_auth_overrides, is_trivial_settings_snapshot, managed_env,
+    parse_settings_document,
+};
 use super::AppContext;
 use crate::database::StoredClaudeProfile;
 use crate::error::{app_err, AppResult};
@@ -25,9 +35,24 @@ use crate::fsutil::atomic_write;
 #[cfg(target_os = "macos")]
 use crate::models::MacosTerminal;
 
-/// 覆盖文件内容就是该供应商的完整 env，与「使用」写 live 同源（同一个 managed_env），
-/// 所以终端里跑的供应商和卡片上显示的供应商必然一致。
+/// 覆盖文件与「使用」写 live 同构（write_claude_settings 双路）：非平凡快照整文档
+/// 原样进覆盖文件（快照在编辑保存时已由前端把表单字段同步进 env），平凡快照只写
+/// 该供应商的托管 env（同一个 managed_env）。终端里跑的供应商和卡片必然一致。
 fn terminal_settings_document(profile: &StoredClaudeProfile) -> AppResult<Vec<u8>> {
+    if let Some(raw) = profile
+        .raw_settings
+        .as_deref()
+        .filter(|raw| !is_trivial_settings_snapshot(raw))
+    {
+        let mut document = parse_settings_document(raw)?;
+        if profile.kind.as_deref() == Some("claude-account") {
+            clear_account_auth_overrides(&mut document);
+        }
+        let mut bytes = serde_json::to_vec_pretty(&document)
+            .map_err(|error| app_err!("终端配置序列化失败: {error}"))?;
+        bytes.push(b'\n');
+        return Ok(bytes);
+    }
     let mut document = Map::new();
     document.insert("env".to_string(), Value::Object(managed_env(profile)));
     let mut bytes = serde_json::to_vec_pretty(&Value::Object(document))
@@ -203,7 +228,7 @@ fn windows_launch_script(dir: Option<&str>, settings: &str, banner: &str, model:
         script.push_str(&format!("Set-Location -LiteralPath {}; ", ps_quote(dir)));
     }
     script.push_str(&format!(
-        "Write-Output {}; claude --settings {} --model {}",
+        "Write-Output {}; claude --settings {} --setting-sources 'project,local' --model {}",
         ps_quote(banner),
         ps_quote(settings),
         ps_quote(model)
@@ -220,7 +245,7 @@ fn ps_quote(value: &str) -> String {
 #[cfg(target_os = "macos")]
 fn claude_invocation(settings: &str, model: &str) -> String {
     format!(
-        "claude --settings {} --model {}",
+        "claude --settings {} --setting-sources 'project,local' --model {}",
         posix_quote(settings),
         posix_quote(model)
     )
@@ -323,13 +348,10 @@ mod tests {
         let text = String::from_utf8(terminal_settings_document(profile).unwrap()).unwrap();
         serde_json::from_str::<Value>(&text)
             .unwrap()
-            .as_object()
-            .unwrap()
             .get("env")
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .clone()
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default()
     }
 
     #[test]
@@ -339,6 +361,53 @@ mod tests {
         assert_eq!(env["ANTHROPIC_BASE_URL"], "https://gw.invalid");
         assert_eq!(env["ANTHROPIC_MODEL"], "claude-sonnet-5");
         assert_eq!(env["ANTHROPIC_AUTH_TOKEN"], "sk-x");
+    }
+
+    #[test]
+    fn non_trivial_snapshot_carries_the_full_document() {
+        // 非平凡快照整文档原样进覆盖文件（对齐 apply 的整文件替换）：hooks、
+        // permissions 等非 env 键随配置走，env 保持快照原文、不二次合并表单字段。
+        let mut target = profile(Some("packy"), Some("sk-x"), None);
+        target.raw_settings = Some(
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://captured.example","ANTHROPIC_AUTH_TOKEN":"captured-tok","CUSTOM":"keep"},"hooks":{"SessionStart":[]},"permissions":{"allow":["Bash(ls)"]}}"#
+                .into(),
+        );
+        let document: Value =
+            serde_json::from_slice(&terminal_settings_document(&target).unwrap()).unwrap();
+        assert_eq!(
+            document["env"]["ANTHROPIC_BASE_URL"],
+            "https://captured.example"
+        );
+        assert_eq!(document["env"]["CUSTOM"], "keep");
+        assert!(document.get("hooks").is_some());
+        assert_eq!(document["permissions"]["allow"][0], "Bash(ls)");
+    }
+
+    #[test]
+    fn claude_account_snapshot_drops_auth_overrides() {
+        // 账号模式与 apply 同一道清理：快照里的供应商凭证键必须撤下，其余键保留。
+        let mut target = profile(Some("claude-account"), None, None);
+        target.raw_settings = Some(
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.example","ANTHROPIC_AUTH_TOKEN":"tok"},"model":"sonnet"}"#
+                .into(),
+        );
+        let document: Value =
+            serde_json::from_slice(&terminal_settings_document(&target).unwrap()).unwrap();
+        let env = document["env"].as_object().unwrap();
+        assert!(!env.contains_key("ANTHROPIC_AUTH_TOKEN"));
+        assert!(!env.contains_key("ANTHROPIC_BASE_URL"));
+        assert_eq!(document["model"], "sonnet");
+    }
+
+    #[test]
+    fn trivial_snapshot_stays_env_only() {
+        // 平凡快照只写托管 env；未写的键交给 --settings 键级合并继承全局。
+        let mut target = profile(Some("packy"), Some("sk-x"), None);
+        target.raw_settings = Some("{}".into());
+        let document: Value =
+            serde_json::from_slice(&terminal_settings_document(&target).unwrap()).unwrap();
+        assert_eq!(document["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-x");
+        assert_eq!(document.as_object().unwrap().len(), 1);
     }
 
     #[test]
@@ -422,7 +491,8 @@ mod tests {
         assert_eq!(
             script,
             "echo 'Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json'; \
-             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' --model 'sonnet'\\''s'"
+             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' \
+             --setting-sources 'project,local' --model 'sonnet'\\''s'"
         );
     }
 
@@ -441,8 +511,10 @@ mod tests {
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
         assert!(script
             .contains("Set-Location -LiteralPath 'D:\\GitHub project\\Agofra'; Write-Output "));
-        assert!(script
-            .ends_with("; claude --settings 'C:\\Users\\u\\.agofra\\terminal\\claude_p1.json' --model 'sonnet'"));
+        assert!(script.ends_with(
+            "; claude --settings 'C:\\Users\\u\\.agofra\\terminal\\claude_p1.json' \
+             --setting-sources 'project,local' --model 'sonnet'"
+        ));
         assert!(!script.contains("&&"));
     }
 
@@ -477,7 +549,7 @@ function claude {
     if ($env:AGOFRA_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
     if ($env:AGOFRA_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
     if ($env:AGOFRA_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
-    if (($args -join '|') -ne '--settings|C:\t\profile.json|--model|sonnet') { throw 'Profile changed' }
+    if (($args -join '|') -ne '--settings|C:\t\profile.json|--setting-sources|project,local|--model|sonnet') { throw 'Profile changed' }
     if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
     Write-Output 'claude environment verified'
 }
