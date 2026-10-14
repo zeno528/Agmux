@@ -3,32 +3,26 @@
 //! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的配置写进
 //! `.agmux/terminal/claude_<id>.json`，终端里跑
 //! `claude --settings <该文件> --setting-sources project,local`。
-//! 覆盖文件与「使用」写 live 同构（write_claude_settings 双路）：非平凡快照整文档
-//! 进覆盖文件（hooks、permissions 等随配置走），平凡快照只写托管 env、未写的键由
-//! `--settings` 的键级合并继承全局。`--setting-sources` 不加载 user 来源（live），
-//! live 的任何键（含 hooks）都不再参与（实测 `--settings` 带 hooks 时是整键替换，
-//! 平凡快照不带 hooks 时则靠本 flag 排除 live）——终端会话等价于把该配置激活后
-//! 运行的世界。
-//! 用户级 MCP 另经 `--mcp-config ~/.claude.json` 加载，不把 live settings 带回会话。
+//! 配置生成复用激活逻辑；不加载 user settings，避免当前激活项的 Hooks、权限等混入。
+//! `--add-dir` 只引入共用 Skills，MCP 经 `--mcp-config ~/.claude.json` 读取。
+//! 保留默认 Claude 用户目录，共用登录、历史会话与信任记录；不跳过权限检查。
+//! `--settings` 同名字段按官方覆盖语义高于 project/local，不另造优先级规则。
 //! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
 //! 覆盖文件固定命名、每次覆写、不随进程删除——终端里能直接看到路径，便于排查。
 
 use std::path::Path;
-#[cfg(target_os = "macos")]
+#[cfg(any(windows, target_os = "macos"))]
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
 use base64::Engine;
-use serde_json::{Map, Value};
+use serde_json::Value;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
-use super::claude::{
-    clear_account_auth_overrides, is_trivial_settings_snapshot, managed_env,
-    parse_settings_document,
-};
+use super::claude::claude_settings_bytes;
 use super::AppContext;
 use crate::database::StoredClaudeProfile;
 use crate::error::{app_err, AppResult};
@@ -36,30 +30,48 @@ use crate::fsutil::atomic_write;
 #[cfg(target_os = "macos")]
 use crate::models::MacosTerminal;
 
-/// 覆盖文件与「使用」写 live 同构（write_claude_settings 双路）：非平凡快照整文档
-/// 原样进覆盖文件（快照在编辑保存时已由前端把表单字段同步进 env），平凡快照只写
-/// 该供应商的托管 env（同一个 managed_env）。终端里跑的供应商和卡片必然一致。
-fn terminal_settings_document(profile: &StoredClaudeProfile) -> AppResult<Vec<u8>> {
-    if let Some(raw) = profile
-        .raw_settings
-        .as_deref()
-        .filter(|raw| !is_trivial_settings_snapshot(raw))
-    {
-        let mut document = parse_settings_document(raw)?;
-        if profile.kind.as_deref() == Some("claude-account") {
-            clear_account_auth_overrides(&mut document);
+// 附加目录只暴露 Skills，避免 --add-dir 用户主目录扩大工作区访问范围。
+fn prepare_shared_skills(terminal: &Path, source: &Path) -> AppResult<std::path::PathBuf> {
+    let shared = terminal.join("shared");
+    let link = shared.join(".claude/skills");
+    std::fs::create_dir_all(source)
+        .map_err(|error| app_err!("无法创建共用 Skills 目录: {error}"))?;
+    std::fs::create_dir_all(link.parent().expect("资源目录必须有父目录"))
+        .map_err(|error| app_err!("无法创建 Skills 入口目录: {error}"))?;
+    if !link.exists() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let output =
+                Command::new(find_windows_shell().ok_or_else(|| app_err!("未找到 PowerShell"))?)
+                    .args([
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        &format!(
+                    "New-Item -ItemType Junction -Path {} -Target {} -ErrorAction Stop | Out-Null",
+                    ps_quote(&link.to_string_lossy()), ps_quote(&source.to_string_lossy()),
+                ),
+                    ])
+                    .creation_flags(0x08000000)
+                    .output()
+                    .map_err(|error| app_err!("无法连接共用 Skills 目录: {error}"))?;
+            if !output.status.success() {
+                return Err(app_err!("无法连接共用 Skills 目录: {}", link.display()));
+            }
         }
-        let mut bytes = serde_json::to_vec_pretty(&document)
-            .map_err(|error| app_err!("终端配置序列化失败: {error}"))?;
-        bytes.push(b'\n');
-        return Ok(bytes);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(source, &link)
+            .map_err(|error| app_err!("无法连接共用 Skills 目录: {error}"))?;
     }
-    let mut document = Map::new();
-    document.insert("env".to_string(), Value::Object(managed_env(profile)));
-    let mut bytes = serde_json::to_vec_pretty(&Value::Object(document))
-        .map_err(|error| app_err!("终端配置序列化失败: {error}"))?;
-    bytes.push(b'\n');
-    Ok(bytes)
+    let linked = std::fs::canonicalize(&link)
+        .map_err(|error| app_err!("无法读取 Skills 入口目录: {error}"))?;
+    let original = std::fs::canonicalize(source)
+        .map_err(|error| app_err!("无法读取共用 Skills 目录: {error}"))?;
+    if linked != original {
+        return Err(app_err!("共用 Skills 入口指向不一致: {}", link.display()));
+    }
+    Ok(shared)
 }
 
 fn terminal_model(profile: &StoredClaudeProfile) -> String {
@@ -119,7 +131,18 @@ impl AppContext {
 
         self.paths.ensure()?;
         let settings = self.paths.terminal_settings(&profile.id);
-        atomic_write(&settings, &terminal_settings_document(&profile)?)?;
+        let stale_extra_keys = self.claude_previous_extra_keys(id)?;
+        atomic_write(
+            &settings,
+            &claude_settings_bytes(
+                Some(&profile),
+                &self.paths.claude_home.join("settings.json"),
+                &stale_extra_keys,
+            )?,
+        )?;
+        let shared_skills =
+            prepare_shared_skills(&self.paths.terminal, &self.paths.claude_home.join("skills"))?;
+        let shared_skills = shared_skills.to_string_lossy();
 
         // 启动前回显覆盖文件路径：用户能立刻确认这个终端用的是哪份配置。
         let settings_text = settings.display().to_string();
@@ -131,19 +154,43 @@ impl AppContext {
             .then(|| mcp_path.to_string_lossy().into_owned());
 
         #[cfg(target_os = "windows")]
-        launch_windows(dir, &settings_text, &banner, &model, mcp_config.as_deref())?;
+        launch_windows(
+            dir,
+            &settings_text,
+            &banner,
+            &model,
+            mcp_config.as_deref(),
+            &shared_skills,
+        )?;
         #[cfg(target_os = "macos")]
         match self.settings()?.macos_terminal {
-            MacosTerminal::Ghostty => {
-                launch_ghostty(dir, &settings_text, &banner, &model, mcp_config.as_deref())?
-            }
-            MacosTerminal::Terminal => {
-                launch_macos(dir, &settings_text, &banner, &model, mcp_config.as_deref())?
-            }
+            MacosTerminal::Ghostty => launch_ghostty(
+                dir,
+                &settings_text,
+                &banner,
+                &model,
+                mcp_config.as_deref(),
+                &shared_skills,
+            )?,
+            MacosTerminal::Terminal => launch_macos(
+                dir,
+                &settings_text,
+                &banner,
+                &model,
+                mcp_config.as_deref(),
+                &shared_skills,
+            )?,
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
-            let _ = (dir, &settings_text, &banner, &model, &mcp_config);
+            let _ = (
+                dir,
+                &settings_text,
+                &banner,
+                &model,
+                &mcp_config,
+                &shared_skills,
+            );
             return Err(app_err!("当前平台不支持启动终端"));
         }
 
@@ -165,9 +212,10 @@ fn launch_windows(
     banner: &str,
     model: &str,
     mcp_config: Option<&str>,
+    shared_skills: &str,
 ) -> AppResult<()> {
     let shell = find_windows_shell().ok_or_else(|| app_err!("未找到 PowerShell"))?;
-    let script = windows_launch_script(dir, settings, banner, model, mcp_config);
+    let script = windows_launch_script(dir, settings, banner, model, mcp_config, shared_skills);
     shell_execute_script(&shell, &script)
 }
 
@@ -236,6 +284,7 @@ fn windows_launch_script(
     banner: &str,
     model: &str,
     mcp_config: Option<&str>,
+    shared_skills: &str,
 ) -> String {
     // GUI 父进程可能缺少持久环境变量；只补缺失项，保留 shell/profile 的进程级覆盖。
     let mut script = String::from(
@@ -243,15 +292,16 @@ fn windows_launch_script(
          foreach ($entry in [Environment]::GetEnvironmentVariables($scope).GetEnumerator()) { \
          if (-not (Test-Path -LiteralPath ('Env:' + $entry.Key))) { \
          [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process') \
-         } } }; Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; ",
+         } } }; Remove-Item Env:NO_COLOR,Env:TERM,Env:CLAUDE_CONFIG_DIR,Env:CLAUDE_SECURESTORAGE_CONFIG_DIR,Env:ANTHROPIC_BASE_URL,Env:ANTHROPIC_AUTH_TOKEN,Env:ANTHROPIC_API_KEY,Env:ANTHROPIC_MODEL -ErrorAction SilentlyContinue; ",
     );
     if let Some(dir) = dir {
         script.push_str(&format!("Set-Location -LiteralPath {}; ", ps_quote(dir)));
     }
     script.push_str(&format!(
-        "Write-Output {}; claude --settings {} --setting-sources 'project,local' {}--model {}",
+        "Write-Output {}; claude --settings {} --setting-sources 'project,local' --add-dir {} {}--model {}",
         ps_quote(banner),
         ps_quote(settings),
+        ps_quote(shared_skills),
         mcp_config
             .map(|path| format!("--mcp-config {} ", ps_quote(path)))
             .unwrap_or_default(),
@@ -267,10 +317,16 @@ fn ps_quote(value: &str) -> String {
 
 /// 两套 macOS 启动路径共用的 claude 调用行（posix 单引号字面量）。
 #[cfg(target_os = "macos")]
-fn claude_invocation(settings: &str, model: &str, mcp_config: Option<&str>) -> String {
+fn claude_invocation(
+    settings: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+    shared_skills: &str,
+) -> String {
     format!(
-        "claude --settings {} --setting-sources 'project,local' {}--model {}",
+        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude --settings {} --setting-sources 'project,local' --add-dir {} {}--model {}",
         posix_quote(settings),
+        posix_quote(shared_skills),
         mcp_config
             .map(|path| format!("--mcp-config {} ", posix_quote(path)))
             .unwrap_or_default(),
@@ -288,11 +344,12 @@ fn ghostty_launch_script(
     settings: &str,
     model: &str,
     mcp_config: Option<&str>,
+    shared_skills: &str,
 ) -> String {
     format!(
         "echo {}; {}",
         posix_quote(banner),
-        claude_invocation(settings, model, mcp_config)
+        claude_invocation(settings, model, mcp_config, shared_skills)
     )
 }
 
@@ -303,6 +360,7 @@ fn launch_ghostty(
     banner: &str,
     model: &str,
     mcp_config: Option<&str>,
+    shared_skills: &str,
 ) -> AppResult<()> {
     const GHOSTTY_BIN: &str = "/Applications/Ghostty.app/Contents/MacOS/ghostty";
     if !Path::new(GHOSTTY_BIN).is_file() {
@@ -313,7 +371,7 @@ fn launch_ghostty(
         "-e",
         "zsh",
         "-c",
-        &ghostty_launch_script(banner, settings, model, mcp_config),
+        &ghostty_launch_script(banner, settings, model, mcp_config, shared_skills),
     ]);
     if let Some(dir) = dir {
         command.current_dir(dir);
@@ -332,8 +390,9 @@ fn launch_macos(
     banner: &str,
     model: &str,
     mcp_config: Option<&str>,
+    shared_skills: &str,
 ) -> AppResult<()> {
-    let claude = claude_invocation(settings, model, mcp_config);
+    let claude = claude_invocation(settings, model, mcp_config, shared_skills);
     let line = match dir {
         Some(dir) => format!("cd {} && {claude}", posix_quote(dir)),
         None => claude,
@@ -362,6 +421,60 @@ end tell"#,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Map;
+
+    fn terminal_settings_document(profile: &StoredClaudeProfile) -> AppResult<Vec<u8>> {
+        let root = tempfile::tempdir().unwrap();
+        claude_settings_bytes(Some(profile), &root.path().join("settings.json"), &[])
+    }
+
+    #[test]
+    fn shared_skills_entry_uses_live_files_without_creating_a_claude_home() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join(".claude/skills");
+        let terminal = root.path().join("terminal");
+        let shared = prepare_shared_skills(&terminal, &source).unwrap();
+        assert_eq!(prepare_shared_skills(&terminal, &source).unwrap(), shared);
+        std::fs::write(source.join("SKILL.md"), "before").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(shared.join(".claude/skills/SKILL.md")).unwrap(),
+            "before"
+        );
+        std::fs::write(source.join("SKILL.md"), "after").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(shared.join(".claude/skills/SKILL.md")).unwrap(),
+            "after"
+        );
+        assert!(!shared.join(".claude.json").exists());
+        assert!(!shared.join("settings.json").exists());
+        assert!(!shared.join("projects").exists());
+        let wrong = root.path().join("wrong");
+        std::fs::create_dir_all(wrong.join("shared/.claude/skills")).unwrap();
+        assert!(prepare_shared_skills(&wrong, &source).is_err());
+    }
+
+    #[test]
+    fn empty_snapshot_uses_the_same_initial_settings_as_activation_without_changing_live() {
+        let root = tempfile::tempdir().unwrap();
+        let live = root.path().join("settings.json");
+        std::fs::write(&live, r#"{"env":{"ANTHROPIC_API_KEY":"old","OLD_EXTRA":"old"},"hooks":{"Stop":[]},"enabledPlugins":{"fixture":true}}"#).unwrap();
+        let before = std::fs::read(&live).unwrap();
+        let mut target = profile(Some("deepseek"), Some("target"), None);
+        target.raw_settings = Some("{}".into());
+        let document: Value = serde_json::from_slice(
+            &claude_settings_bytes(Some(&target), &live, &["OLD_EXTRA".into()]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(document["env"]["ANTHROPIC_AUTH_TOKEN"], "target");
+        assert!(document["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert!(document["env"].get("OLD_EXTRA").is_none());
+        assert_eq!(document["enabledPlugins"]["fixture"], true);
+        assert!(document["hooks"].get("Stop").is_some());
+        assert_eq!(std::fs::read(&live).unwrap(), before);
+        std::fs::write(&live, "broken").unwrap();
+        assert!(claude_settings_bytes(Some(&target), &live, &[]).is_err());
+        assert_eq!(std::fs::read_to_string(&live).unwrap(), "broken");
+    }
 
     fn profile(
         kind: Option<&str>,
@@ -445,7 +558,7 @@ mod tests {
 
     #[test]
     fn trivial_snapshot_stays_env_only() {
-        // 平凡快照只写托管 env；未写的键交给 --settings 键级合并继承全局。
+        // 没有现场文件时，平凡快照只包含该供应商的 env。
         let mut target = profile(Some("packy"), Some("sk-x"), None);
         target.raw_settings = Some("{}".into());
         let document: Value =
@@ -530,14 +643,15 @@ mod tests {
             "/Users/u/.agmux/terminal/claude_p1.json",
             "sonnet's",
             Some("/Users/u's home/.claude.json"),
+            "/Users/u/.agmux/terminal/shared",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
         assert_eq!(
             script,
             "echo 'Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json'; \
-             claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
-             --setting-sources 'project,local' --mcp-config '/Users/u'\\''s home/.claude.json' --model 'sonnet'\\''s'"
+             env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
+             --setting-sources 'project,local' --add-dir '/Users/u/.agmux/terminal/shared' --mcp-config '/Users/u'\\''s home/.claude.json' --model 'sonnet'\\''s'"
         );
     }
 
@@ -552,6 +666,7 @@ mod tests {
             "Agmux Claude terminal: C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
             "sonnet",
             None,
+            "C:\\t\\shared",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
@@ -560,7 +675,7 @@ mod tests {
         );
         assert!(script.ends_with(
             "; claude --settings 'C:\\Users\\u\\.agmux\\terminal\\claude_p1.json' \
-             --setting-sources 'project,local' --model 'sonnet'"
+             --setting-sources 'project,local' --add-dir 'C:\\t\\shared' --model 'sonnet'"
         ));
         assert!(!script.contains("&&"));
     }
@@ -568,12 +683,16 @@ mod tests {
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_script_skips_set_location_when_no_directory_is_given() {
-        let script =
-            windows_launch_script(None, "C:\\t\\claude_p1.json", "banner", "default", None);
+        let script = windows_launch_script(
+            None,
+            "C:\\t\\claude_p1.json",
+            "banner",
+            "default",
+            None,
+            "C:\\t\\shared",
+        );
         assert!(!script.contains("Set-Location"));
-        assert!(script.contains(
-            "Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; Write-Output 'banner'; claude --settings "
-        ));
+        assert!(script.contains("Write-Output 'banner'; claude --settings "));
     }
 
     #[test]
@@ -597,7 +716,10 @@ function claude {
     if ($env:AGMUX_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
     if ($env:AGMUX_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
     if ($env:AGMUX_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
-    if (($args -join '|') -ne "--settings|C:\t\profile.json|--setting-sources|project,local|--mcp-config|C:\user's home\.claude.json|--model|sonnet") { throw 'Profile or MCP config changed' }
+    if (($args -join '|') -ne "--settings|C:\t\profile.json|--setting-sources|project,local|--add-dir|C:\shared skills|--mcp-config|C:\user's home\.claude.json|--model|sonnet") { throw 'Profile, Skills or MCP config changed' }
+    foreach ($key in 'CLAUDE_CONFIG_DIR','CLAUDE_SECURESTORAGE_CONFIG_DIR','ANTHROPIC_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_API_KEY','ANTHROPIC_MODEL') {
+        if (Test-Path ('Env:' + $key)) { throw 'Inherited isolation or provider leaked' }
+    }
     if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
     Write-Output 'claude environment verified'
 }
@@ -609,7 +731,8 @@ function claude {
                 r"C:\t\profile.json",
                 "banner",
                 "sonnet",
-                Some(r"C:\user's home\.claude.json")
+                Some(r"C:\user's home\.claude.json"),
+                r"C:\shared skills",
             )
         );
         let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
@@ -622,6 +745,12 @@ function claude {
             ])
             .env_remove("AGMUX_TEST_MCP_KEY")
             .env_remove("AGMUX_TEST_MACHINE")
+            .env("CLAUDE_CONFIG_DIR", "old-isolated-home")
+            .env("CLAUDE_SECURESTORAGE_CONFIG_DIR", "old-credential-home")
+            .env("ANTHROPIC_AUTH_TOKEN", "inherited")
+            .env("ANTHROPIC_API_KEY", "inherited")
+            .env("ANTHROPIC_BASE_URL", "https://inherited.invalid")
+            .env("ANTHROPIC_MODEL", "inherited")
             .env("AGMUX_TEST_INHERITED", "process")
             .env("NO_COLOR", "1")
             .env("TERM", "dumb")
@@ -645,6 +774,7 @@ function claude {
             "banner",
             "sonnet's",
             None,
+            "C:\\t\\shared",
         );
         assert!(script.contains("Set-Location -LiteralPath 'D:\\a&b$c';"));
         assert!(script.contains("claude --settings 'C:\\t\\it''s.json'"));

@@ -1211,16 +1211,7 @@ impl AppContext {
         )?;
         let stored = self.database.claude_profile(id)?;
         // 上一家激活配置的附加键一并撤下：托管键之外也不残留
-        let stale_extra_keys = match self.database.active_claude_profile()? {
-            Some(previous) if previous != id => extra_env_keys(
-                self.database
-                    .claude_profile(&previous)
-                    .ok()
-                    .and_then(|profile| profile.extra_env)
-                    .as_deref(),
-            ),
-            _ => Vec::new(),
-        };
+        let stale_extra_keys = self.claude_previous_extra_keys(id)?;
         crate::fsutil::with_file_rollback(&[self.claude_settings_path()], || {
             self.write_claude_settings(Some(&stored), &stale_extra_keys)?;
             self.database.set_active_claude_profile(Some(id))
@@ -1236,6 +1227,19 @@ impl AppContext {
             "[apply.claude] profile_id={id} outcome=success msg=\"已写入 ~/.claude/settings.json\""
         );
         Ok(())
+    }
+
+    pub(super) fn claude_previous_extra_keys(&self, id: &str) -> AppResult<Vec<String>> {
+        Ok(match self.database.active_claude_profile()? {
+            Some(previous) if previous != id => extra_env_keys(
+                self.database
+                    .claude_profile(&previous)
+                    .ok()
+                    .and_then(|profile| profile.extra_env)
+                    .as_deref(),
+            ),
+            _ => Vec::new(),
+        })
     }
 
     /// 恢复数据库后把 live settings.json 收敛到恢复出的激活位（回到备份时刻的状态）：
@@ -1265,53 +1269,65 @@ impl AppContext {
     ) -> AppResult<()> {
         let path = self.claude_settings_path();
         backup_file(&path, &self.paths.config_backup, "claude-settings")?;
-        if let Some(raw) = values.and_then(|profile| profile.raw_settings.as_deref()) {
-            let mut checked = ClaudeProfileInput::default();
-            read_raw_settings(raw, &mut checked)?;
-            // 平凡快照（新建配置的 "{}"/纯托管键 env）不做整文件替换，落入下方
-            // merge 路径保住用户现场；非平凡快照（捕获/全文编辑过的）保持整文件替换。
-            if !is_trivial_settings_snapshot(raw) {
-                if values.is_some_and(|profile| profile.kind.as_deref() == Some("claude-account")) {
-                    let mut document = parse_settings_document(raw)?;
-                    clear_account_auth_overrides(&mut document);
-                    let bytes = serde_json::to_vec_pretty(&document)
-                        .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
-                    return atomic_write(&path, &bytes);
-                }
-                return atomic_write(&path, raw.as_bytes());
-            }
-        }
-        let mut document = read_json_object(&path, "settings.json")?;
-        {
-            let object = document.as_object_mut().expect("顶层已校验为对象");
-            let env = object
-                .entry("env")
-                .or_insert_with(|| Value::Object(serde_json::Map::new()));
-            if !env.is_object() {
-                return Err(app_err!("settings.json 的 env 不是对象，拒绝写入"));
-            }
-            let env = env.as_object_mut().expect("env 已校验为对象");
-            for key in MANAGED_ENV_KEYS {
-                env.remove(key);
-            }
-            for key in remove_extra_keys {
-                env.remove(key);
-            }
-            if let Some(profile) = values {
-                // 键集与终端覆盖文件同源（managed_env），两处不各写一遍。
-                for (key, value) in managed_env(profile) {
-                    env.insert(key, value);
-                }
-            }
-        }
-        if values.is_some_and(|profile| profile.kind.as_deref() == Some("claude-account")) {
-            clear_account_auth_overrides(&mut document);
-        }
-        let mut bytes = serde_json::to_vec_pretty(&document)
-            .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
-        bytes.push(b'\n');
-        atomic_write(&path, &bytes)
+        atomic_write(
+            &path,
+            &claude_settings_bytes(values, &path, remove_extra_keys)?,
+        )
     }
+}
+
+/// 激活写入与独立终端使用同一份有效配置，平凡快照沿用既有的现场合并规则。
+pub(super) fn claude_settings_bytes(
+    values: Option<&StoredClaudeProfile>,
+    path: &std::path::Path,
+    remove_extra_keys: &[String],
+) -> AppResult<Vec<u8>> {
+    if let Some(raw) = values.and_then(|profile| profile.raw_settings.as_deref()) {
+        let mut checked = ClaudeProfileInput::default();
+        read_raw_settings(raw, &mut checked)?;
+        // 平凡快照（新建配置的 "{}"/纯托管键 env）不做整文件替换，落入下方
+        // merge 路径保住用户现场；非平凡快照（捕获/全文编辑过的）保持整文件替换。
+        if !is_trivial_settings_snapshot(raw) {
+            if values.is_some_and(|profile| profile.kind.as_deref() == Some("claude-account")) {
+                let mut document = parse_settings_document(raw)?;
+                clear_account_auth_overrides(&mut document);
+                let bytes = serde_json::to_vec_pretty(&document)
+                    .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
+                return Ok(bytes);
+            }
+            return Ok(raw.as_bytes().to_vec());
+        }
+    }
+    let mut document = read_json_object(path, "settings.json")?;
+    {
+        let object = document.as_object_mut().expect("顶层已校验为对象");
+        let env = object
+            .entry("env")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if !env.is_object() {
+            return Err(app_err!("settings.json 的 env 不是对象，拒绝写入"));
+        }
+        let env = env.as_object_mut().expect("env 已校验为对象");
+        for key in MANAGED_ENV_KEYS {
+            env.remove(key);
+        }
+        for key in remove_extra_keys {
+            env.remove(key);
+        }
+        if let Some(profile) = values {
+            // 键集与终端覆盖文件同源（managed_env），两处不各写一遍。
+            for (key, value) in managed_env(profile) {
+                env.insert(key, value);
+            }
+        }
+    }
+    if values.is_some_and(|profile| profile.kind.as_deref() == Some("claude-account")) {
+        clear_account_auth_overrides(&mut document);
+    }
+    let mut bytes = serde_json::to_vec_pretty(&document)
+        .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
+    bytes.push(b'\n');
+    Ok(bytes)
 }
 
 /// Anthropic 兼容的 /models 响应格式（官方与主流中转同形：data[].id）。
