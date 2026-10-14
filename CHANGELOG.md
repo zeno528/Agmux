@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.35.3] - 2026-10-15
+
+### 新增
+- 系统托盘为 Codex 与 Claude Code 分别建立切换子菜单，分别显示两端的供应商与激活项；从托盘切换 Claude Code 供应商不会触发 Codex 重启。托盘图标增加 "Agmux" 悬停提示。
+- Claude Code 独立终端在不动 live 配置的前提下，通过 `--mcp-config ~/.claude.json` 读取用户级 MCP 配置，并通过 `--add-dir` 暴露共用 Skills 目录；子进程不再继承可能影响配置生效的全局环境变量（`CLAUDE_CONFIG_DIR`、`CLAUDE_SECURESTORAGE_CONFIG_DIR`、`ANTHROPIC_*`）。
+- 独立终端与激活写入共用同一份 settings.json 字节生成逻辑，终端里看到的覆盖文件与卡片中显示的配置保持一致。
+
+### 修复
+- 侧栏折叠状态默认按"已展开"初始化（`localStorage` 值为 `"1"` 时折叠），首次打开应用不再被错误记忆为收起。
+- 切换侧栏收起时立即收起 flyout 提示，悬停判定改为仅在停留在品牌区时重新武装，避免反复进出时提示闪烁；收起按钮按动画节奏淡入。
+- 成功导入 Skill 后立即退出导入页，不必再手动返回。
+
 ## [0.35.2] - 2026-10-14
 
 ### 更名与迁移
