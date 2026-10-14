@@ -1514,7 +1514,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       return undefined as T;
     case "set_window_theme":
       return undefined as T;
-    // 浏览器调试无系统托盘，仅接受调用不产生副作用
+    // 浏览器调试无系统托盘，两端供应商菜单仅接受调用不产生副作用
     case "set_tray_menu":
       return undefined as T;
     case "auth_get_status":

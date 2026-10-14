@@ -1028,12 +1028,29 @@ pub fn parse_mcp_fragment(toml: String) -> AppResult<McpServerSpec> {
 #[tauri::command]
 pub fn set_tray_menu(
     app: AppHandle,
+    state: State<'_, AppContext>,
     language: String,
     profiles: Vec<crate::TrayProfile>,
     active_profile_id: Option<String>,
+    active_claude_profile_id: Option<String>,
 ) -> AppResult<()> {
-    let menu = crate::tray_menu(&app, &language, &profiles, active_profile_id.as_deref())
-        .map_err(|error| app_err!("更新托盘菜单失败: {error}"))?;
+    let claude_profiles = state
+        .claude_list()?
+        .into_iter()
+        .map(|profile| crate::TrayProfile {
+            id: profile.id,
+            name: profile.name,
+        })
+        .collect::<Vec<_>>();
+    let menu = crate::tray_menu(
+        &app,
+        &language,
+        &profiles,
+        active_profile_id.as_deref(),
+        &claude_profiles,
+        active_claude_profile_id.as_deref(),
+    )
+    .map_err(|error| app_err!("更新托盘菜单失败: {error}"))?;
     app.tray_by_id("main")
         .ok_or_else(|| app_err!("找不到系统托盘"))?
         .set_menu(Some(menu))

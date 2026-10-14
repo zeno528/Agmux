@@ -69,6 +69,7 @@ export default function SkillsView({ activationEpoch, popEpoch }: { activationEp
       setCandidates((current) => current.filter((candidate) => !importedNames.has(candidate.name)));
       if (imported) feedback.success(t("importedToast", { count: imported }));
       else feedback.warning(t("importedIdenticalToast"));
+      setImporting(false);
     } catch (error) { feedback.error(String(error)); }
     finally {
       await refresh(true);

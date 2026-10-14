@@ -67,35 +67,55 @@ pub fn tray_menu(
     language: &str,
     profiles: &[TrayProfile],
     active_profile_id: Option<&str>,
+    claude_profiles: &[TrayProfile],
+    active_claude_profile_id: Option<&str>,
 ) -> tauri::Result<Menu<tauri::Wry>> {
     let (show, switch, accounts, settings, quit) = tray_labels(language);
     let show_item = MenuItem::with_id(app, "show", show, true, None::<&str>)?;
-    let active = profiles
-        .iter()
-        .find(|profile| Some(profile.id.as_str()) == active_profile_id);
-    let switch_title = active
-        .map(|profile| profile.name.replace('&', "&&"))
-        .unwrap_or_else(|| switch.to_string());
-    #[cfg(target_os = "macos")]
-    let switch_menu = Submenu::with_id_and_native_icon(
-        app,
-        "switch",
-        switch_title,
-        !profiles.is_empty(),
-        active.map(|_| tauri::menu::NativeIcon::MenuOnState),
-    )?;
-    #[cfg(not(target_os = "macos"))]
-    let switch_menu = Submenu::with_id(app, "switch", switch_title, !profiles.is_empty())?;
-    for profile in profiles {
-        let selected = Some(profile.id.as_str()) == active_profile_id;
-        switch_menu.append(&CheckMenuItem::with_id(
+    let mut switch_menus = Vec::new();
+    for (client, label, profiles, active_profile_id) in [
+        ("codex", "Codex", profiles, active_profile_id),
+        (
+            "claude",
+            "Claude Code",
+            claude_profiles,
+            active_claude_profile_id,
+        ),
+    ] {
+        let active = profiles
+            .iter()
+            .find(|profile| Some(profile.id.as_str()) == active_profile_id);
+        let profile_title = active
+            .map(|profile| profile.name.replace('&', "&&"))
+            .unwrap_or_else(|| switch.to_string());
+        let switch_title = format!("{label} · {profile_title}");
+        #[cfg(target_os = "macos")]
+        let switch_menu = Submenu::with_id_and_native_icon(
             app,
-            format!("profile:{}", profile.id),
-            profile.name.replace('&', "&&"),
-            true,
-            selected,
-            None::<&str>,
-        )?)?;
+            format!("switch:{client}"),
+            switch_title,
+            !profiles.is_empty(),
+            active.map(|_| tauri::menu::NativeIcon::MenuOnState),
+        )?;
+        #[cfg(not(target_os = "macos"))]
+        let switch_menu = Submenu::with_id(
+            app,
+            format!("switch:{client}"),
+            switch_title,
+            !profiles.is_empty(),
+        )?;
+        for profile in profiles {
+            let selected = Some(profile.id.as_str()) == active_profile_id;
+            switch_menu.append(&CheckMenuItem::with_id(
+                app,
+                format!("{client}-profile:{}", profile.id),
+                profile.name.replace('&', "&&"),
+                true,
+                selected,
+                None::<&str>,
+            )?)?;
+        }
+        switch_menus.push((switch_menu, active.is_some()));
     }
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
@@ -107,7 +127,8 @@ pub fn tray_menu(
         &[
             &show_item,
             &separator_one,
-            &switch_menu,
+            &switch_menus[0].0,
+            &switch_menus[1].0,
             &separator_two,
             &accounts_item,
             &settings_item,
@@ -115,7 +136,10 @@ pub fn tray_menu(
         ],
     )?;
     #[cfg(windows)]
-    if active.is_some() {
+    for (index, (_, active)) in switch_menus.iter().enumerate() {
+        if !active {
+            continue;
+        }
         use tauri::menu::ContextMenu;
         use windows::Win32::UI::WindowsAndMessaging::{
             CheckMenuItem, HMENU, MF_BYPOSITION, MF_CHECKED,
@@ -125,7 +149,7 @@ pub fn tray_menu(
         let result = unsafe {
             CheckMenuItem(
                 HMENU(menu.hpopupmenu()? as _),
-                2,
+                (2 + index) as u32,
                 MF_BYPOSITION.0 | MF_CHECKED.0,
             )
         };
@@ -451,8 +475,9 @@ pub fn run() {
 
             // 启动时钟交给命令层：前端里程碑（state_ready / window_shown）折算到进程起点
             app.manage(StartupClock(startup_started));
-            let menu = tray_menu(app.handle(), &settings.language, &[], None)?;
+            let menu = tray_menu(app.handle(), &settings.language, &[], None, &[], None)?;
             TrayIconBuilder::with_id("main")
+                .tooltip("Agmux")
                 .icon(
                     // Windows 上 default_window_icon 取 ICO 第一帧（16x16），托盘按 DPI 放大后发糊；
                     // 固定用 32x32 PNG（macOS 的 default_window_icon 本就取自该文件）。
@@ -487,8 +512,13 @@ pub fn run() {
                     }
                     "quit" => app.exit(0),
                     id => {
-                        if let Some(profile_id) = id.strip_prefix("profile:") {
-                            let _ = app.emit("tray-switch-profile", profile_id);
+                        for client in ["codex", "claude"] {
+                            if let Some(profile_id) = id.strip_prefix(&format!("{client}-profile:")) {
+                                let _ = app.emit("tray-switch-profile", serde_json::json!({
+                                    "client": client, "id": profile_id,
+                                }));
+                                break;
+                            }
                         }
                     }
                 })

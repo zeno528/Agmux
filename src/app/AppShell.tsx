@@ -140,17 +140,19 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
     void Promise.allSettled([
       listen("tray-open-settings", () => latest.current.openSettings()),
       listen("tray-open-accounts", () => latest.current.openAccounts()),
-      listen<string>("tray-switch-profile", async ({ payload: id }) => {
+      listen<{ client: "codex" | "claude"; id: string }>("tray-switch-profile", async ({ payload: { client, id } }) => {
         const state = stateRef.current;
         if (busy.current) return;
-        if (!state?.codex_profiles.some((profile) => profile.id === id) || state.active_codex_profile_id === id) {
+        if (!state || (client === "codex"
+          ? !state.codex_profiles.some((profile) => profile.id === id) || state.active_codex_profile_id === id
+          : state.active_claude_profile_id === id)) {
           await latest.current.refresh();
           return;
         }
         busy.current = true;
         const { feedback, t, refresh } = latest.current;
         try {
-          await switchProfileFromTray(id, state, refresh);
+          await switchProfileFromTray(client, id, state, refresh);
           feedback.success(t("feedback.applySuccess", { ns: "common" }));
         } catch (error) {
           const message = String(error);
@@ -196,9 +198,9 @@ export default function AppShell() {
   useEffect(() => {
     const language = setupI18n(state?.settings.language);
     if (isTauri && state) {
-      void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id).catch(() => undefined);
+      void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id, state.active_claude_profile_id).catch(() => undefined);
     }
-  }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id]);
+  }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id, state?.active_claude_profile_id]);
   const { start: startPolling, stop: stopPolling } = useCodexPolling(stateRef, updateCodex);
   const { activationEpoch, activate, deactivate } = useActivationRefresh();
   const sidebar = useSidebar();
