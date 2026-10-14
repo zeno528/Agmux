@@ -169,7 +169,7 @@ export function useActivationRefresh() {
 
 export function useSidebar() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem("agmux.sidebar-collapsed") !== "0",
+    () => localStorage.getItem("agmux.sidebar-collapsed") === "1",
   );
   const [sidebarFlyoutArmed, setSidebarFlyoutArmed] = useState(true);
 
