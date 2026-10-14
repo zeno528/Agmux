@@ -43,7 +43,7 @@ const pathLabel = (t: (key: "about.paths.appData") => string, label: string): st
   label.startsWith("about.paths.") ? t(label as "about.paths.appData") : label;
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
-export const backupTitle = (name: string) => name.replace(/^(?:cg-backup-|budtty-export-)/, "").replace(/\.db$/, "");
+export const backupTitle = (name: string) => name.replace(/^(?:agmux-(?:backup-)?|cg-backup-|budtty-export-)/, "").replace(/\.db$/, "");
 // 自动备份文件名剥前缀后是纯时间戳（20260822-120000-000），手动「立即备份」带 manual- 标记，
 // 重命名过的是自由文本；行标题的"自动/手动"前缀据此区分
 export const isAutoBackupName = (name: string) => /^\d{8}-\d{6}-\d{3}$/.test(backupTitle(name));
@@ -440,7 +440,7 @@ export function SettingsAbout() {
   const { update, checking, installing, check } = useAppUpdate();
   // 与状态栏悬浮卡片一致：升级走确认式弹窗，先看更新日志再安装
   const [confirming, setConfirming] = useState(false);
-  const openRepository = () => void api.openUrl("https://github.com/zeno528/agmux").catch((error) => feedback.error(String(error)));
+  const openRepository = () => void api.openUrl("https://github.com/zeno528/Agmux").catch((error) => feedback.error(String(error)));
   // 检查只负责发现并展示版本号，升级必须由用户点击「立即重启更新」触发
   const checkUpdate = async () => {
     try {

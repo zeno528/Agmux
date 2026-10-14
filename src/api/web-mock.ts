@@ -655,7 +655,7 @@ const webAuthStatus = {
 
 function databaseBackupName(date = new Date()): string {
   const pad = (value: number, length = 2) => String(value).padStart(length, "0");
-  return `cg-backup-manual-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}.db`;
+  return `agmux-manual-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}.db`;
 }
 
 function webState(): AppState {
@@ -1019,11 +1019,10 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       const backup = webBackups.find((item) => item.name === args?.oldName);
       if (backup) {
         let stem = String(args?.title ?? "").trim();
-        if (stem.startsWith("cg-backup-")) stem = stem.slice("cg-backup-".length);
-        if (stem.startsWith("agmux-export-")) stem = stem.slice("agmux-export-".length);
+        stem = stem.replace(/^(?:agmux-(?:backup-)?|cg-backup-|budtty-export-)/, "");
         if (stem.endsWith(".db")) stem = stem.slice(0, -3);
         stem = stem.replace(/[<>:"/\\|?*]/g, "").trim();
-        if (stem) backup.name = `cg-backup-${stem}.db`;
+        if (stem) backup.name = `agmux-${stem}.db`;
       }
       return undefined as T;
     }

@@ -19,6 +19,8 @@ const form: Settings = { theme: "system", language: "system", auto_restart: fals
 
 describe("SettingsSections", () => {
   it("formats backup titles", () => {
+    expect(backupTitle("agmux-20260822-120000-000.db")).toBe("20260822-120000-000");
+    expect(backupTitle("agmux-backup-20260822-120000-000.db")).toBe("20260822-120000-000");
     expect(backupTitle("cg-backup-20260822-120000-000.db")).toBe("20260822-120000-000");
     expect(backupTitle("budtty-export-demo.db")).toBe("demo");
   });
@@ -34,6 +36,10 @@ describe("SettingsSections", () => {
   });
 
   it("识别自动备份的时间戳文件名", () => {
+    expect(isAutoBackupName("agmux-20260822-120000-000.db")).toBe(true);
+    expect(isManualBackupName("agmux-manual-20260923-120000-000.db")).toBe(true);
+    expect(isAutoBackupName("agmux-backup-20260822-120000-000.db")).toBe(true);
+    expect(isManualBackupName("agmux-backup-manual-20260923-120000-000.db")).toBe(true);
     expect(isAutoBackupName("cg-backup-20260822-120000-000.db")).toBe(true);
     expect(isAutoBackupName("budtty-export-demo.db")).toBe(false);
     // 手动「立即备份」带 manual- 标记，自动备份没有

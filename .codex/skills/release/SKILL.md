@@ -141,7 +141,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
 3. 变体处理：
    - 用户点选「预发布」：加 `--prerelease`，去掉 `--latest`
    - 用户要改日志：改 `CHANGELOG.md` 对应版本段落，提交推送后工作流自动重跑，用新段落更新既有草稿后再发布
-4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/agmux/releases/tag/v<版本>`
+4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/Agmux/releases/tag/v<版本>`
 
 ## 示例
 

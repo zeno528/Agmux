@@ -78,7 +78,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDQUZBMzZFRkJGQzhBMUMKUldRY2l2ejdicU92ckQ5aUgrbjNBbUMvL2Q1UXJpTjBmNW41MGsxQ0YyeTFqRGNGeTUwS3FYWGEK",
       "endpoints": [
-        "https://github.com/zeno528/agmux/releases/latest/download/latest.json"
+        "https://github.com/zeno528/Agmux/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

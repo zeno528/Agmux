@@ -1,6 +1,7 @@
 use super::{app_err, now_ms, now_secs, prune_backups, AppContext, AppResult, Path, PathBuf};
 
-pub(super) const DATABASE_BACKUP_PREFIX: &str = "cg-backup-";
+pub(super) const DATABASE_BACKUP_PREFIX: &str = "agmux-";
+const PREVIOUS_DATABASE_BACKUP_PREFIX: &str = "cg-backup-";
 // 历史备份的文件名固定，品牌改名不能改变识别前缀。
 const LEGACY_DATABASE_BACKUP_PREFIX: &str = "budtty-export-";
 
@@ -157,6 +158,7 @@ impl AppContext {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if !((name.starts_with(DATABASE_BACKUP_PREFIX)
+                    || name.starts_with(PREVIOUS_DATABASE_BACKUP_PREFIX)
                     || name.starts_with(LEGACY_DATABASE_BACKUP_PREFIX))
                     && name.ends_with(".db"))
                 {
@@ -221,7 +223,7 @@ impl AppContext {
             .map_err(|error| app_err!("无法创建备份目录: {error}"))?;
         // 使用随机后缀，避免连续恢复和导出在同一毫秒内撞文件名；保留恢复前数据库供人工恢复。
         let backup = tempfile::Builder::new()
-            .prefix("cg-backup-manual-")
+            .prefix(&format!("{DATABASE_BACKUP_PREFIX}manual-"))
             .suffix(".db")
             .tempfile_in(&self.paths.database_backup)
             .map_err(|error| app_err!("无法创建恢复前备份: {error}"))?
@@ -281,11 +283,13 @@ impl AppContext {
         Ok(())
     }
 
-    /// 重命名备份（标题写入文件名，保留 cg-backup- 前缀与 .db 后缀）。
+    /// 重命名备份（标题写入文件名，使用当前品牌前缀与 .db 后缀）。
     pub fn rename_database_backup(&self, old_name: &str, title: &str) -> AppResult<()> {
         let from = self.database_backup_path(old_name)?;
         let mut stem = title.trim().to_string();
         if let Some(rest) = stem.strip_prefix(DATABASE_BACKUP_PREFIX) {
+            stem = rest.strip_prefix("backup-").unwrap_or(rest).to_string();
+        } else if let Some(rest) = stem.strip_prefix(PREVIOUS_DATABASE_BACKUP_PREFIX) {
             stem = rest.to_string();
         } else if let Some(rest) = stem.strip_prefix(LEGACY_DATABASE_BACKUP_PREFIX) {
             stem = rest.to_string();
@@ -324,6 +328,7 @@ impl AppContext {
 
     pub(super) fn database_backup_path(&self, name: &str) -> AppResult<PathBuf> {
         let valid = (name.starts_with(DATABASE_BACKUP_PREFIX)
+            || name.starts_with(PREVIOUS_DATABASE_BACKUP_PREFIX)
             || name.starts_with(LEGACY_DATABASE_BACKUP_PREFIX))
             && name.ends_with(".db")
             && Path::new(name).file_name().and_then(|file| file.to_str()) == Some(name);
@@ -336,13 +341,40 @@ impl AppContext {
 
 #[cfg(test)]
 mod tests {
-    use super::database_backup_name;
+    use super::{database_backup_name, AppContext};
+
+    #[test]
+    fn current_and_legacy_backup_names_remain_manageable() {
+        let home = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(home.path()).unwrap();
+        paths.ensure().unwrap();
+        let context = AppContext::new(paths).unwrap();
+        for name in [
+            "agmux-test.db",
+            "agmux-backup-test.db",
+            "cg-backup-test.db",
+            "budtty-export-test.db",
+        ] {
+            let path = context.database_backup_path(name).unwrap();
+            std::fs::write(path, b"backup").unwrap();
+        }
+        assert_eq!(context.list_database_backups().unwrap().len(), 4);
+        context
+            .rename_database_backup("cg-backup-test.db", "cg-backup-renamed.db")
+            .unwrap();
+        let renamed = context.database_backup_path("agmux-renamed.db").unwrap();
+        assert_eq!(std::fs::read(&renamed).unwrap(), b"backup");
+        context.delete_database_backup("agmux-renamed.db").unwrap();
+        assert!(!renamed.exists());
+        assert!(context.database_backup_path("agmux-../test.db").is_err());
+    }
 
     #[test]
     fn backup_name_carries_source_marker() {
         let auto = database_backup_name(false);
-        assert!(auto.starts_with("cg-backup-"));
+        assert!(auto.starts_with("agmux-"));
+        assert!(!auto.contains("backup-"));
         assert!(!auto.contains("manual-"));
-        assert!(database_backup_name(true).starts_with("cg-backup-manual-"));
+        assert!(database_backup_name(true).starts_with("agmux-manual-"));
     }
 }
