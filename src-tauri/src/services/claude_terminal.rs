@@ -1,7 +1,7 @@
 //! Claude Code 供应商终端：在新终端里起一个只属于某个供应商的 `claude` 会话。
 //!
 //! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的配置写进
-//! `.agofra/terminal/claude_<id>.json`，终端里跑
+//! `.agmux/terminal/claude_<id>.json`，终端里跑
 //! `claude --settings <该文件> --setting-sources project,local`。
 //! 覆盖文件与「使用」写 live 同构（write_claude_settings 双路）：非平凡快照整文档
 //! 进覆盖文件（hooks、permissions 等随配置走），平凡快照只写托管 env、未写的键由
@@ -122,7 +122,7 @@ impl AppContext {
 
         // 启动前回显覆盖文件路径：用户能立刻确认这个终端用的是哪份配置。
         let settings_text = settings.display().to_string();
-        let banner = format!("Agofra Claude terminal: {settings_text}");
+        let banner = format!("Agmux Claude terminal: {settings_text}");
         let model = terminal_model(&profile);
 
         #[cfg(target_os = "windows")]
@@ -482,16 +482,16 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn ghostty_script_quotes_paths_and_stays_single_line() {
         let script = ghostty_launch_script(
-            "Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json",
-            "/Users/u/.agofra/terminal/claude_p1.json",
+            "Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json",
+            "/Users/u/.agmux/terminal/claude_p1.json",
             "sonnet's",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
         assert_eq!(
             script,
-            "echo 'Agofra Claude terminal: /Users/u/.agofra/terminal/claude_p1.json'; \
-             claude --settings '/Users/u/.agofra/terminal/claude_p1.json' \
+            "echo 'Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json'; \
+             claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
              --setting-sources 'project,local' --model 'sonnet'\\''s'"
         );
     }
@@ -502,17 +502,18 @@ mod tests {
         // 回归：命令行里的换行会终止命令，-NoExit 窗口只执行第一行，
         // Set-Location 与 claude 被丢弃——表现为终端开了却只打印 banner 就回到提示符。
         let script = windows_launch_script(
-            Some("D:\\GitHub project\\Agofra"),
-            "C:\\Users\\u\\.agofra\\terminal\\claude_p1.json",
-            "Agofra Claude terminal: C:\\Users\\u\\.agofra\\terminal\\claude_p1.json",
+            Some("D:\\GitHub project\\Agmux"),
+            "C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
+            "Agmux Claude terminal: C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
             "sonnet",
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
-        assert!(script
-            .contains("Set-Location -LiteralPath 'D:\\GitHub project\\Agofra'; Write-Output "));
+        assert!(
+            script.contains("Set-Location -LiteralPath 'D:\\GitHub project\\Agmux'; Write-Output ")
+        );
         assert!(script.ends_with(
-            "; claude --settings 'C:\\Users\\u\\.agofra\\terminal\\claude_p1.json' \
+            "; claude --settings 'C:\\Users\\u\\.agmux\\terminal\\claude_p1.json' \
              --setting-sources 'project,local' --model 'sonnet'"
         ));
         assert!(!script.contains("&&"));
@@ -537,18 +538,18 @@ $ErrorActionPreference = 'Stop'
 class Environment {
     static [System.Collections.IDictionary] GetEnvironmentVariables([string] $scope) {
         if ($scope -eq 'User') {
-            return @{ AGOFRA_TEST_MCP_KEY = 'user'; AGOFRA_TEST_INHERITED = 'user' }
+            return @{ AGMUX_TEST_MCP_KEY = 'user'; AGMUX_TEST_INHERITED = 'user' }
         }
-        return @{ AGOFRA_TEST_MCP_KEY = 'machine'; AGOFRA_TEST_MACHINE = 'machine' }
+        return @{ AGMUX_TEST_MCP_KEY = 'machine'; AGMUX_TEST_MACHINE = 'machine' }
     }
     static [void] SetEnvironmentVariable([string] $key, [string] $value, [string] $scope) {
         [System.Environment]::SetEnvironmentVariable($key, $value, $scope)
     }
 }
 function claude {
-    if ($env:AGOFRA_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
-    if ($env:AGOFRA_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
-    if ($env:AGOFRA_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
+    if ($env:AGMUX_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
+    if ($env:AGMUX_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
+    if ($env:AGMUX_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
     if (($args -join '|') -ne '--settings|C:\t\profile.json|--setting-sources|project,local|--model|sonnet') { throw 'Profile changed' }
     if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
     Write-Output 'claude environment verified'
@@ -566,9 +567,9 @@ function claude {
                 "-EncodedCommand",
                 &base64::engine::general_purpose::STANDARD.encode(bytes),
             ])
-            .env_remove("AGOFRA_TEST_MCP_KEY")
-            .env_remove("AGOFRA_TEST_MACHINE")
-            .env("AGOFRA_TEST_INHERITED", "process")
+            .env_remove("AGMUX_TEST_MCP_KEY")
+            .env_remove("AGMUX_TEST_MACHINE")
+            .env("AGMUX_TEST_INHERITED", "process")
             .env("NO_COLOR", "1")
             .env("TERM", "dumb")
             .output()

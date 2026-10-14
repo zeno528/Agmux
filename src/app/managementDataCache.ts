@@ -13,7 +13,7 @@ type PersistedMcpProbeCacheEntry = Omit<McpProbeCacheEntry, "result"> & {
   result: Omit<McpProbeResult, "tools"> & { tools: string[] };
 };
 
-const MCP_PROBE_CACHE_STORAGE_KEY = "agofra.mcp-probe-cache";
+const MCP_PROBE_CACHE_STORAGE_KEY = "agmux.mcp-probe-cache";
 
 /// 列表缓存从 localStorage 恢复时的最小形状校验：数组且每项含字符串 name 字段。
 function restoreNamedList<T extends { name: string }>(raw: unknown): T[] | null {
@@ -90,28 +90,28 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
 }
 
 const plugins = createManagementCache<PluginSummary[]>(api.listPlugins, {
-  key: "agofra.plugins-cache-v1",
+  key: "agmux.plugins-cache-v1",
   restore: restoreNamedList<PluginSummary>,
 });
 const skills = createManagementCache<SkillSummary[]>(api.listSkills, {
-  key: "agofra.skills-cache-v2", // v2：SkillSummary 增加 claude_enabled，旧缓存缺字段直接弃用
+  key: "agmux.skills-cache-v2", // v2：SkillSummary 增加 claude_enabled，旧缓存缺字段直接弃用
   restore: restoreNamedList<SkillSummary>,
 });
 const mcpServers = createManagementCache<McpServerSpec[]>(api.codexListMcpServers, {
-  key: "agofra.mcp-servers-cache-v1",
+  key: "agmux.mcp-servers-cache-v1",
   restore: restoreNamedList<McpServerSpec>,
 });
 const claudeMcpServers = createManagementCache<McpServerSpec[]>(api.claudeListMcpServers, {
-  key: "agofra.claude-mcp-servers-cache-v1",
+  key: "agmux.claude-mcp-servers-cache-v1",
   restore: restoreNamedList<McpServerSpec>,
 });
 /// Claude 供应商列表可持久化：摘要里只有 has_token 布尔，明文 token 不进缓存。
 const claudeProfiles = createManagementCache<ClaudeProfileSummary[]>(api.claudeListProfiles, {
-  key: "agofra.claude-profiles-cache-v1",
+  key: "agmux.claude-profiles-cache-v1",
   restore: restoreNamedList<ClaudeProfileSummary>,
 });
 const pluginMarketplaces = createManagementCache<PluginMarketplace[]>(api.listPluginMarketplaces, {
-  key: "agofra.plugin-marketplaces-cache-v1",
+  key: "agmux.plugin-marketplaces-cache-v1",
   restore: restoreNamedList<PluginMarketplace>,
 });
 // 备份记录列表：只在内存缓存（不落 localStorage）——设置页切分页重挂载时直出，
@@ -128,8 +128,8 @@ function restoreCliStatus(raw: unknown): CliStatus | null {
   return { ...(raw as CliStatus), busy: false };
 }
 const cliStatusCaches = {
-  codex: createManagementCache<CliStatus>(api.codexGetCliStatus, { key: "agofra.codex-cli-status-v1", restore: restoreCliStatus }),
-  claude: createManagementCache<CliStatus>(api.claudeGetCliStatus, { key: "agofra.claude-cli-status-v1", restore: restoreCliStatus }),
+  codex: createManagementCache<CliStatus>(api.codexGetCliStatus, { key: "agmux.codex-cli-status-v1", restore: restoreCliStatus }),
+  claude: createManagementCache<CliStatus>(api.claudeGetCliStatus, { key: "agmux.claude-cli-status-v1", restore: restoreCliStatus }),
 };
 export type ProxyStatus = { proxy: string | null; error: boolean };
 /// 检测结果持久化：刷新页面/重启后首帧直出上次状态再静默刷新，消除自动模式
@@ -146,7 +146,7 @@ const proxyStatus = createManagementCache<ProxyStatus>(async () => {
   } catch {
     return { proxy: null, error: true };
   }
-}, { key: "agofra.proxy-status-v1", restore: restoreProxyStatus });
+}, { key: "agmux.proxy-status-v1", restore: restoreProxyStatus });
 const mcpProbes = new Map<string, McpProbeCacheEntry>();
 let mcpProbeStorageLoaded = false;
 
@@ -295,8 +295,8 @@ export type CliClient = (typeof CLI_UPDATE_CLIENTS)[number];
 
 const CLI_UPDATE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const cliUpdateStorageKeys: Record<CliClient, string> = {
-  codex: "agofra.codex-cli-update-v1",
-  claude: "agofra.claude-cli-update-v1",
+  codex: "agmux.codex-cli-update-v1",
+  claude: "agmux.claude-cli-update-v1",
 };
 const cliUpdateEntries: Record<CliClient, CliUpdateEntry | null> = { codex: null, claude: null };
 const cliUpdateRestored: Record<CliClient, boolean> = { codex: false, claude: false };
@@ -423,7 +423,7 @@ export interface McpDiffBadge {
   error: boolean;
 }
 
-const MCP_DIFF_COUNT_STORAGE_KEYS = { codex: "agofra.mcp-diff-count-v1", claude: "agofra.mcp-diff-count-v1-claude" };
+const MCP_DIFF_COUNT_STORAGE_KEYS = { codex: "agmux.mcp-diff-count-v1", claude: "agmux.mcp-diff-count-v1-claude" };
 const mcpDiffBadges: Partial<Record<McpProbeScope, McpDiffBadge | null>> = {};
 const mcpDiffBadgeListeners = new Set<() => void>();
 
@@ -482,7 +482,7 @@ export function deleteCachedMcpProbe(name: string, scope: McpProbeScope = "codex
 /// 快照持久化到 localStorage（模式同 MCP 探测缓存：会话加载一次、写入即落盘），
 /// 重启后首次进入市场页/目录详情才能直出，不用每个市场重新转圈；超配额时
 /// writeJson 静默降级为纯内存缓存。
-const MARKETPLACE_PLUGINS_STORAGE_KEY = "agofra.marketplace-plugins-cache-v1";
+const MARKETPLACE_PLUGINS_STORAGE_KEY = "agmux.marketplace-plugins-cache-v1";
 const marketplacePlugins = new Map<string, MarketplacePlugin[]>();
 const marketplaceRequests = new Map<string, Promise<MarketplacePlugin[]>>();
 let marketplacePluginsStorageLoaded = false;

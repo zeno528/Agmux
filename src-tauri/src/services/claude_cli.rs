@@ -386,13 +386,13 @@ mod tests {
 
     #[test]
     fn cli_process_test_child() {
-        if let Ok(mode) = std::env::var("AGOFRA_CLAUDE_CLI_TEST_CHILD") {
+        if let Ok(mode) = std::env::var("AGMUX_CLAUDE_CLI_TEST_CHILD") {
             if mode == "failure" {
                 eprintln!("network error: fixture-secret-token");
                 std::process::exit(7);
             }
             let expected = if mode == "direct" { "" } else { &mode };
-            if let Ok(directory) = std::env::var("AGOFRA_CLAUDE_INSTALL_CONFIG") {
+            if let Ok(directory) = std::env::var("AGMUX_CLAUDE_INSTALL_CONFIG") {
                 assert_eq!(std::env::var("CLAUDE_CONFIG_DIR").unwrap(), directory);
                 let settings: serde_json::Value = serde_json::from_slice(
                     &std::fs::read(Path::new(&directory).join("settings.json")).unwrap(),
@@ -416,7 +416,7 @@ mod tests {
             let mut child = command(&std::env::current_exe().unwrap());
             child.args(["cli_process_test_child", "--nocapture"]);
             child.env(
-                "AGOFRA_CLAUDE_CLI_TEST_CHILD",
+                "AGMUX_CLAUDE_CLI_TEST_CHILD",
                 network.proxy.as_deref().unwrap_or(""),
             );
             network.apply(&mut child);
@@ -429,7 +429,7 @@ mod tests {
         let mut child = command(&std::env::current_exe().unwrap());
         child
             .args(["cli_process_test_child", "--nocapture"])
-            .env("AGOFRA_CLAUDE_CLI_TEST_CHILD", "failure");
+            .env("AGMUX_CLAUDE_CLI_TEST_CHILD", "failure");
         let error = run_cli(child, Duration::from_secs(5)).await.err().unwrap();
         assert_eq!((error.stage, error.kind), ("run_cli", "network_error"));
         assert!(error.message.contains('7'));
@@ -552,7 +552,7 @@ mod tests {
             assert_eq!(
                 install
                     .get_envs()
-                    .find(|(key, _)| *key == "AGOFRA_CLI_INSTALLER_PATH")
+                    .find(|(key, _)| *key == "AGMUX_CLI_INSTALLER_PATH")
                     .unwrap()
                     .1
                     .unwrap(),
@@ -601,14 +601,14 @@ mod tests {
             let script = temp.path().join("install 'literal'.ps1");
             std::fs::write(&script, r#"param([string]$Target)
 if ($Target -ne 'latest' -or $PSVersionTable.PSVersion.Major -ne 5) { throw 'invalid installer arguments' }
-& $env:AGOFRA_FIXTURE_BINARY cli_process_test_child --nocapture
+& $env:AGMUX_FIXTURE_BINARY cli_process_test_child --nocapture
 exit $LASTEXITCODE
 "#).unwrap();
             let mut child = execution_command(true, &script, &settings, &network).unwrap();
-            child.env("AGOFRA_FIXTURE_BINARY", std::env::current_exe().unwrap());
-            child.env("AGOFRA_CLAUDE_INSTALL_CONFIG", temp.path());
+            child.env("AGMUX_FIXTURE_BINARY", std::env::current_exe().unwrap());
+            child.env("AGMUX_CLAUDE_INSTALL_CONFIG", temp.path());
             child.env(
-                "AGOFRA_CLAUDE_CLI_TEST_CHILD",
+                "AGMUX_CLAUDE_CLI_TEST_CHILD",
                 network.proxy.as_deref().unwrap_or("direct"),
             );
             run_cli(child, Duration::from_secs(10)).await.unwrap();

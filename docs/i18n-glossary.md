@@ -1,4 +1,4 @@
-# Agofra 中英术语表（i18n Glossary）
+# Agmux 中英术语表（i18n Glossary）
 
 界面中英文案的术语与硬规则基线，**纯参考、不做机器强制**——改文案只需同步 zh/en 两个 locale 文件。范围约定：P0 = 通用层 + 首页，P1 = 业务页，P2 = Rust 报错文案。
 
@@ -49,7 +49,7 @@
 
 | 实例 | 位置 | 为什么不能翻 |
 |---|---|---|
-| `console.error("Agofra 界面渲染失败", …)` | `src/app/AppErrorBoundary.tsx` | 只写控制台，用户看不到 |
+| `console.error("Agmux 界面渲染失败", …)` | `src/app/AppErrorBoundary.tsx` | 只写控制台，用户看不到 |
 | `throw new Error("额度查询未返回数据")` | `src/features/settings/ChatGPTAccount.tsx` | 消息只被存下、渲染时仅当布尔用，正文从不显示 |
 | `label === "7天"` | 同上 | 与后端下发数据值比对，不是界面文案 |
 | `model: "自定义"` | `src/presets.ts` | 会写进用户 config.toml，翻了配置内容会随界面语言变 |

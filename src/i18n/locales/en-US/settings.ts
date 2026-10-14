@@ -41,7 +41,7 @@ export default {
   },
   startup: {
     autostartTitle: "Launch at login",
-    autostartDescription: "Start Agofra automatically after you sign in",
+    autostartDescription: "Start Agmux automatically after you sign in",
     silentTitle: "Start silently",
     silentDescription: "Start without showing the main window, staying in the system tray",
     minimizeTitle: "Minimize to tray on close",
@@ -256,8 +256,8 @@ export default {
       codexConfig: "Codex config",
     },
     pathDescriptions: {
-      appData: "Stores Agofra app data",
-      logs: "View Agofra runtime logs",
+      appData: "Stores Agmux app data",
+      logs: "View Agmux runtime logs",
       codexConfig: "View the Codex configuration file",
     },
     openPath: "Open {{label}}",

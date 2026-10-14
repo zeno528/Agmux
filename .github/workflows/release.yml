@@ -190,22 +190,22 @@ jobs:
 
           | 系统 | 架构 | 文件 |
           | --- | --- | --- |
-          | Windows | — | `Agofra-v__VERSION__-Windows-setup.exe` |
-          | Windows | — | `Agofra-v__VERSION__-Windows.msi`（静默安装 `/quiet`） |
-          | macOS | Apple 芯片 | `Agofra-v__VERSION__-macOS-arm64.dmg` |
-          | macOS | Intel | `Agofra-v__VERSION__-macOS-x64.dmg` |
+          | Windows | — | `Agmux-v__VERSION__-Windows-setup.exe` |
+          | Windows | — | `Agmux-v__VERSION__-Windows.msi`（静默安装 `/quiet`） |
+          | macOS | Apple 芯片 | `Agmux-v__VERSION__-macOS-arm64.dmg` |
+          | macOS | Intel | `Agmux-v__VERSION__-macOS-x64.dmg` |
 
           安装包未做代码签名。
 
           **Windows**：双击 `.exe` 即可；MSI 用于批量部署或静默安装（`msiexec /i <文件> /quiet`）。
           若弹出「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」。
 
-          **macOS**：打开 DMG，把 Agofra 拖入「应用程序」。需要 macOS 12 以上。
+          **macOS**：打开 DMG，把 Agmux 拖入「应用程序」。需要 macOS 12 以上。
           若提示「无法验证开发者」，在「系统设置 → 隐私与安全性」点「仍要打开」，
           或在终端执行：
 
           ```bash
-          xattr -cr /Applications/Agofra.app
+          xattr -cr /Applications/Agmux.app
           ```
           EOF
           sed -i "s/__VERSION__/$VERSION/g" "$GUIDE"
@@ -242,15 +242,15 @@ jobs:
         run: |
           mkdir -p release-assets
           copy_asset() { cp "$(find "$1" -type f -name "$2" -print -quit)" "$3"; }
-          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/Agofra-v$VERSION-Windows-setup.exe"
-          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/Agofra-v$VERSION-Windows.msi"
-          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/Agofra-v$VERSION-Windows-setup.exe.sig"
-          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/Agofra-v$VERSION-macOS-x64.dmg"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/Agofra-v$VERSION-macOS-x64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/Agofra-v$VERSION-macOS-x64.app.tar.gz.sig"
-          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/Agofra-v$VERSION-macOS-arm64.dmg"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/Agofra-v$VERSION-macOS-arm64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/Agofra-v$VERSION-macOS-arm64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/Agmux-v$VERSION-Windows-setup.exe"
+          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/Agmux-v$VERSION-Windows.msi"
+          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/Agmux-v$VERSION-Windows-setup.exe.sig"
+          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/Agmux-v$VERSION-macOS-x64.dmg"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/Agmux-v$VERSION-macOS-x64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/Agmux-v$VERSION-macOS-x64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/Agmux-v$VERSION-macOS-arm64.dmg"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/Agmux-v$VERSION-macOS-arm64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/Agmux-v$VERSION-macOS-arm64.app.tar.gz.sig"
           node - "$VERSION" "$GITHUB_REPOSITORY" <<'NODE'
           const fs = require("fs");
           const [version, repository] = process.argv.slice(2);
@@ -263,9 +263,9 @@ jobs:
             version,
             notes: notes || undefined,
             platforms: {
-              "darwin-x86_64": { url: asset(`Agofra-v${version}-macOS-x64.app.tar.gz`), signature: signature(`Agofra-v${version}-macOS-x64.app.tar.gz.sig`) },
-              "darwin-aarch64": { url: asset(`Agofra-v${version}-macOS-arm64.app.tar.gz`), signature: signature(`Agofra-v${version}-macOS-arm64.app.tar.gz.sig`) },
-              "windows-x86_64": { url: asset(`Agofra-v${version}-Windows-setup.exe`), signature: signature(`Agofra-v${version}-Windows-setup.exe.sig`) }
+              "darwin-x86_64": { url: asset(`Agmux-v${version}-macOS-x64.app.tar.gz`), signature: signature(`Agmux-v${version}-macOS-x64.app.tar.gz.sig`) },
+              "darwin-aarch64": { url: asset(`Agmux-v${version}-macOS-arm64.app.tar.gz`), signature: signature(`Agmux-v${version}-macOS-arm64.app.tar.gz.sig`) },
+              "windows-x86_64": { url: asset(`Agmux-v${version}-Windows-setup.exe`), signature: signature(`Agmux-v${version}-Windows-setup.exe.sig`) }
             }
           }, null, 2)}\n`);
           NODE

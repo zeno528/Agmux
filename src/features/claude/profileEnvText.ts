@@ -1,6 +1,6 @@
 /** 完整 settings.json 编辑器 ↔ 表单托管键的双向同步。 */
 
-/** Agofra 托管的 env 键：编辑器里可见、与表单双向绑定；使用时由后端写入 settings.json。 */
+/** Agmux 托管的 env 键：编辑器里可见、与表单双向绑定；使用时由后端写入 settings.json。 */
 export const CLAUDE_MANAGED_ENV_KEYS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"] as const;
 
 export interface ClaudeEnvFields {

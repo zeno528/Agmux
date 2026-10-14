@@ -2188,9 +2188,7 @@ fn export_and_restore_database_round_trip() {
     // 非法文件名拒绝
     assert!(context.restore_database("../evil.db").is_err());
     assert!(context.delete_database_backup("..\\evil.db").is_err());
-    assert!(context
-        .restore_database("agofra-export-nothere.db")
-        .is_err());
+    assert!(context.restore_database("agmux-export-nothere.db").is_err());
 }
 
 /// 恢复备份必须还原备份时的卡片排序（sort_order 随备份走）

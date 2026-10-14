@@ -9,13 +9,13 @@
 
 判定「窗口可见」用 EnumWindows + IsWindowVisible + 标题精确匹配：
 不能用 .NET 的 Process.MainWindowHandle —— 它会命中 single-instance 插件的窗口
-（标题 com.zeno528.agofra-siw），得到几十毫秒的假终点。
+（标题 com.zeno528.agmux-siw），得到几十毫秒的假终点。
 
 用法（路径相对**仓库根**，不是本文件所在目录）：
-  pwsh -File scripts/perf-probe.ps1 -Exe "C:\Users\<you>\AppData\Local\Agofra\agofra.exe"
+  pwsh -File scripts/perf-probe.ps1 -Exe "C:\Users\<you>\AppData\Local\Agmux\agmux.exe"
   pwsh -File scripts/perf-probe.ps1 -Exe <exe> -Runs 20 -SoakSeconds 600
 
-⚠️ 测量期间不要手动启动 Agofra：每轮冷启动前需要「完全关闭」，脚本会强杀**与被测 exe 同路径**
+⚠️ 测量期间不要手动启动 Agmux：每轮冷启动前需要「完全关闭」，脚本会强杀**与被测 exe 同路径**
 的进程来保证这一点。手测时开着的实例会被一并结束（本脚本不碰其他路径的同名进程）。
 
 前置：被测 exe 必须是 tauri build 的产物，且**前端资源已嵌入**（下面 Test-TauriArtifact 会核验）。
@@ -24,7 +24,7 @@ cargo build/bench 直接编出的 target/release/*.exe 前端未嵌入，主窗�
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
-  [string]$Title = "Agofra",
+  [string]$Title = "Agmux",
   [int]$Runs = 3,
   [int]$SoakSeconds = 0,
   [int]$SoakIntervalSeconds = 30,
@@ -74,7 +74,7 @@ public class PerfWindow {
 "@
 
 # 每轮冷启动需要「完全关闭」才能测到真正的冷启动。这里只结束**与被测 exe 同路径**的进程：
-# 用户可能同时开着另一个构建的 Agofra（例如已安装版），那不是本轮要重启的那个，不该被牵连。
+# 用户可能同时开着另一个构建的 Agmux（例如已安装版），那不是本轮要重启的那个，不该被牵连。
 # 读不到 Path 的进程一律跳过（宁可漏杀也不要误杀用户实例）；探针自己 Start-Process 起的实例
 # 路径必然可读，所以本轮自己的残留一定能被清掉。
 function EnsureNoInstance {

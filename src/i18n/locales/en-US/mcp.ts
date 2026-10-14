@@ -123,7 +123,7 @@ export default {
     title: "Update MCP config",
     help: {
       title: "How to read these differences",
-      red: { keyword: "Red:", text: " the version saved in the Agofra database" },
+      red: { keyword: "Red:", text: " the version saved in the Agmux database" },
       green: { keyword: "Green:", text: " the version in the live config file (current client)" },
       adopt: { keyword: "Keep:", text: " keep the live config file version and update the database" },
       revert: { keyword: "Revert:", text: " use the database version to restore the live config file (the config file is backed up first)" },

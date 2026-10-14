@@ -1,12 +1,12 @@
 {
   "recommended_threshold": 0.48,
   "should_trigger": [
-    "给 Agofra 跑一次性能测试，保存成今天的基线并和上次对比。",
+    "给 Agmux 跑一次性能测试，保存成今天的基线并和上次对比。",
     "测量 Rust Criterion 和前端构建性能，保留历史结果。",
     "检查这次改动有没有性能回归，给我一份可回溯的性能报告。"
   ],
   "should_not_trigger": [
-    "直接优化 Agofra 的启动速度，不需要先测。",
+    "直接优化 Agmux 的启动速度，不需要先测。",
     "审查这个 Rust 模块的代码质量。",
     "打一个 Windows 安装包让我体验。"
   ],

@@ -182,7 +182,7 @@ impl AppContext {
         )?;
         match &result {
             // 只断言验证过的事实：进程拉起来了。start/restart 的区分已经在 action= 字段里，
-            // 而"应用是否真的可用"Agofra 无从验证——配置坏掉时进程照样会起来并弹错误框，
+            // 而"应用是否真的可用"Agmux 无从验证——配置坏掉时进程照样会起来并弹错误框，
             // 那时候记"已启动"就是撒谎（19:40 那次就是这么记的）。
             Ok(()) => tauri_plugin_log::log::info!(
                 "[settings.restart] action={action} outcome=success msg=\"Codex 进程已拉起\""

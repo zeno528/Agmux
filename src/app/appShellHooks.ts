@@ -169,14 +169,14 @@ export function useActivationRefresh() {
 
 export function useSidebar() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem("agofra.sidebar-collapsed") !== "0",
+    () => localStorage.getItem("agmux.sidebar-collapsed") !== "0",
   );
   const [sidebarFlyoutArmed, setSidebarFlyoutArmed] = useState(true);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((collapsed) => {
       const next = !collapsed;
-      localStorage.setItem("agofra.sidebar-collapsed", next ? "1" : "0");
+      localStorage.setItem("agmux.sidebar-collapsed", next ? "1" : "0");
       if (next) setSidebarFlyoutArmed(false);
       return next;
     });

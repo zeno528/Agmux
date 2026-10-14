@@ -485,7 +485,7 @@ async fn probe_http_inner(
     };
     let client_builder = network
         .builder()
-        .user_agent(format!("Agofra/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("Agmux/{}", env!("CARGO_PKG_VERSION")))
         .timeout(PROBE_TIMEOUT);
     let client = match client_builder.build() {
         Ok(client) => client,
@@ -508,7 +508,7 @@ async fn probe_http_inner(
             json!({
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": { "name": "Agofra", "version": env!("CARGO_PKG_VERSION") },
+                "clientInfo": { "name": "Agmux", "version": env!("CARGO_PKG_VERSION") },
             }),
             Some(handshake_start),
         )
@@ -774,7 +774,7 @@ fn probe_stdio(spec: &McpServerSpec, include_tools: bool) -> McpProbeResult {
         json!({
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": { "name": "Agofra", "version": env!("CARGO_PKG_VERSION") },
+            "clientInfo": { "name": "Agmux", "version": env!("CARGO_PKG_VERSION") },
         }),
     ) {
         Err(error) => failed_result(handshake_start, error.status, error.message),
@@ -1166,7 +1166,7 @@ mod tests {
     fn probe_env_var_falls_back_to_user_registry_without_restart() {
         // 进程环境不可能带这个唯一命名的变量；写入用户级注册表后应能直接读到，
         // 不依赖环境变更广播。先删再测，清理上一次中断运行可能留下的残余。
-        let name = "AGOFRA_PROBE_ENV_FALLBACK";
+        let name = "AGMUX_PROBE_ENV_FALLBACK";
         let delete = || {
             let _ = std::process::Command::new("reg")
                 .args(["delete", r"HKCU\Environment", "/v", name, "/f"])

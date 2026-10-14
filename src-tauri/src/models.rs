@@ -38,7 +38,7 @@ pub enum AuthSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CodexProfilePayload {
-    /// 仅供 Agofra 卡片展示，不写入 Codex 配置。
+    /// 仅供 Agmux 卡片展示，不写入 Codex 配置。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]

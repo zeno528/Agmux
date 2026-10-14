@@ -25,7 +25,7 @@ use crate::fsutil::{atomic_write, backup_file};
 use crate::models::{ClaudeProfileDetail, ClaudeProfileInput, ClaudeProfileSummary, McpServerSpec};
 use crate::paths::now_ms;
 
-/// Agofra 托管的 env 键：应用/切换前先整体移除再写入，永不残留上一家的配置。
+/// Agmux 托管的 env 键：应用/切换前先整体移除再写入，永不残留上一家的配置。
 /// token 在 live 里有两个形态键（AUTH_TOKEN 与 API_KEY），都属于托管、切换时一并撤下；
 /// 写回哪个由 kind 决定（anthropic、kimi-code、siliconflow 落 API_KEY，其余落 AUTH_TOKEN），用户手写的另一形态不残留。
 const MANAGED_ENV_KEYS: [&str; 4] = [
@@ -513,7 +513,7 @@ impl AppContext {
     }
 
     /// 把全局 MCP 镜像同步到 Claude Code 的用户范围配置。
-    /// 只更新 Agofra 当前镜像中的名称；其他用户范围服务器、项目配置和顶层字段原样保留。
+    /// 只更新 Agmux 当前镜像中的名称；其他用户范围服务器、项目配置和顶层字段原样保留。
     pub(super) fn sync_claude_mcp_projection(
         &self,
         previous: &[crate::database::McpServerRecord],

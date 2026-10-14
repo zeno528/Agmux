@@ -459,7 +459,7 @@ if ([string]::IsNullOrEmpty($env:HTTPS_PROXY)) {
     [System.Net.WebRequest]::DefaultWebProxy = $proxy
 }
 $LASTEXITCODE = 0
-& $env:AGOFRA_CLI_INSTALLER_PATH $env:AGOFRA_CLI_INSTALLER_TARGET
+& $env:AGMUX_CLI_INSTALLER_PATH $env:AGMUX_CLI_INSTALLER_TARGET
 exit $LASTEXITCODE
 "#;
 
@@ -493,8 +493,8 @@ pub(super) fn official_installer_command(
             "-Command",
             POWERSHELL_INSTALLER,
         ]);
-        child.env("AGOFRA_CLI_INSTALLER_PATH", script);
-        child.env("AGOFRA_CLI_INSTALLER_TARGET", target);
+        child.env("AGMUX_CLI_INSTALLER_PATH", script);
+        child.env("AGMUX_CLI_INSTALLER_TARGET", target);
         child
     };
     #[cfg(not(windows))]

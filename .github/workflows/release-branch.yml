@@ -157,22 +157,22 @@ jobs:
 
           | 系统 | 架构 | 文件 |
           | --- | --- | --- |
-          | Windows | — | `Agofra-__TAG__-Windows-setup.exe` |
-          | Windows | — | `Agofra-__TAG__-Windows.msi`（静默安装 `/quiet`） |
-          | macOS | Apple 芯片 | `Agofra-__TAG__-macOS-arm64.dmg` |
-          | macOS | Intel | `Agofra-__TAG__-macOS-x64.dmg` |
+          | Windows | — | `Agmux-__TAG__-Windows-setup.exe` |
+          | Windows | — | `Agmux-__TAG__-Windows.msi`（静默安装 `/quiet`） |
+          | macOS | Apple 芯片 | `Agmux-__TAG__-macOS-arm64.dmg` |
+          | macOS | Intel | `Agmux-__TAG__-macOS-x64.dmg` |
 
           安装包未做代码签名。
 
           **Windows**：双击 `.exe` 即可；MSI 用于批量部署或静默安装（`msiexec /i <文件> /quiet`）。
           若弹出「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」。
 
-          **macOS**：打开 DMG，把 Agofra 拖入「应用程序」。需要 macOS 12 以上。
+          **macOS**：打开 DMG，把 Agmux 拖入「应用程序」。需要 macOS 12 以上。
           若提示「无法验证开发者」，在「系统设置 → 隐私与安全性」点「仍要打开」，
           或在终端执行：
 
           ```bash
-          xattr -cr /Applications/Agofra.app
+          xattr -cr /Applications/Agmux.app
           ```
           EOF
           sed -i "s/__TAG__/$TAG/g" "$GUIDE"
@@ -239,15 +239,15 @@ jobs:
           mkdir -p release-assets
           copy_asset() { cp "$(find "$1" -type f -name "$2" -print -quit)" "$3"; }
           # 资产名带 tag（含分支名与构建号），与正式版安装包名明确区分
-          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/Agofra-$TAG-Windows-setup.exe"
-          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/Agofra-$TAG-Windows.msi"
-          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/Agofra-$TAG-Windows-setup.exe.sig"
-          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/Agofra-$TAG-macOS-x64.dmg"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/Agofra-$TAG-macOS-x64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/Agofra-$TAG-macOS-x64.app.tar.gz.sig"
-          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/Agofra-$TAG-macOS-arm64.dmg"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/Agofra-$TAG-macOS-arm64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/Agofra-$TAG-macOS-arm64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/Agmux-$TAG-Windows-setup.exe"
+          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/Agmux-$TAG-Windows.msi"
+          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/Agmux-$TAG-Windows-setup.exe.sig"
+          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/Agmux-$TAG-macOS-x64.dmg"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/Agmux-$TAG-macOS-x64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/Agmux-$TAG-macOS-x64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/Agmux-$TAG-macOS-arm64.dmg"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/Agmux-$TAG-macOS-arm64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/Agmux-$TAG-macOS-arm64.app.tar.gz.sig"
           # 不生成 latest.json：测试构建不进入正式升级源
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
       - name: 上传产物

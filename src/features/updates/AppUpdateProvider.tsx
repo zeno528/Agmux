@@ -9,7 +9,7 @@ import { preloadUpdateNotesRenderer, UpdateNotesDialog } from "./UpdateNotesDial
 import type { Settings } from "../../types";
 
 /** 更新日志入口：直接打开对应版本的 GitHub Release 页，避免 /latest 重定向。 */
-export const releaseNotesUrl = (version: string) => `https://github.com/zeno528/Agofra/releases/tag/v${encodeURIComponent(version.replace(/^v/, ""))}`;
+export const releaseNotesUrl = (version: string) => `https://github.com/zeno528/agmux/releases/tag/v${encodeURIComponent(version.replace(/^v/, ""))}`;
 interface AppUpdateContextValue {
   /** 已发现的可用更新；null 表示已是最新或尚未检查 */
   update: AppUpdate | null;

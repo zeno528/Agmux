@@ -123,7 +123,7 @@ export default {
     title: "更新 MCP 配置",
     help: {
       title: "如何阅读这些差异",
-      red: { keyword: "红色：", text: "Agofra 数据库中保存的版本" },
+      red: { keyword: "红色：", text: "Agmux 数据库中保存的版本" },
       green: { keyword: "绿色：", text: "实时配置文件中的版本（当前客户端）" },
       adopt: { keyword: "保留：", text: "保留配置文件版本，更新数据库" },
       revert: { keyword: "撤销：", text: "采用数据库版本，恢复实时配置文件（撤销前会自动备份配置文件）" },

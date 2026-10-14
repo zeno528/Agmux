@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="src-tauri/icons/icon.svg" width="112" alt="Agofra logo" />
+  <img src="src-tauri/icons/icon.svg" width="112" alt="Agmux logo" />
 </p>
 
-<h1 align="center">Agofra</h1>
+<h1 align="center">Agmux</h1>
 
 <p align="center"><strong>Your AI, brought together.</strong></p>
 
@@ -13,21 +13,21 @@
 
 <p align="center">
   <a href="README.zh-CN.md">中文</a> ·
-  <a href="https://github.com/zeno528/Agofra/releases/latest">Latest release</a> ·
+  <a href="https://github.com/zeno528/agmux/releases/latest">Latest release</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="https://github.com/zeno528/Agofra/issues">Issues</a>
+  <a href="https://github.com/zeno528/agmux/issues">Issues</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/zeno528/Agofra/releases/latest"><img src="https://img.shields.io/github/v/release/zeno528/Agofra?display_name=tag&sort=semver&style=flat-square" alt="Latest release" /></a>
+  <a href="https://github.com/zeno528/agmux/releases/latest"><img src="https://img.shields.io/github/v/release/zeno528/agmux?display_name=tag&sort=semver&style=flat-square" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-555?style=flat-square" alt="Windows and macOS" />
 </p>
 
-Agofra is built for developers who use OpenAI Codex or Claude Code and works with those clients' local environments on your computer. It brings provider profiles, ChatGPT OAuth accounts, MCP servers, plugins, and Skills into one desktop app, reducing the need to move between configuration files and separate tools.
+Agmux is built for developers who use OpenAI Codex or Claude Code and works with those clients' local environments on your computer. It brings provider profiles, ChatGPT OAuth accounts, MCP servers, plugins, and Skills into one desktop app, reducing the need to move between configuration files and separate tools.
 
-## How Agofra fits into your workflow
+## How Agmux fits into your workflow
 
 ```text
 Provider preset or existing client configuration
@@ -37,7 +37,7 @@ Provider preset or existing client configuration
             Edit · test · use · restore
 ```
 
-Codex and Claude Code are managed side by side: each client has its own provider page, and using a profile on one never rewrites the other. Agofra backs up the relevant files before switching to a profile. Provider profiles stay separate from global MCP, Plugins, and Skills, so switching providers does not require reconfiguring those resources.
+Codex and Claude Code are managed side by side: each client has its own provider page, and using a profile on one never rewrites the other. Agmux backs up the relevant files before switching to a profile. Provider profiles stay separate from global MCP, Plugins, and Skills, so switching providers does not require reconfiguring those resources.
 
 ## Features
 
@@ -48,7 +48,7 @@ Codex and Claude Code are managed side by side: each client has its own provider
 - Fetch available models from a provider's `/models` endpoint and select them in the profile editor.
 - Rename, duplicate, reorder, delete, and use profiles.
 - Keep unrelated Codex configuration such as MCP and plugin sections when switching to a provider where possible.
-- Set a custom display name, provider icon, administration URL, optional description, and optional ChatGPT account binding. The description stays inside Agofra and is not written into the Codex configuration.
+- Set a custom display name, provider icon, administration URL, optional description, and optional ChatGPT account binding. The description stays inside Agmux and is not written into the Codex configuration.
 
 ### Supported provider presets
 
@@ -65,7 +65,7 @@ Presets available on both clients share a name and icon but never share endpoint
 - Provider fields are written into the `env` block of `~/.claude/settings.json`. The whole file stays editable with JSON validation, and every other top-level key and `env` entry is preserved.
 - Pick the `Anthropic-compatible` protocol and a CN or Global endpoint for third-party gateways; the key is written as `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` depending on the preset.
 - Map request models onto Claude Code's model roles — Main, Fable, Opus, Sonnet, Haiku, and Subagent — or add a custom `/model` entry. The `1M` flag appends `[1m]` to a model ID to request a million-token context.
-- `Claude Account` uses the account already signed in to Claude Code: run `/login` there first. Switching to it removes third-party endpoint and credential overrides from `settings.json`, and Agofra neither reads nor stores login credentials.
+- `Claude Account` uses the account already signed in to Claude Code: run `/login` there first. Switching to it removes third-party endpoint and credential overrides from `settings.json`, and Agmux neither reads nor stores login credentials.
 - Test connectivity against the real `/v1/messages` call path using the stored credentials. Fetching a model list is a separate, optional step — a gateway that exposes no model catalog still passes the connection test.
 - Save shared fields as a common template and fill them into any profile. Endpoints, credentials, model mappings, and app-controlled fields are excluded, and template changes never rewrite existing profiles.
 - Turn the balance or usage indicator on or off per profile, on the presets that support querying it (currently DeepSeek and MiniMax).
@@ -87,7 +87,7 @@ Presets available on both clients share a name and icon but never share endpoint
 - Test server connectivity and inspect the tools a server provides; probes go through the system proxy and each client is probed and cached separately.
 - Enabling, disabling, or uninstalling a server affects only the client you are on — the other client's servers and configuration are left as they are.
 - Switch between a structured form and source editing — TOML for Codex, JSON for Claude Code — with validation and formatting.
-- Compare the live Codex configuration with Agofra's database mirror before syncing either direction.
+- Compare the live Codex configuration with Agmux's database mirror before syncing either direction.
 
 ### Plugins and Skills
 
@@ -100,8 +100,8 @@ Presets available on both clients share a name and icon but never share endpoint
 - Preview and install a plugin from a GitHub repository, optionally using a branch or subdirectory.
 - Check and upgrade third-party marketplace plugins, or uninstall plugins through the Codex CLI.
 - Import local Skills, preview their `SKILL.md`, detect updates and conflicts, and enable, disable, or delete managed Skills.
-- Scan Skills from `~/.codex/skills`, `~/.claude/skills`, and `~/.agents/skills` while keeping the Agofra Skill registry separate from plugin-contained Skills.
-- Enable a managed Skill per client: the Codex and Claude Code copies are toggled independently, and each side shows its own enabled count. Deleting a managed Skill removes the Agofra copy and both client copies.
+- Scan Skills from `~/.codex/skills`, `~/.claude/skills`, and `~/.agents/skills` while keeping the Agmux Skill registry separate from plugin-contained Skills.
+- Enable a managed Skill per client: the Codex and Claude Code copies are toggled independently, and each side shows its own enabled count. Deleting a managed Skill removes the Agmux copy and both client copies.
 
 ### Desktop experience
 
@@ -125,25 +125,25 @@ The settings page is organized into four tabs:
 
 ### MCP differences
 
-When the live Codex `config.toml` and Agofra's MCP mirror drift apart, MCP opens a dedicated diff page that lists every divergent server with a red/green LCS diff and supports batch or single-row `adopt` / `revert` actions.
+When the live Codex `config.toml` and Agmux's MCP mirror drift apart, MCP opens a dedicated diff page that lists every divergent server with a red/green LCS diff and supports batch or single-row `adopt` / `revert` actions.
 
 ## Download and installation
 
-Download the latest build from the [GitHub Releases page](https://github.com/zeno528/Agofra/releases/latest).
+Download the latest build from the [GitHub Releases page](https://github.com/zeno528/agmux/releases/latest).
 
 | Platform | Recommended asset | Notes |
 | --- | --- | --- |
-| Windows x64 | `Agofra-v{VERSION}-Windows-setup.exe` | Standard installer. |
-| Windows x64 | `Agofra-v{VERSION}-Windows.msi` | Useful for deployment or MSI-based installation. |
-| macOS Apple Silicon | `Agofra-v{VERSION}-macOS-arm64.dmg` | For Apple Silicon Macs. |
-| macOS Intel | `Agofra-v{VERSION}-macOS-x64.dmg` | For Intel Macs. |
+| Windows x64 | `Agmux-v{VERSION}-Windows-setup.exe` | Standard installer. |
+| Windows x64 | `Agmux-v{VERSION}-Windows.msi` | Useful for deployment or MSI-based installation. |
+| macOS Apple Silicon | `Agmux-v{VERSION}-macOS-arm64.dmg` | For Apple Silicon Macs. |
+| macOS Intel | `Agmux-v{VERSION}-macOS-x64.dmg` | For Intel Macs. |
 
 ### macOS first launch
 
-Open the DMG, drag **Agofra** to **Applications**, and launch it. If macOS blocks the app, first allow it in **System Settings → Privacy & Security**. If it still reports that the app cannot be opened, run:
+Open the DMG, drag **Agmux** to **Applications**, and launch it. If macOS blocks the app, first allow it in **System Settings → Privacy & Security**. If it still reports that the app cannot be opened, run:
 
 ```bash
-xattr -cr /Applications/Agofra.app
+xattr -cr /Applications/Agmux.app
 ```
 
 Replace the path if you installed the app somewhere else. Official packages are currently published for Windows and macOS; Linux packages are not included.
@@ -152,20 +152,20 @@ Replace the path if you installed the app somewhere else. Official packages are 
 
 1. In the **Codex** group, open **Providers**, add a built-in preset or **Custom**, enter the credentials or bind a ChatGPT account, then use it.
 2. In the **Claude** group, open **Providers** to configure Claude Code, or save the current `~/.claude/settings.json` as a snapshot.
-3. Enable the optional Codex restart behavior in **Settings → App** if you want Agofra to restart Codex after switching to a profile.
+3. Enable the optional Codex restart behavior in **Settings → App** if you want Agmux to restart Codex after switching to a profile.
 4. Use **MCP**, **Plugins**, or **Skill** under **General** to manage the corresponding global resources. MCP is managed one client at a time; Skills can be enabled for both.
 
 ## Data and privacy
 
-Agofra keeps its application data under the current user's home directory. The exact files and folders depend on which features have been used:
+Agmux keeps its application data under the current user's home directory. The exact files and folders depend on which features have been used:
 
 ```text
-~/.agofra/
+~/.agmux/
 ├── settings.json
-├── agofra.db
+├── agmux.db
 ├── balance-cache.json
 ├── logs/
-│   └── agofra.log
+│   └── agmux.log
 ├── update-marker
 └── backups/
     ├── config/
@@ -173,27 +173,27 @@ Agofra keeps its application data under the current user's home directory. The e
     └── codex-files/
 ```
 
-Agofra keeps its run logs under `~/.agofra/logs/` (1MB × 10 rotation).
+Agmux keeps its run logs under `~/.agmux/logs/` (1MB × 10 rotation).
 
-When upgrading from a version with the previous name, the app does not migrate its old data directory automatically. Export a database backup from Settings → Data management in the old version, then restore it in Agofra. The old directory is preserved.
+When upgrading from a version with the previous name, the app does not migrate its old data directory automatically. Export a database backup from Settings → Data management in the old version, then restore it in Agmux. The old directory is preserved.
 
-Agofra never reads or stores a Claude Code sign-in: a `Claude Account` profile only tells Claude Code to drop third-party endpoint and credential overrides. The Claude common template lives in the Agofra database and is therefore covered by database backups.
+Agmux never reads or stores a Claude Code sign-in: a `Claude Account` profile only tells Claude Code to drop third-party endpoint and credential overrides. The Claude common template lives in the Agmux database and is therefore covered by database backups.
 
-API keys, OAuth credentials, profiles, and backups are local data. Agofra creates backups before relevant configuration writes, but you should still avoid committing or sharing `.agofra`, `auth.json`, `~/.claude.json`, API keys, or backup files.
+API keys, OAuth credentials, profiles, and backups are local data. Agmux creates backups before relevant configuration writes, but you should still avoid committing or sharing `.agmux`, `auth.json`, `~/.claude.json`, API keys, or backup files.
 
 ## FAQ and troubleshooting
 
 ### What happens when I use a profile?
 
-Agofra backs up the relevant files, updates the provider-related Codex configuration, and preserves unrelated configuration areas where possible. Whether Codex restarts afterward is controlled by **Settings → App**.
+Agmux backs up the relevant files, updates the provider-related Codex configuration, and preserves unrelated configuration areas where possible. Whether Codex restarts afterward is controlled by **Settings → App**.
 
 ### Are profiles, MCP, Plugins, and Skills the same thing?
 
 No. Profiles describe model/provider settings; MCP describes tool servers; Plugins are Codex extension packages; Skills are reusable instruction directories. They are managed in separate areas of the application.
 
-### Does Agofra take over my Claude Code sign-in?
+### Does Agmux take over my Claude Code sign-in?
 
-No. Run `/login` in Claude Code itself, then switch to the `Claude Account` profile — Agofra only removes third-party endpoint and credential overrides from `settings.json` so Claude Code uses its own account. It never reads or stores login credentials, and it leaves the shell environment untouched.
+No. Run `/login` in Claude Code itself, then switch to the `Claude Account` profile — Agmux only removes third-party endpoint and credential overrides from `settings.json` so Claude Code uses its own account. It never reads or stores login credentials, and it leaves the shell environment untouched.
 
 ### Why can a third-party plugin still fail after a provider is configured?
 
@@ -203,7 +203,7 @@ A model provider configuration does not guarantee that every App or MCP connecto
 
 For a third-party provider, check the endpoint and API key first. For the official ChatGPT profile, sign in through the account settings and make sure the selected account is still valid.
 
-If the problem persists, search existing [Issues](https://github.com/zeno528/Agofra/issues) or open a new report with the platform, Agofra version, and a redacted error message. Do not include API keys or authentication files.
+If the problem persists, search existing [Issues](https://github.com/zeno528/agmux/issues) or open a new report with the platform, Agmux version, and a redacted error message. Do not include API keys or authentication files.
 
 ## Development
 
@@ -247,7 +247,7 @@ Release bundles are written under `src-tauri/target/release/bundle/`.
 
 ## Architecture
 
-Agofra is built with Tauri 2 + Rust for native file access and Codex integration, with a React frontend and a local SQLite database.
+Agmux is built with Tauri 2 + Rust for native file access and Codex integration, with a React frontend and a local SQLite database.
 
 The main source areas:
 
@@ -284,9 +284,9 @@ src-tauri/src/
 
 Bug reports, feature ideas, documentation improvements, and pull requests are welcome. For code changes, run the relevant checks above and keep credentials, local databases, and generated bundles out of commits.
 
-- [Open an issue](https://github.com/zeno528/Agofra/issues)
+- [Open an issue](https://github.com/zeno528/agmux/issues)
 - [View the changelog](CHANGELOG.md)
 
 ## License
 
-Agofra is released under the [MIT License](LICENSE). Some provider icons (`ChatGPT`, `DeepSeek`, `MiniMax`, `OpenCode`, and `Zhipu`) are sourced from [thesvg.org](https://thesvg.org) and keep a source notice in the file; the rest are in-house or sourced separately.
+Agmux is released under the [MIT License](LICENSE). Some provider icons (`ChatGPT`, `DeepSeek`, `MiniMax`, `OpenCode`, and `Zhipu`) are sourced from [thesvg.org](https://thesvg.org) and keep a source notice in the file; the rest are in-house or sourced separately.

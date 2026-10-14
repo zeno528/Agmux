@@ -35,7 +35,7 @@ export default {
   delete: "Delete",
   deleteAria: "Delete {{name}}",
   deleteDialogTitle: "Delete Skill",
-  deleteDialogDescription: "This deletes the Agofra repository copy, the Codex copy, and the Claude Code copy of {{name}}",
+  deleteDialogDescription: "This deletes the Agmux repository copy, the Codex copy, and the Claude Code copy of {{name}}",
   deletedToast: "Skill deleted",
   importedToast: "Imported {{count}} Skills",
   importFromFolder: "Import from folder...",

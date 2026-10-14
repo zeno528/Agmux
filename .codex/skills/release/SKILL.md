@@ -1,9 +1,9 @@
 ---
 name: release
-description: Agofra 发版流水线（**默认仅本地 commit 为止**）：AI 读 CHANGELOG 历史与 git 三态（最新 tag / HEAD VERSION / working tree VERSION），CHANGELOG 草稿以**实际代码 diff**（`git diff <上一tag>..HEAD` 逐文件阅读）为唯一依据、commit 信息不可信，**单次弹窗合并确认** bump 级别 + CHANGELOG 草稿（一次 AskUserQuestion 问完）→ 确认后**一次性执行**：跑 `node scripts/bump-version.mjs <level>`（**禁止手写**）→ 写入 CHANGELOG + 本地 commit。**写入本地 commit 即终止**；AI 不主动询问、不主动执行任何 push / 盯构建 / 发布动作。Release 工作流**只手动触发**：push main / push tag 都不自动构建；dispatch 传 `release_mode` 三选一——draft（默认）构建完停在草稿、公开发布仍须用户确认，prerelease=构建完自动预发行，latest=构建完自动正式发行并通知关注者。当用户说"发版"、"发行"、"release"、"发个新版本"、"发布新版本"时使用。
+description: Agmux 发版流水线（**默认仅本地 commit 为止**）：AI 读 CHANGELOG 历史与 git 三态（最新 tag / HEAD VERSION / working tree VERSION），CHANGELOG 草稿以**实际代码 diff**（`git diff <上一tag>..HEAD` 逐文件阅读）为唯一依据、commit 信息不可信，**单次弹窗合并确认** bump 级别 + CHANGELOG 草稿（一次 AskUserQuestion 问完）→ 确认后**一次性执行**：跑 `node scripts/bump-version.mjs <level>`（**禁止手写**）→ 写入 CHANGELOG + 本地 commit。**写入本地 commit 即终止**；AI 不主动询问、不主动执行任何 push / 盯构建 / 发布动作。Release 工作流**只手动触发**：push main / push tag 都不自动构建；dispatch 传 `release_mode` 三选一——draft（默认）构建完停在草稿、公开发布仍须用户确认，prerelease=构建完自动预发行，latest=构建完自动正式发行并通知关注者。当用户说"发版"、"发行"、"release"、"发个新版本"、"发布新版本"时使用。
 ---
 
-# Agofra 发版
+# Agmux 发版
 
 分工：本 skill 做需要判断的部分——bump 级别建议、CHANGELOG 内容草稿（段落标题 `## [版本] - 起草日` 由 Agent 写、经用户合并确认）、本地 commit、跑 bump-version 命令；`.github/workflows/release.yml` 做确定性的部分——校验（含 CHANGELOG 第一段版本号 == VERSION 的 fail-fast 校验）、三平台构建、创建 tag 与发行页（发行说明 = CHANGELOG 第一段原文照抄）、上传资产。**工作流不回写 main**；CHANGELOG 无归档步骤。草稿不会通知关注者；执行发布那一刻 GitHub 才给关注者发通知邮件。
 
@@ -100,7 +100,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
    node scripts/bump-version.mjs patch   # 或 minor / major（若用户选沿用基线则跳过）
    ```
 
-2. 检查脚本输出"版本号已从 X.Y.Z 更新为 A.B.C"，记下 A.B.C 作为本版本号；lockfile 未跟上的话 AI 跑：`cargo update -p agofra --manifest-path src-tauri/Cargo.toml`（lockfile 已对齐可跳过）。
+2. 检查脚本输出"版本号已从 X.Y.Z 更新为 A.B.C"，记下 A.B.C 作为本版本号；lockfile 未跟上的话 AI 跑：`cargo update -p agmux --manifest-path src-tauri/Cargo.toml`（lockfile 已对齐可跳过）。
 3. 写入 CHANGELOG：
    - **幽灵版本并入**：若顶部已有段落且是「幽灵版本」（标题版本号无 tag、无 GitHub Release——上次准备好但没发出去的残留）或历史遗留的 `## [Unreleased]`，其内容并入本次新段落一起发布，**不**保留没有 tag 的版本段；顶部段落已正常发行则直接进行下一步。
    - 在既有段落上方插入 Step 0 已确认的新版本段落，标题写 `## [<A.B.C>] - <今天日期>`（A.B.C = bump 后版本号，必须与 VERSION 一致，工作流会校验）。
@@ -141,7 +141,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
 3. 变体处理：
    - 用户点选「预发布」：加 `--prerelease`，去掉 `--latest`
    - 用户要改日志：改 `CHANGELOG.md` 对应版本段落，提交推送后工作流自动重跑，用新段落更新既有草稿后再发布
-4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/Agofra/releases/tag/v<版本>`
+4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/agmux/releases/tag/v<版本>`
 
 ## 示例
 
