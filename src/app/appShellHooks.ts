@@ -174,10 +174,10 @@ export function useSidebar() {
   const [sidebarFlyoutArmed, setSidebarFlyoutArmed] = useState(true);
 
   const toggleSidebar = () => {
+    setSidebarFlyoutArmed(false);
     setSidebarCollapsed((collapsed) => {
       const next = !collapsed;
       localStorage.setItem("agmux.sidebar-collapsed", next ? "1" : "0");
-      if (next) setSidebarFlyoutArmed(false);
       return next;
     });
   };

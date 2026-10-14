@@ -459,7 +459,7 @@ export default function AppShell() {
 
         <div className="apple-workspace flex min-h-0 flex-1">
           <aside className={`apple-sidebar relative flex h-full shrink-0 flex-col ${sidebar.sidebarCollapsed ? "apple-sidebar--collapsed" : ""}`}>
-            <div className="apple-sidebar-brand-row" data-tauri-drag-region>
+            <div className="apple-sidebar-brand-row" data-tauri-drag-region onMouseLeave={() => sidebar.setSidebarFlyoutArmed(true)}>
               <div
                 className="apple-sidebar-brand flex w-fit cursor-pointer items-center"
                 role="button"
@@ -469,8 +469,6 @@ export default function AppShell() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") sidebar.toggleSidebar();
                 }}
-                onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}
-                onMouseLeave={() => sidebar.setSidebarFlyoutArmed(false)}
               >
                 <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
                 <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
@@ -488,7 +486,7 @@ export default function AppShell() {
                   >
                     <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
                   </button>
-                  <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span>
+                  {sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span> : null}
                 </>
               ) : null}
             </div>
