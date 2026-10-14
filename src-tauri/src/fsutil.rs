@@ -131,7 +131,15 @@ pub fn prune_backups(directory: &Path, prefix: &str, extension: &str, keep: usiz
                 .is_some_and(|name| name.starts_with(prefix) && name.ends_with(extension))
         })
         .collect();
-    backups.sort();
+    // 手动、自动及重命名后的备份按文件时间统一淘汰，文件名仅用于同时间排序。
+    backups.sort_by_cached_key(|path| {
+        (
+            path.metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok(),
+            path.clone(),
+        )
+    });
     while backups.len() > keep {
         let oldest = backups.remove(0);
         let _ = fs::remove_file(oldest);
@@ -141,6 +149,34 @@ pub fn prune_backups(directory: &Path, prefix: &str, extension: &str, keep: usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_retention_keeps_latest_files_regardless_of_source_or_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = [
+            "cg-backup-manual-20260101.db",
+            "cg-backup-20260102.db",
+            "cg-backup-manual-renamed.db",
+            "cg-backup-20260104.db",
+            "cg-backup-manual-20260105.db",
+        ];
+        for (index, name) in names.iter().enumerate() {
+            let file = fs::File::create(dir.path().join(name)).unwrap();
+            file.set_times(fs::FileTimes::new().set_modified(
+                std::time::UNIX_EPOCH
+                    + std::time::Duration::from_secs(1_700_000_000 + index as u64),
+            ))
+            .unwrap();
+            prune_backups(dir.path(), "cg-backup-", ".db", 3);
+            for (position, candidate) in names[..=index].iter().enumerate() {
+                assert_eq!(
+                    dir.path().join(candidate).exists(),
+                    position >= (index + 1).saturating_sub(3),
+                    "after creating {name}: {candidate}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn atomic_write_replaces_existing_content() {

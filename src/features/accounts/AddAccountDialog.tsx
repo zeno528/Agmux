@@ -15,7 +15,7 @@ interface AddAccountDialogProps {
   onCancel: () => void;
 }
 
-/** 添加 ChatGPT 账号的卡片式 OAuth 弹窗（视觉源：归档/demo1.html 一比一复刻，样式见 style.css 的 oauth- 段）。 */
+/** 添加 ChatGPT 账号的卡片式 OAuth 弹窗（视觉源：work/demo1.html 一比一复刻，样式见 style.css 的 oauth- 段）。 */
 export function AddAccountDialog({ open, onOpenChange, busy, browserLogin, onStartLogin, onReopen, onCancel }: AddAccountDialogProps) {
   const { t } = useTranslation("settings");
   const features = [

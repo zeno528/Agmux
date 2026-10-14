@@ -19,12 +19,12 @@ export default function ProfileAdvancedControls({ advanced, saving }: { advanced
           </label>
         </div>
       ) : null}
-      <label className={`editor-ghost ${advanced.contextMgmtEnabled ? "on" : ""}`} title={t("edit.contextMgmtTitle")}>
+      <label className="editor-ghost" title={t("edit.contextMgmtTitle")}>
         <input type="checkbox" checked={advanced.contextMgmtEnabled} disabled={advanced.patchingContextMgmt || saving} onChange={(event) => void advanced.toggleContextManagement(event.target.checked)} />
         <span className="whitespace-nowrap font-medium">{t("edit.contextMgmtLabel")}</span>
         <span className="meta-xs muted">{t("edit.experimental")}</span>
       </label>
-      <label className={`editor-ghost ${advanced.systemProxyEnabled ? "on" : ""}`} title={t("edit.systemProxyTitle")}>
+      <label className="editor-ghost" title={t("edit.systemProxyTitle")}>
         <input type="checkbox" checked={advanced.systemProxyEnabled} disabled={advanced.patchingSystemProxy || saving} onChange={(event) => void advanced.toggleSystemProxy(event.target.checked)} />
         <span className="whitespace-nowrap font-medium">{t("edit.systemProxyLabel")}</span>
       </label>

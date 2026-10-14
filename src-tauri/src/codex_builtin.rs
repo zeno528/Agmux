@@ -24,6 +24,7 @@ pub const MIMO_MODELS: &[u8] = include_bytes!("../assets/builtin/mimo-models.jso
 pub const KIND_KIMI: &str = "kimi";
 pub const KIND_QWEN: &str = "qwen";
 pub const KIND_HUNYUAN: &str = "hunyuan";
+pub const KIND_TENCENT_TOKEN_PLAN_ENTERPRISE: &str = "tencent-token-plan-enterprise";
 pub const KIND_DOUBAO: &str = "doubao";
 pub const KIND_QIANFAN: &str = "qianfan";
 pub const KIND_XAI: &str = "xai";
@@ -31,9 +32,21 @@ pub const KIND_XAI: &str = "xai";
 pub const KIMI_CONFIG: &[u8] = include_bytes!("../assets/builtin/kimi.toml");
 pub const QWEN_CONFIG: &[u8] = include_bytes!("../assets/builtin/qwen.toml");
 pub const HUNYUAN_CONFIG: &[u8] = include_bytes!("../assets/builtin/hunyuan.toml");
+pub const TENCENT_TOKEN_PLAN_ENTERPRISE_CONFIG: &[u8] =
+    include_bytes!("../assets/builtin/tencent-token-plan-enterprise.toml");
 pub const DOUBAO_CONFIG: &[u8] = include_bytes!("../assets/builtin/doubao.toml");
 pub const QIANFAN_CONFIG: &[u8] = include_bytes!("../assets/builtin/qianfan.toml");
 pub const XAI_CONFIG: &[u8] = include_bytes!("../assets/builtin/xai.toml");
+
+pub const KIND_KIMI_CODE: &str = "kimi-code";
+pub const KIMI_CODE_CONFIG: &[u8] = include_bytes!("../assets/builtin/kimi-code.toml");
+pub const KIND_QWEN_API: &str = "qwen-api";
+pub const QWEN_API_CONFIG: &[u8] = include_bytes!("../assets/builtin/qwen-api.toml");
+pub const KIND_DOUBAO_API: &str = "doubao-api";
+pub const DOUBAO_API_CONFIG: &[u8] = include_bytes!("../assets/builtin/doubao-api.toml");
+pub const KIND_OPENCODE_ZEN: &str = "opencode-zen";
+pub const OPENCODE_ZEN_CONFIG: &[u8] = include_bytes!("../assets/builtin/opencode-zen.toml");
+pub const KIMI_CODE_MODELS: &[u8] = include_bytes!("../assets/builtin/kimi-code-models.json");
 
 pub struct BuiltinTemplate {
     pub kind: &'static str,
@@ -41,7 +54,7 @@ pub struct BuiltinTemplate {
     pub icon: &'static str,
     /// 生产 config.toml 的模板原文（字节级）。
     pub config: &'static [u8],
-    /// 模板中的密钥占位符，应用时替换为用户填写的密钥。
+    /// 模板中的密钥占位符，使用时替换为用户填写的密钥。
     pub placeholder: Option<&'static [u8]>,
     /// 相对 ~/.codex 的关联文件路径及内容（deepseek/智谱 各自独立的 models.json、minimax 的 custom-catalog.json）。
     pub catalog: Option<(&'static str, &'static [u8])>,
@@ -49,7 +62,7 @@ pub struct BuiltinTemplate {
     pub insert_catalog_line: bool,
 }
 
-pub const BUILTINS: [BuiltinTemplate; 13] = [
+pub const BUILTINS: [BuiltinTemplate; 18] = [
     BuiltinTemplate {
         kind: KIND_DEEPSEEK,
         name: "DeepSeek",
@@ -115,7 +128,7 @@ pub const BUILTINS: [BuiltinTemplate; 13] = [
     // 小米 MiMo：官方支持 Responses API 并提供 Codex 配置文档，config 与
     // model-catalogs.json 均取自官方示例（web_search 按官方要求禁用；目录
     // 不带 apply_patch_tool_type——该网关拒绝 freeform 自定义工具）。
-    // 默认走按量付费端点；Token Plan 用户需自行改 base_url（token-plan-cn.xiaomimimo.com/v1）
+    // 默认按量付费，Token Plan 与区域选择由前端预设写入。
     BuiltinTemplate {
         kind: KIND_MIMO,
         name: "小米 MiMo",
@@ -146,13 +159,22 @@ pub const BUILTINS: [BuiltinTemplate; 13] = [
         catalog: None,
         insert_catalog_line: false,
     },
-    // 腾讯混元：仅 TokenHub 按量 Hy3/Hy4 原生 Responses，无状态需禁 store；
-    // 订阅 Coding Plan 只走 chat（Codex 已移除 chat wire），不可用。
+    // 腾讯混元按量 Hy3/Hy4 原生 Responses，无状态需禁 store。
     BuiltinTemplate {
         kind: KIND_HUNYUAN,
         name: "腾讯混元",
         icon: "hunyuan",
         config: HUNYUAN_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    // Token Plan 企业版支持 Responses；个人版仍只支持 chat，不能共用其端点。
+    BuiltinTemplate {
+        kind: KIND_TENCENT_TOKEN_PLAN_ENTERPRISE,
+        name: "腾讯云 Token Plan 企业版",
+        icon: "hunyuan",
+        config: TENCENT_TOKEN_PLAN_ENTERPRISE_CONFIG,
         placeholder: Some("<YOUR_API_KEY>".as_bytes()),
         catalog: None,
         insert_catalog_line: false,
@@ -183,6 +205,42 @@ pub const BUILTINS: [BuiltinTemplate; 13] = [
         name: "xAI",
         icon: "xai",
         config: XAI_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_KIMI_CODE,
+        name: "Kimi Code",
+        icon: "kimi",
+        config: KIMI_CODE_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: Some(("models.json", KIMI_CODE_MODELS)),
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_QWEN_API,
+        name: "Qwen",
+        icon: "qwen",
+        config: QWEN_API_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_DOUBAO_API,
+        name: "Volcengine",
+        icon: "volcengine",
+        config: DOUBAO_API_CONFIG,
+        placeholder: Some("<YOUR_API_KEY>".as_bytes()),
+        catalog: None,
+        insert_catalog_line: false,
+    },
+    BuiltinTemplate {
+        kind: KIND_OPENCODE_ZEN,
+        name: "OpenCode Zen",
+        icon: "opencode",
+        config: OPENCODE_ZEN_CONFIG,
         placeholder: Some("<YOUR_API_KEY>".as_bytes()),
         catalog: None,
         insert_catalog_line: false,
@@ -223,7 +281,7 @@ impl BuiltinTemplate {
     pub fn render_config(&self, api_key: Option<&str>) -> AppResult<Vec<u8>> {
         let mut bytes = self.substitute_key(self.config.to_vec(), api_key)?;
         if self.insert_catalog_line {
-            let needle = b"model_context_window = 1000000\n";
+            let needle = b"model_context_window = 524288\n";
             let start = find_subslice(&bytes, needle)
                 .ok_or_else(|| app_err!("{} 模板缺少插入位置", self.name))?;
             let line = b"model_catalog_json = \"~/.codex/model-catalogs/custom-catalog.json\"\n";
@@ -252,23 +310,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_configs_match_official_templates_byte_for_byte() {
+    fn embedded_configs_match_provider_templates_without_prefilled_models() {
         assert_eq!(
             DEEPSEEK_CONFIG,
-            b"model = \"deepseek-flash\"\nmodel_provider = \"deepseek\"\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\nmodel_reasoning_effort = \"high\"\nweb_search = \"disabled\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.deepseek]\nname = \"deepseek\"\nbase_url = \"https://api.deepseek.com/\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\""
+            b"model_provider = \"deepseek\"\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\nmodel_reasoning_effort = \"high\"\nweb_search = \"disabled\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.deepseek]\nname = \"deepseek\"\nbase_url = \"https://api.deepseek.com/\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\""
         );
         assert_eq!(
             MINIMAX_CONFIG,
-            b"model = \"MiniMax-M3\"\nmodel_provider = \"minimax\"\nmodel_context_window = 1000000\n\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"https://api.minimax.cn/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
+            b"model_provider = \"minimax\"\nmodel_context_window = 524288\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\n\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"https://api.minimax.cn/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
         );
         assert_eq!(
             ZHIPU_CONFIG,
-            b"model_provider = \"ZAI\"\nmodel = \"glm-5.3\"\nmodel_reasoning_effort = \"max\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.ZAI]\nname = \"ZAI\"\nbase_url = \"https://open.bigmodel.cn/api/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
+            b"model_provider = \"ZAI\"\nmodel_reasoning_effort = \"max\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.ZAI]\nname = \"ZAI\"\nbase_url = \"https://open.bigmodel.cn/api/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
         );
-        assert_eq!(
-            CHATGPT_CONFIG,
-            b"model = \"gpt-5.6\"\nmodel_reasoning_effort = \"medium\"\n"
-        );
+        assert_eq!(CHATGPT_CONFIG, b"model_reasoning_effort = \"medium\"\n");
         assert_eq!(
             OPENCODE_CONFIG,
             b"model = \"grok-4.6\"\nmodel_provider = \"opencode-go\"\nmodel_reasoning_effort = \"high\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.opencode-go]\nname = \"OpenCode Go\"\nbase_url = \"https://opencode.ai/zen/go/v1\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\""
@@ -289,8 +344,8 @@ mod tests {
         assert_eq!(count(DEEPSEEK_MODELS, b"\r\n"), 139);
         assert_eq!(ZHIPU_MODELS.len(), 4061);
         assert_eq!(count(ZHIPU_MODELS, b"\r\n"), 114);
-        assert_eq!(MINIMAX_CATALOG.len(), 953);
-        assert_eq!(count(MINIMAX_CATALOG, b"\r\n"), 25);
+        assert_eq!(MINIMAX_CATALOG.len(), 1710);
+        assert_eq!(count(MINIMAX_CATALOG, b"\r\n"), 41);
         // OpenCode 目录为构造产物（无官方文件），不做字节级快照；
         // 内容由下方 opencode_catalog 结构断言覆盖
     }
@@ -357,6 +412,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn minimax_catalog_follows_official_shape() {
+        let catalog: serde_json::Value = serde_json::from_slice(MINIMAX_CATALOG).unwrap();
+        let models = catalog["models"].as_array().unwrap();
+        assert_eq!(models.len(), 1);
+        let model = &models[0];
+        assert_eq!(model["slug"], "MiniMax-M3.1-Flash-Preview");
+        assert_eq!(model["default_reasoning_level"], "max");
+        let efforts: Vec<&str> = model["supported_reasoning_levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|level| level["effort"].as_str().unwrap())
+            .collect();
+        assert_eq!(efforts, ["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(model["supports_reasoning_summaries"], true);
+        assert_eq!(model["default_reasoning_summary"], "none");
+        assert_eq!(model["truncation_policy"]["mode"], "tokens");
+        assert_eq!(model["context_window"], 524_288);
+        assert_eq!(model["max_context_window"], 524_288);
+        assert_eq!(model["apply_patch_tool_type"], "freeform");
+        assert_eq!(model["tool_mode"], "code_mode_only");
+        assert_eq!(model["supports_search_tool"], true);
     }
 
     #[test]
@@ -435,11 +515,9 @@ mod tests {
     }
 
     #[test]
-    fn new_responses_presets_are_wire_responses_without_catalog() {
-        for kind in [KIND_KIMI, KIND_QWEN, KIND_HUNYUAN, KIND_DOUBAO] {
-            let t = template(kind).unwrap();
-            assert_eq!(t.catalog, None, "{kind} 首版不内置静态模型目录");
-            assert!(!t.insert_catalog_line);
+    fn api_presets_render_responses_configs_and_replace_keys() {
+        for t in BUILTINS.iter().filter(|t| t.placeholder.is_some()) {
+            let kind = t.kind;
             let cfg = String::from_utf8_lossy(t.config);
             assert!(
                 cfg.contains("wire_api = \"responses\""),
@@ -450,12 +528,28 @@ mod tests {
                 "{kind} 应遵循项目 experimental_bearer_token 惯例"
             );
             let rendered = t.render_config(Some("sk-test")).unwrap();
+            let parsed = String::from_utf8_lossy(&rendered)
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap();
+            let provider = parsed["model_provider"].as_str().unwrap();
+            assert_eq!(
+                parsed["model_providers"][provider]["wire_api"].as_str(),
+                Some("responses")
+            );
             let ph = t.placeholder.expect("新模板必须有密钥占位符");
             assert!(
                 !rendered.windows(ph.len()).any(|w| w == ph),
                 "{kind} 占位符应被替换"
             );
             assert!(rendered.windows(b"sk-test".len()).any(|w| w == b"sk-test"));
+            if let Some((_, bytes)) = t.catalog {
+                let catalog: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                for model in catalog["models"].as_array().unwrap() {
+                    assert!(model["slug"].is_string(), "{kind}");
+                    assert!(model["base_instructions"].is_string(), "{kind}");
+                    assert!(model["supports_reasoning_summaries"].is_boolean(), "{kind}");
+                }
+            }
         }
     }
 

@@ -1,20 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { checkForAppUpdate, toAppUpdate } from "./appUpdate";
 
-const { check, logUpdateEvent, setUpdateMarker, takeUpdateMarker } = vi.hoisted(() => ({
+const { check, sdkInvoke, logUpdateEvent, setUpdateMarker, takeUpdateMarker } = vi.hoisted(() => ({
   check: vi.fn(),
+  sdkInvoke: vi.fn(),
   logUpdateEvent: vi.fn(async (_event: string, _version?: string) => undefined),
   setUpdateMarker: vi.fn(async (_version: string) => undefined),
   takeUpdateMarker: vi.fn(async () => null as string | null),
 }));
 
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
 vi.mock("../../api", () => ({
-  api: { logUpdateEvent, setUpdateMarker, takeUpdateMarker },
+  api: { checkAppUpdate: check, logUpdateEvent, setUpdateMarker, takeUpdateMarker },
   isTauri: true,
 }));
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("toAppUpdate", () => {
   it("透传更新日志：body 映射为 notes，缺失归一为 null", () => {
@@ -30,15 +32,34 @@ describe("toAppUpdate", () => {
     expect(await checkForAppUpdate()).toBeNull();
     expect(logUpdateEvent).toHaveBeenLastCalledWith("check_latest", undefined);
 
-    const download = vi.fn(async () => {});
-    const install = vi.fn(async () => {});
-    check.mockResolvedValueOnce({ version: "0.10.5", body: null, download, install });
+    check.mockResolvedValueOnce({ rid: 7, currentVersion: "0.10.4", version: "0.10.5", rawJson: {} });
     expect((await checkForAppUpdate())?.version).toBe("0.10.5");
     expect(logUpdateEvent).toHaveBeenLastCalledWith("check_available", "0.10.5");
 
     check.mockRejectedValueOnce(new Error("检查失败"));
     await expect(checkForAppUpdate()).rejects.toThrow("检查失败");
     expect(logUpdateEvent).toHaveBeenLastCalledWith("check_failure", undefined);
+  });
+
+  it("共享网络检查返回的原生资源继续交给官方插件下载和安装", async () => {
+    vi.stubGlobal("window", {
+      __TAURI_INTERNALS__: { transformCallback: () => 1, invoke: sdkInvoke },
+    });
+    sdkInvoke.mockReset();
+    sdkInvoke.mockImplementation(async (command: string) => {
+      if (command === "plugin:updater|download") return 18;
+      if (command === "plugin:updater|install") return undefined;
+      throw new Error(`意外调用：${command}`);
+    });
+    check.mockResolvedValueOnce({
+      rid: 17, currentVersion: "0.10.4", version: "0.10.5",
+      body: "fixture notes", date: "2026-01-01T00:00:00Z", rawJson: { fixture: true },
+    });
+    const update = await checkForAppUpdate();
+    expect(update?.notes).toBe("fixture notes");
+    await update!.install();
+    expect(sdkInvoke).toHaveBeenNthCalledWith(1, "plugin:updater|download", expect.objectContaining({ rid: 17 }), undefined);
+    expect(sdkInvoke).toHaveBeenNthCalledWith(2, "plugin:updater|install", { updateRid: 17, bytesRid: 18 }, undefined);
   });
 
   it("安装成功：下载后先把版本标记原子落盘，再启动安装器", async () => {

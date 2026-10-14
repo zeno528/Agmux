@@ -94,7 +94,7 @@ export function useProfileAdvancedPatches(options: {
     if (patchingLongContext) return;
     setPatchingLongContext(true);
     try {
-      const next = await api.patchChatgptContextConfig(configText, enabled, Number(compactTokenLimit));
+      const next = await api.codexPatchChatgptContextConfig(configText, enabled, Number(compactTokenLimit));
       if (enabled) onPatched?.(next, "model_context_window");
       setConfigText(next);
       setLongContextEnabled(enabled);
@@ -114,7 +114,7 @@ export function useProfileAdvancedPatches(options: {
     }
     setPatchingLongContext(true);
     try {
-      const next = await api.patchChatgptContextConfig(configText, true, limit);
+      const next = await api.codexPatchChatgptContextConfig(configText, true, limit);
       onPatched?.(next, "model_auto_compact_token_limit");
       setConfigText(next);
     } catch (error) {
@@ -128,7 +128,7 @@ export function useProfileAdvancedPatches(options: {
     if (patchingSystemProxy) return;
     setPatchingSystemProxy(true);
     try {
-      const next = await api.patchSystemProxyConfig(configText, enabled);
+      const next = await api.codexPatchSystemProxyConfig(configText, enabled);
       if (enabled) onPatched?.(next, "respect_system_proxy");
       setConfigText(next);
       setSystemProxyEnabled(enabled);
@@ -143,7 +143,7 @@ export function useProfileAdvancedPatches(options: {
     if (patchingContextMgmt) return;
     setPatchingContextMgmt(true);
     try {
-      const next = await api.patchContextManagementConfig(configText, enabled);
+      const next = await api.codexPatchContextManagementConfig(configText, enabled);
       if (enabled) onPatched?.(next, "experimental_mode");
       setConfigText(next);
       setContextMgmtEnabled(enabled);

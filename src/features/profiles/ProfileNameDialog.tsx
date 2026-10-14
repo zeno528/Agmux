@@ -2,12 +2,11 @@ import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AppDialog } from "../../components/AppDialog";
 
-/** Codex 与 Claude 共用的快照命名、供应商重命名弹窗。 */
-export default function ProfileNameDialog({ mode, name, busy, description, onName, onClose, onSubmit }: {
+/** Codex 与 Claude 共用的供应商命名弹窗：收录当前配置、重命名供应商。 */
+export default function ProfileNameDialog({ mode, name, busy, onName, onClose, onSubmit }: {
   mode: "capture" | "rename" | null;
   name: string;
   busy: boolean;
-  description?: string;
   onName: (name: string) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -26,7 +25,7 @@ export default function ProfileNameDialog({ mode, name, busy, description, onNam
       </>}
     >
       <div className="space-y-4">
-        <p className="muted text-sm">{description ?? t(mode === "capture" ? "dialog.captureDescription" : "dialog.renameDescription")}</p>
+        <p className="muted text-sm">{t(mode === "capture" ? "dialog.captureDescription" : "dialog.renameDescription")}</p>
         <input
           ref={nameInput} className="app-input" maxLength={50} placeholder={t("dialog.namePlaceholder")}
           value={name} onChange={(event) => onName(event.target.value)}

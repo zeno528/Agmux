@@ -1,49 +1,18 @@
-use super::profile_config::{
+use super::codex_profile_config::{
     is_builtin_placeholder, parse_provider_detail, profile_config_fragment,
     write_live_provider_update,
 };
 use super::sync;
 use super::{
-    app_err, atomic_write, backup_file, builtin, codex_config, codex_process,
-    normalize_auth_override, now_ms, parse_external_auth_json, profile_summary, read_optional_text,
-    AppContext, AppResult, AppState, AuthSource, CodexAppStatus, ProfileDetail, ProfileKind,
-    ProfileSummary, SkillTool,
+    app_err, atomic_write, backup_file, codex_config, codex_process, codex_profile_summary,
+    normalize_auth_override, now_ms, parse_external_auth_json, read_optional_text,
+    validated_description, validated_icon, validated_name, AppContext, AppResult, AuthSource,
+    CodexAppStatus, CodexProfileDetail, CodexProfileKind, CodexProfileSummary,
 };
-
-pub(super) fn validated_name(name: &str) -> AppResult<String> {
-    let name = name.trim();
-    if name.is_empty() || name.len() > 50 {
-        return Err(app_err!("供应商名称长度必须在 1 到 50 个字符之间"));
-    }
-    Ok(name.to_string())
-}
-
-pub(super) fn validated_description(description: Option<&str>) -> AppResult<Option<String>> {
-    let description = description.map(str::trim).filter(|text| !text.is_empty());
-    if description.is_some_and(|text| text.chars().count() > 200) {
-        return Err(app_err!("供应商描述不能超过 200 个字符"));
-    }
-    Ok(description.map(str::to_string))
-}
-
-pub(crate) fn validated_icon(icon: Option<&str>) -> AppResult<Option<String>> {
-    icon.map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            if value.len() > 40
-                || !value
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-            {
-                return Err(app_err!("无效的图标标识"));
-            }
-            Ok(value.to_string())
-        })
-        .transpose()
-}
+use crate::codex_builtin;
 
 /// 配置主体块（日志用）：官方配置带 source，名称按 Debug 格式转义为 logfmt 字符串。
-fn profile_subject(summary: &ProfileSummary) -> String {
+fn profile_subject(summary: &CodexProfileSummary) -> String {
     let name = format!("{:?}", summary.name);
     match summary.auth_source {
         Some(AuthSource::Oauth) => {
@@ -68,106 +37,6 @@ pub(super) enum LiveReadError {
 }
 
 impl AppContext {
-    pub fn get_state(&self) -> AppResult<AppState> {
-        // 被动回写统一走时机层（StateRefresh 覆盖启动预发/窗口激活/页内刷新）；
-        // 已解析的 live 文档直接复用，不在启动路径二次读盘；
-        // 操作锁被切换/应用占用时本轮跳过，下一轮激活自愈
-        let live = self.live_document();
-        sync::registry().harvest_passive(
-            self,
-            &sync::SyncTrigger::StateRefresh,
-            sync::SyncMaterial {
-                codex_document: live.as_ref(),
-            },
-        );
-        let settings = self.settings()?;
-        let profiles = self.database.profiles()?;
-        // 激活状态只来自手动应用（显式状态或应用事件），不做 live 配置推断，
-        // 避免“添加供应商”被误判成“正在使用”。
-        let active_profile_id = match self.active_profile_state()? {
-            Some(id) if profiles.iter().any(|profile| profile.id == id) => Some(id),
-            _ => match self.database.latest_applied_profile()? {
-                Some(id) if profiles.iter().any(|profile| profile.id == id) => Some(id),
-                _ => None,
-            },
-        };
-        let live_payload = live
-            .as_ref()
-            .and_then(|document| codex_config::capture_from_document(document).ok());
-        // 配置卡片套餐标识：OAuth 绑定账号取库内套餐，Desktop 取自身数据库认证快照的
-        // 套餐（不读 live auth.json：切换后该文件是别账号的认证，会把徽标带错）；
-        // 账号列表一次查齐避免逐卡片查询
-        let account_plans: std::collections::HashMap<String, String> = self
-            .database
-            .accounts()?
-            .into_iter()
-            .filter_map(|account| {
-                let id = account.id;
-                account.plan_type.map(|plan| (id, plan))
-            })
-            .collect();
-        // 应用安装路径固定 + 自动识别，不支持手动覆盖
-        let process_ids = codex_process::find_process_ids(None);
-        let (display_path, source) = codex_process::codex_display_path(None);
-        let balance_cache = self.load_balance_cache();
-
-        Ok(AppState {
-            profiles: profiles
-                .iter()
-                .map(|profile| {
-                    let mut stored = profile.clone();
-                    // 激活中的供应商：标签读取当前配置文件状态；其余供应商读取数据库最新字段
-                    if Some(&stored.id) == active_profile_id.as_ref() {
-                        if let Some(live) = &live_payload {
-                            let mut live = live.clone();
-                            // 供应商元数据不在 live 配置里，覆盖时保留。
-                            live.description = stored.payload.description.clone();
-                            live.admin_url = stored.payload.admin_url.clone();
-                            live.show_balance = stored.payload.show_balance;
-                            live.fetched_models = stored.payload.fetched_models.clone();
-                            stored.payload = live;
-                        }
-                    }
-                    let mut summary = profile_summary(&stored);
-                    if summary.auth_source == Some(AuthSource::Desktop) {
-                        summary.auth_account_id = profile
-                            .payload
-                            .raw_auth
-                            .as_deref()
-                            .and_then(parse_external_auth_json)
-                            .map(|auth| auth.account_id);
-                    }
-                    summary.plan_type = match summary.auth_source {
-                        Some(AuthSource::Oauth) => summary
-                            .account_id
-                            .as_deref()
-                            .and_then(|id| account_plans.get(id).cloned()),
-                        // 取覆盖前 DB 行的快照：active 卡的 payload 已被 live 覆盖，raw_auth 为空
-                        Some(AuthSource::Desktop) => profile
-                            .payload
-                            .raw_auth
-                            .as_deref()
-                            .and_then(parse_external_auth_json)
-                            .and_then(|auth| auth.plan_type),
-                        None => None,
-                    };
-                    summary
-                })
-                .collect::<Vec<ProfileSummary>>(),
-            active_profile_id,
-            active_claude_profile_id: self.database.active_claude_profile()?,
-            codex: CodexAppStatus {
-                running: !process_ids.is_empty(),
-                display_path,
-                source,
-            },
-            settings,
-            paths: self.path_info(),
-            auth_status: Default::default(),
-            balance_cache,
-        })
-    }
-
     /// 轻量 Codex 运行状态查询（仅扫描进程，供前端轮询使用）。
     pub fn codex_status(&self) -> AppResult<CodexAppStatus> {
         let process_ids = codex_process::find_process_ids(None);
@@ -201,7 +70,7 @@ impl AppContext {
             .map_err(|_| LiveReadError::Parse)
     }
 
-    pub fn capture_profile(&self, name: &str) -> AppResult<ProfileSummary> {
+    pub fn codex_capture_profile(&self, name: &str) -> AppResult<CodexProfileSummary> {
         let name = validated_name(name)?;
         let mut payload = codex_config::read_profile(&self.paths.codex_config())?;
         // 保存完整配置原文，编辑页按完整文件展示/编辑
@@ -211,7 +80,9 @@ impl AppContext {
             .map(|text| codex_config::without_managed_mcp_servers(&text))
             .transpose()?;
         let timestamp = now_ms().to_string();
-        let summary = self.database.insert_profile(&name, &payload, &timestamp)?;
+        let summary = self
+            .database
+            .codex_insert_profile(&name, &payload, &timestamp)?;
         // 捕获只保存快照；保留当前激活供应商，并把它在 live 中的累计改动同步回快照。
         sync::registry().harvest(
             self,
@@ -234,7 +105,7 @@ impl AppContext {
         Ok(summary)
     }
 
-    pub fn add_builtin_profile(
+    pub fn codex_add_builtin_profile(
         &self,
         kind: &str,
         description: Option<&str>,
@@ -242,8 +113,8 @@ impl AppContext {
         api_key: Option<&str>,
         admin_url: Option<&str>,
         account_id: Option<&str>,
-    ) -> AppResult<ProfileSummary> {
-        let template = builtin::template(kind)?;
+    ) -> AppResult<CodexProfileSummary> {
+        let template = codex_builtin::template(kind)?;
         let base_url = base_url.map(str::trim).filter(|value| !value.is_empty());
         let api_key = api_key.map(str::trim).filter(|key| !key.is_empty());
         // 只创建快照，不写生产环境；快照内容与最终应用时渲染的 config 一致
@@ -279,13 +150,13 @@ impl AppContext {
         let timestamp = now_ms().to_string();
         let summary = self
             .database
-            .insert_profile(template.name, &payload, &timestamp)?;
+            .codex_insert_profile(template.name, &payload, &timestamp)?;
         self.database
-            .set_profile_icon(&summary.id, Some(template.icon), &timestamp)?;
+            .codex_set_profile_icon(&summary.id, Some(template.icon), &timestamp)?;
         // 创建官方订阅配置时可直接绑定账号；第三方忽略绑定参数
         if payload.provider_id.is_none() {
             if let Some(account_id) = account_id {
-                self.set_profile_account(&summary.id, Some(account_id))?;
+                self.codex_set_profile_account(&summary.id, Some(account_id))?;
             }
         }
         self.database.record_event(
@@ -295,8 +166,8 @@ impl AppContext {
             Some("added built-in profile"),
             &timestamp,
         )?;
-        let stored = self.database.profile(&summary.id)?;
-        let summary = profile_summary(&stored);
+        let stored = self.database.codex_profile(&summary.id)?;
+        let summary = codex_profile_summary(&stored);
         tauri_plugin_log::log::info!(
             "[provider.profile.create] {} outcome=success msg=\"已创建配置\"",
             profile_subject(&summary)
@@ -305,7 +176,7 @@ impl AppContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_custom_profile(
+    pub fn codex_add_custom_profile(
         &self,
         name: &str,
         description: Option<&str>,
@@ -315,7 +186,7 @@ impl AppContext {
         admin_url: Option<&str>,
         catalog_text: Option<&str>,
         auth_text: Option<&str>,
-    ) -> AppResult<ProfileSummary> {
+    ) -> AppResult<CodexProfileSummary> {
         let name = validated_name(name)?;
         if config_text.trim().is_empty() {
             return Err(app_err!("请填写 config.toml 内容"));
@@ -359,7 +230,9 @@ impl AppContext {
             payload.raw_auth = normalize_auth_override(Some(text));
         }
         let timestamp = now_ms().to_string();
-        let summary = self.database.insert_profile(&name, &payload, &timestamp)?;
+        let summary = self
+            .database
+            .codex_insert_profile(&name, &payload, &timestamp)?;
         self.database.record_event(
             Some(&summary.id),
             "add_custom",
@@ -367,8 +240,8 @@ impl AppContext {
             Some("added custom profile"),
             &timestamp,
         )?;
-        let stored = self.database.profile(&summary.id)?;
-        let summary = profile_summary(&stored);
+        let stored = self.database.codex_profile(&summary.id)?;
+        let summary = codex_profile_summary(&stored);
         tauri_plugin_log::log::info!(
             "[provider.profile.create] {} outcome=success msg=\"已创建配置\"",
             profile_subject(&summary)
@@ -378,39 +251,26 @@ impl AppContext {
 
     /// 返回内置模板自带的关联文件原文（deepseek/智谱 的 models.json、minimax 的 custom-catalog.json），
     /// 供创建页在保存前预览；ChatGPT 无关联文件返回 None。
-    pub fn get_builtin_catalog(&self, kind: &str) -> AppResult<Option<String>> {
-        let template = builtin::template(kind)?;
+    pub fn codex_get_builtin_catalog(&self, kind: &str) -> AppResult<Option<String>> {
+        let template = codex_builtin::template(kind)?;
         Ok(template
             .catalog
             .map(|(_, bytes)| String::from_utf8_lossy(bytes).into_owned()))
     }
 
-    pub fn rename_profile(&self, id: &str, name: &str, tool: SkillTool) -> AppResult<()> {
-        let (previous_name, source) = match tool {
-            SkillTool::Codex => (self.database.profile(id)?.name, "codex"),
-            SkillTool::Claude => (self.database.claude_profile(id)?.name, "claude"),
-        };
-        let name = validated_name(name)?;
+    pub fn codex_reorder_profiles(&self, ids: &[String]) -> AppResult<()> {
         self.database
-            .rename_profile(id, &name, &now_ms().to_string(), tool)?;
-        tauri_plugin_log::log::info!(
-            "[provider.profile.rename] source={source} profile_id={id} profile_name={previous_name:?} new_name={name:?} outcome=success msg=\"已重命名配置\""
-        );
-        Ok(())
+            .codex_reorder_profiles(ids, &now_ms().to_string())
     }
 
-    pub fn reorder_profiles(&self, ids: &[String]) -> AppResult<()> {
-        self.database.reorder_profiles(ids, &now_ms().to_string())
-    }
-
-    pub fn delete_profile(&self, id: &str) -> AppResult<()> {
-        let stored = self.database.profile(id)?;
+    pub fn codex_delete_profile(&self, id: &str) -> AppResult<()> {
+        let stored = self.database.codex_profile(id)?;
         // 产品规则：使用中的供应商配置不可删除（前端对激活卡片禁用删除按钮，ProfileCardActions）。
         // 后端对齐拒绝：托盘切换后列表未刷新的竞态也只会得到明确报错，不会静默清掉激活位。
         if self.is_active_profile(id)? {
             return Err(app_err!("无法删除使用中的供应商配置，请先切换到其他配置"));
         }
-        self.database.delete_profile(id)?;
+        self.database.codex_delete_profile(id)?;
         // 删除清掉的是配置与本地凭据，留痕是唯一审计线索
         tauri_plugin_log::log::info!(
             "[provider.profile.delete] profile_id={id} profile_name={:?} outcome=success msg=\"已删除配置\"",
@@ -419,82 +279,92 @@ impl AppContext {
         Ok(())
     }
 
-    pub fn set_profile_icon(&self, id: &str, icon: Option<&str>) -> AppResult<()> {
+    pub fn codex_set_profile_icon(&self, id: &str, icon: Option<&str>) -> AppResult<()> {
         let icon = validated_icon(icon)?;
         self.database
-            .set_profile_icon(id, icon.as_deref(), &now_ms().to_string())
+            .codex_set_profile_icon(id, icon.as_deref(), &now_ms().to_string())
     }
 
     /// 供应商级开关：是否在卡片显示并自动刷新 DeepSeek 余额。
-    pub fn set_profile_show_balance(&self, id: &str, enabled: bool) -> AppResult<()> {
-        let stored = self.database.profile(id)?;
+    pub fn codex_set_profile_show_balance(&self, id: &str, enabled: bool) -> AppResult<()> {
+        let stored = self.database.codex_profile(id)?;
         let mut payload = stored.payload;
         payload.show_balance = enabled;
         self.database
-            .update_profile(id, &stored.name, &payload, &now_ms().to_string())
+            .codex_update_profile(id, &stored.name, &payload, &now_ms().to_string())
             .map(|_| ())
     }
 
     /// 保存最近一次成功获取的模型列表，避免编辑页每次打开都重复请求供应商接口。
-    pub fn set_profile_fetched_models(&self, id: &str, models: Vec<String>) -> AppResult<()> {
-        let stored = self.database.profile(id)?;
+    pub fn codex_set_profile_fetched_models(
+        &self,
+        id: &str,
+        models: Vec<String>,
+        efforts: Option<std::collections::BTreeMap<String, Vec<String>>>,
+        defaults: Option<std::collections::BTreeMap<String, String>>,
+    ) -> AppResult<()> {
+        let stored = self.database.codex_profile(id)?;
         let mut payload = stored.payload;
         payload.fetched_models = models;
+        payload.fetched_model_efforts = efforts.unwrap_or_default();
+        payload.fetched_model_defaults = defaults.unwrap_or_default();
         self.database
-            .update_profile(id, &stored.name, &payload, &now_ms().to_string())
+            .codex_update_profile(id, &stored.name, &payload, &now_ms().to_string())
             .map(|_| ())
     }
 
     /// 完整复制供应商（配置、关联文件、图标、账号绑定），新供应商名加 `copy` 后缀，同名时追加序号。
-    pub fn duplicate_profile(&self, id: &str) -> AppResult<ProfileSummary> {
-        // 使用中的供应商：先把 live 的 config/models.json 改动同步回快照，副本取到最新状态
-        // （门控在执行体内部：目标不是激活配置时直接跳过）
+    pub fn codex_duplicate_profile(&self, id: &str) -> AppResult<CodexProfileSummary> {
+        // 使用中的供应商：先把 live 的 config/models.json 改动同步回快照，副本取到最新状态；
+        // 非激活配置不参与 live→库同步，不发起也不留日志
         let active = self.is_active_profile(id)?;
-        let _ = sync::registry().harvest(
-            self,
-            &sync::SyncTrigger::BeforeProfileClone {
-                client: sync::ClientId::Codex,
-                target_id: id.to_string(),
-            },
-            sync::SyncMaterial::default(),
-        );
-        let mut stored = self.database.profile(id)?;
+        if active {
+            let _ = sync::registry().harvest(
+                self,
+                &sync::SyncTrigger::BeforeProfileClone {
+                    client: sync::ClientId::Codex,
+                    target_id: id.to_string(),
+                },
+                sync::SyncMaterial::default(),
+            );
+        }
+        let mut stored = self.database.codex_profile(id)?;
         stored.payload.raw_auth = normalize_auth_override(stored.payload.raw_auth.as_deref());
         // 使用中的第三方供应商：快照没单独保存 auth 时连当前 live auth.json 一起复制，
         // 保证副本应用后凭据与源一致；官方订阅的 auth 由账号动态生成，不复制。
         // 外部 Codex 官方认证属于全局订阅凭据，不并入第三方配置（避免副本应用时覆盖官方认证）。
-        if active && stored.kind == ProfileKind::ThirdParty && stored.payload.raw_auth.is_none() {
+        if active
+            && stored.kind == CodexProfileKind::ThirdParty
+            && stored.payload.raw_auth.is_none()
+        {
             stored.payload.raw_auth = read_optional_text(&self.paths.codex_home.join("auth.json"))
                 .filter(|text| parse_external_auth_json(text).is_none());
         }
-        let profiles = self.database.profiles()?;
-        let source_index = profiles
-            .iter()
-            .position(|profile| profile.id == id)
-            .ok_or_else(|| app_err!("供应商配置不存在"))?;
-        let base: String = stored.name.trim().chars().take(45).collect();
-        let candidate = super::unique_copy_name(&base, |name| {
+        let profiles = self.database.codex_profiles()?;
+        let (candidate, copy_index) = super::profile_copy_plan(
+            id,
             profiles
                 .iter()
-                .any(|profile| profile.name.eq_ignore_ascii_case(name))
-        });
+                .map(|profile| (profile.id.as_str(), profile.name.as_str())),
+        )?;
         let timestamp = now_ms().to_string();
-        let summary = self
-            .database
-            .insert_profile(&candidate, &stored.payload, &timestamp)?;
+        let summary =
+            self.database
+                .codex_insert_profile(&candidate, &stored.payload, &timestamp)?;
         self.database
-            .set_profile_icon(&summary.id, stored.icon.as_deref(), &timestamp)?;
+            .codex_set_profile_icon(&summary.id, stored.icon.as_deref(), &timestamp)?;
         // 官方供应商的订阅账号绑定一并复制（第三方恒为 None 不会进这个分支）
         if stored.account_id.is_some() {
-            self.database.set_profile_account(
+            self.database.codex_set_profile_account(
                 &summary.id,
                 stored.account_id.as_deref(),
                 &timestamp,
             )?;
         }
         let mut ordered_ids: Vec<String> = profiles.into_iter().map(|profile| profile.id).collect();
-        ordered_ids.insert(source_index + 1, summary.id.clone());
-        self.database.reorder_profiles(&ordered_ids, &timestamp)?;
+        ordered_ids.insert(copy_index, summary.id.clone());
+        self.database
+            .codex_reorder_profiles(&ordered_ids, &timestamp)?;
         self.database.record_event(
             Some(&summary.id),
             "duplicate",
@@ -507,23 +377,26 @@ impl AppContext {
             summary.id,
             stored.name
         );
-        let stored = self.database.profile(&summary.id)?;
-        Ok(profile_summary(&stored))
+        let stored = self.database.codex_profile(&summary.id)?;
+        Ok(codex_profile_summary(&stored))
     }
 
-    pub fn get_profile(&self, id: &str) -> AppResult<ProfileDetail> {
-        // 打开激活供应商的编辑页：先把外部改动同步回数据库快照
-        let _ = sync::registry().harvest(
-            self,
-            &sync::SyncTrigger::BeforeProfileRead {
-                client: sync::ClientId::Codex,
-                target_id: id.to_string(),
-            },
-            sync::SyncMaterial::default(),
-        );
-        let stored = self.database.profile(id)?;
-        let payload = &stored.payload;
+    pub fn codex_get_profile(&self, id: &str) -> AppResult<CodexProfileDetail> {
+        // 打开激活供应商的编辑页：先把外部改动同步回数据库快照；
+        // 非激活配置不参与 live→库同步（结局注定 TargetMismatch），不发起也不留日志
         let active = self.is_active_profile(id)?;
+        if active {
+            let _ = sync::registry().harvest(
+                self,
+                &sync::SyncTrigger::BeforeProfileRead {
+                    client: sync::ClientId::Codex,
+                    target_id: id.to_string(),
+                },
+                sync::SyncMaterial::default(),
+            );
+        }
+        let stored = self.database.codex_profile(id)?;
+        let payload = &stored.payload;
         let provider = payload
             .provider_body
             .as_deref()
@@ -554,7 +427,7 @@ impl AppContext {
             Some(raw) => match payload.builtin.as_deref() {
                 // 内置供应商：占位符替换为已存密钥，展示应用时的真实配置
                 Some(kind) => {
-                    let template = builtin::template(kind)?;
+                    let template = codex_builtin::template(kind)?;
                     String::from_utf8_lossy(
                         &template.substitute_key(raw.as_bytes().to_vec(), stored_key.as_deref())?,
                     )
@@ -564,7 +437,7 @@ impl AppContext {
             },
             None => match payload.builtin.as_deref() {
                 Some(kind) => {
-                    let template = builtin::template(kind)?;
+                    let template = codex_builtin::template(kind)?;
                     String::from_utf8_lossy(&template.render_config(stored_key.as_deref())?)
                         .into_owned()
                 }
@@ -580,7 +453,7 @@ impl AppContext {
             payload
                 .builtin
                 .as_deref()
-                .and_then(|kind| builtin::template(kind).ok())
+                .and_then(|kind| codex_builtin::template(kind).ok())
                 .and_then(|template| template.catalog)
                 .map(|(_, bytes)| String::from_utf8_lossy(bytes).into_owned())
         });
@@ -595,7 +468,7 @@ impl AppContext {
             None
         };
 
-        Ok(ProfileDetail {
+        Ok(CodexProfileDetail {
             id: stored.id.clone(),
             name: stored.name.clone(),
             description: payload.description.clone(),
@@ -612,7 +485,7 @@ impl AppContext {
             catalog_content,
             raw_catalog: payload.raw_catalog.clone(),
             raw_auth: if auth_source == Some(AuthSource::Desktop)
-                || stored.kind == ProfileKind::ThirdParty
+                || stored.kind == CodexProfileKind::ThirdParty
             {
                 raw_auth
             } else {
@@ -621,28 +494,83 @@ impl AppContext {
             admin_url: payload.admin_url.clone(),
             show_balance: payload.show_balance,
             fetched_models: payload.fetched_models.clone(),
+            fetched_model_efforts: payload.fetched_model_efforts.clone(),
+            fetched_model_defaults: payload.fetched_model_defaults.clone(),
             updated_at: stored.updated_at.clone(),
         })
     }
 
     /// 保存供应商自身的完整配置原文：内置供应商存 raw_config（应用时整文件回填）；
     /// 普通供应商解析回结构化字段（继续走合并回填）。models.json 统一存 raw_catalog。
-    pub fn update_profile_config(
+    pub fn codex_update_profile_config(
         &self,
         id: &str,
         config_text: &str,
         catalog_text: Option<&str>,
         auth_text: Option<&str>,
-    ) -> AppResult<ProfileDetail> {
+    ) -> AppResult<CodexProfileDetail> {
         let _operation = self
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        let stored = self.database.profile(id)?;
+        self.update_profile_config_locked(id, config_text, catalog_text, auth_text)
+    }
+
+    /// 卡片只改顶层模型键；用现有 TOML parser 保留注释、表和多行字符串。
+    pub fn codex_set_profile_model(
+        &self,
+        id: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+        fast: Option<bool>,
+    ) -> AppResult<CodexProfileDetail> {
+        let _operation = self
+            .operation
+            .lock()
+            .map_err(|_| app_err!("操作锁已损坏"))?;
+        let detail = self.codex_get_profile(id)?;
+        if fast.is_some() && (detail.auth_source.is_none() || detail.provider.is_some()) {
+            return Err(app_err!("快速模式只支持官方 ChatGPT 订阅配置"));
+        }
+        if model.is_none() && effort.is_none() && fast.is_none() {
+            return Ok(detail);
+        }
+        let mut document = codex_config::parse_document(&detail.config_fragment)?;
+        for (key, value) in [
+            ("model", model),
+            ("model_reasoning_effort", effort),
+            (
+                "service_tier",
+                fast.map(|enabled| if enabled { "fast" } else { "" }),
+            ),
+        ] {
+            if let Some(value) = value {
+                if value.trim().is_empty() {
+                    document.remove(key);
+                } else {
+                    let mut next = toml_edit::Value::from(value.trim());
+                    if let Some(old) = document.get(key).and_then(toml_edit::Item::as_value) {
+                        *next.decor_mut() = old.decor().clone();
+                    }
+                    document[key] = toml_edit::Item::Value(next);
+                }
+            }
+        }
+        self.update_profile_config_locked(id, &document.to_string(), None, None)
+    }
+
+    fn update_profile_config_locked(
+        &self,
+        id: &str,
+        config_text: &str,
+        catalog_text: Option<&str>,
+        auth_text: Option<&str>,
+    ) -> AppResult<CodexProfileDetail> {
+        let stored = self.database.codex_profile(id)?;
         let auth_source = stored
             .payload
             .effective_auth_source(stored.kind, stored.account_id.as_deref());
-        if stored.kind == ProfileKind::Official
+        if stored.kind == CodexProfileKind::Official
             && auth_source == Some(AuthSource::Oauth)
             && auth_text.is_some()
         {
@@ -685,7 +613,11 @@ impl AppContext {
             payload.raw_catalog = catalog_text.map(str::to_string);
         }
         if auth_text.is_some() {
+            let previous_auth = payload.raw_auth.clone();
             payload.raw_auth = auth_override.clone();
+            if auth_source == Some(AuthSource::Desktop) {
+                payload.invalidate_models_for_auth_change(previous_auth.as_deref());
+            }
             // Desktop 清空 auth 是移除旧快照并等待下一次桌面认证；有内容才是手动接管。
             payload.auth_auto_sync = if auth_source == Some(AuthSource::Desktop) {
                 Some(auth_override.is_none())
@@ -697,7 +629,7 @@ impl AppContext {
             payload.auth_auto_sync = None;
         }
         self.database
-            .update_profile(id, &stored.name, &payload, &now_ms().to_string())?;
+            .codex_update_profile(id, &stored.name, &payload, &now_ms().to_string())?;
 
         // 使用中：编辑内容立即写进当前 Codex 文件（是否生效由 Codex 重启决定）
         if self.is_active_profile(id)? {
@@ -732,10 +664,10 @@ impl AppContext {
             stored.name,
             fields.join(",")
         );
-        self.get_profile(id)
+        self.codex_get_profile(id)
     }
 
-    pub fn update_profile(
+    pub fn codex_update_profile(
         &self,
         id: &str,
         name: &str,
@@ -743,9 +675,9 @@ impl AppContext {
         base_url: Option<&str>,
         api_key: Option<&str>,
         admin_url: Option<&str>,
-    ) -> AppResult<ProfileSummary> {
+    ) -> AppResult<CodexProfileSummary> {
         let name = validated_name(name)?;
-        let stored = self.database.profile(id)?;
+        let stored = self.database.codex_profile(id)?;
         let mut payload = stored.payload;
         if description.is_some() {
             payload.description = validated_description(description)?;
@@ -772,9 +704,9 @@ impl AppContext {
         let write_back = (base_url.is_some() || api_key.is_some())
             && payload.provider_id.is_some()
             && self.is_active_profile(id)?;
-        let updated = self
-            .database
-            .update_profile(id, &name, &payload, &now_ms().to_string())?;
+        let updated =
+            self.database
+                .codex_update_profile(id, &name, &payload, &now_ms().to_string())?;
         if write_back {
             // 使用中：只就地更新 live 的供应商段落，保留 Codex 期间生成的其他内容
             write_live_provider_update(
@@ -799,6 +731,6 @@ impl AppContext {
             "[provider.profile.update] profile_id={id} profile_name={name:?} fields={} outcome=success msg=\"已更新配置\"",
             fields.join(",")
         );
-        Ok(profile_summary(&updated))
+        Ok(codex_profile_summary(&updated))
     }
 }

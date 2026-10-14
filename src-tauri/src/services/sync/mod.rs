@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use super::profiles::LiveReadError;
+use super::codex_profiles::LiveReadError;
 use super::AppContext;
 use crate::error::AppResult;
 
@@ -61,6 +61,29 @@ impl SyncTrigger {
             _ => ClientId::Codex,
         }
     }
+
+    /// logfmt 的 trigger 取值（snake_case）。禁用 `{:?}`：枚举 Debug 会把字段
+    /// 结构体（含花括号与空格）整块灌进日志值，撑破 logfmt 语法。
+    fn token(&self) -> &'static str {
+        match self {
+            SyncTrigger::StateRefresh => "state_refresh",
+            SyncTrigger::BeforeLiveOverwrite { .. } => "before_live_overwrite",
+            SyncTrigger::BeforeProfileRead { .. } => "before_profile_read",
+            SyncTrigger::BeforeProfileClone { .. } => "before_profile_clone",
+            SyncTrigger::AfterCapture { .. } => "after_capture",
+            SyncTrigger::BeforeProcessStart { .. } => "before_process_start",
+        }
+    }
+
+    /// 目标配置 ID（仅主动时机携带）；被动轮询无目标，返回 None 不落该字段。
+    fn target_id(&self) -> Option<&str> {
+        match self {
+            SyncTrigger::BeforeLiveOverwrite { target_id, .. }
+            | SyncTrigger::BeforeProfileRead { target_id, .. }
+            | SyncTrigger::BeforeProfileClone { target_id, .. } => Some(target_id),
+            _ => None,
+        }
+    }
 }
 
 /// 调用方已解析的 live 材料：已持有解析结果时直接复用，避免启动路径二次读盘。
@@ -99,7 +122,7 @@ impl SyncKind {
         }
     }
 
-    /// 失败结局的 failure_kind；None 表示常态跳过（日志走 Debug 而非 Warn）。
+    /// 失败结局的 failure_kind；None 表示非常态失败（再按 outcome 分成功/跳过）。
     /// "哪些算失败、日志里叫什么"只在这一处枚举，新增失败变体时同步补这里。
     fn failure_kind(&self) -> Option<&'static str> {
         match self {
@@ -110,17 +133,30 @@ impl SyncKind {
         }
     }
 
-    /// 人看的短结论：机器读 reason，msg 不重复承载事实。
+    /// logfmt 的 outcome 取值：真写了是 success，各类守卫拦下是 skipped，
+    /// 带.failure_kind 的是 failure。跳过与成功的分界：数据库有没有被本轮改变。
+    fn outcome(&self) -> &'static str {
+        match self {
+            Self::Wrote => "success",
+            Self::NoActiveProfile | Self::TargetMismatch | Self::Unchanged | Self::LiveAbsent => {
+                "skipped"
+            }
+            Self::LiveUnreadable | Self::LiveParseError | Self::WriteFailed => "failure",
+        }
+    }
+
+    /// 人看的中文结论：主语写全、术语对齐 UI（实时配置/激活配置/数据库），
+    /// 机器定位靠 reason，msg 只做结论。守卫语义变更时同步改这里。
     fn message(&self) -> &'static str {
         match self {
-            Self::Wrote => "已回写",
-            Self::NoActiveProfile => "无激活配置",
-            Self::TargetMismatch => "目标非激活配置",
-            Self::Unchanged => "无变化",
-            Self::LiveAbsent => "live 不存在",
-            Self::LiveUnreadable => "live 读不了",
-            Self::LiveParseError => "live 解析失败，未回写",
-            Self::WriteFailed => "写库失败",
+            Self::Wrote => "实时配置已回写数据库",
+            Self::NoActiveProfile => "当前无激活配置，跳过回写",
+            Self::TargetMismatch => "读取对象不是当前激活配置，跳过回写",
+            Self::Unchanged => "实时配置与数据库一致",
+            Self::LiveAbsent => "实时文件不存在，跳过回写",
+            Self::LiveUnreadable => "实时文件读取失败",
+            Self::LiveParseError => "实时配置解析失败，保留数据库快照",
+            Self::WriteFailed => "数据库写入失败",
         }
     }
 }
@@ -219,7 +255,7 @@ fn codex_guarded(kind: SyncKind, ctx: &AppContext) -> SyncOutcome {
         .active_profile_state()
         .ok()
         .flatten()
-        .and_then(|id| ctx.database.profile(&id).ok())
+        .and_then(|id| ctx.database.codex_profile(&id).ok())
         .map(|profile| profile.name);
     match name {
         Some(name) => SyncOutcome::of(kind, &name),
@@ -368,34 +404,40 @@ impl SyncRegistry {
             .filter(|body| trigger.is_passive() || body.id() == trigger.client())
         {
             let outcome = body.sync(ctx, trigger, material)?;
-            // 回写结局的唯一日志出口：常态跳过只打 Debug（release 自动消失），
-            // 外部损坏/真失败各留一条 Warn，排查不必再靠排除法反推是哪道守卫拦的。
-            // profile 是本轮实际判断的那个配置；无激活/与本轮无关时打 "-" 占位。
+            // 回写结局的唯一日志出口：unchanged 轮询降到 Trace（一轮两条的常驻噪音），
+            // 其余常态走 Debug（release 自动消失），外部损坏/真失败各留一条 Warn，
+            // 排查不必再靠排除法反推是哪道守卫拦的。profile 无可指时落 "-"。
             let kind = outcome.kind;
             let profile = outcome.profile.as_deref().unwrap_or("-");
+            // target_id 仅主动时机存在；用前导空格拼段，被动轮询不落该字段。
+            let target = trigger
+                .target_id()
+                .map(|id| format!(" target_id={id:?}"))
+                .unwrap_or_default();
+            let line = format!(
+                "[sync.harvest] client={:?} profile={profile:?} trigger={}{} outcome={} reason={}",
+                body.id().label(),
+                trigger.token(),
+                target,
+                kind.outcome(),
+                kind.reason(),
+            );
             if let Some(failure_kind) = kind.failure_kind() {
                 tauri_plugin_log::log::warn!(
-                    "[sync.harvest] client={:?} profile={profile:?} trigger={:?} outcome=failure failure_kind={failure_kind} reason={} msg=\"{}\"",
-                    body.id().label(),
-                    trigger,
-                    kind.reason(),
+                    "{line} failure_kind={failure_kind} msg={:?}",
                     kind.message()
                 );
+            } else if matches!(kind, SyncKind::Unchanged) {
+                tauri_plugin_log::log::trace!("{line} msg={:?}", kind.message());
             } else {
-                tauri_plugin_log::log::debug!(
-                    "[sync.harvest] client={:?} profile={profile:?} trigger={:?} outcome=success reason={} msg=\"{}\"",
-                    body.id().label(),
-                    trigger,
-                    kind.reason(),
-                    kind.message()
-                );
+                tauri_plugin_log::log::debug!("{line} msg={:?}", kind.message());
             }
         }
         let elapsed_ms = started.elapsed().as_millis();
         if elapsed_ms > 50 {
             tauri_plugin_log::log::warn!(
-                "[sync.harvest] trigger={:?} latency_ms={} outcome=success msg=\"回写耗时超过 50ms 预算\"",
-                trigger,
+                "[sync.harvest] trigger={} latency_ms={} outcome=failure failure_kind=internal msg=\"回写耗时超过 50ms 预算\"",
+                trigger.token(),
                 elapsed_ms
             );
         }
@@ -423,8 +465,8 @@ impl SyncRegistry {
             }
             Err(_) => {
                 tauri_plugin_log::log::debug!(
-                    "[sync.harvest] trigger={:?} outcome=success msg=\"操作锁被占用，本轮跳过\"",
-                    trigger
+                    "[sync.harvest] trigger={} outcome=skipped reason=lock_busy msg=\"操作锁占用中，本轮跳过\"",
+                    trigger.token()
                 );
             }
         }
@@ -456,8 +498,8 @@ mod tests {
     #[test]
     fn passive_harvest_converges_external_drift_into_active_snapshot() {
         let (_home, context) = test_context();
-        let profile = context.capture_profile("A").unwrap();
-        context.apply_profile(&profile.id).unwrap();
+        let profile = context.codex_capture_profile("A").unwrap();
+        context.codex_apply_profile(&profile.id).unwrap();
         // 外部改写 live：被动收割后激活快照必须收敛到最新内容
         std::fs::write(context.paths.codex_config(), "model = \"glm-5.4\"\n").unwrap();
         registry().harvest_passive(
@@ -465,7 +507,7 @@ mod tests {
             &SyncTrigger::StateRefresh,
             SyncMaterial::default(),
         );
-        let stored = context.database.profile(&profile.id).unwrap();
+        let stored = context.database.codex_profile(&profile.id).unwrap();
         assert!(stored
             .payload
             .raw_config
@@ -486,8 +528,8 @@ mod tests {
     #[test]
     fn loose_read_failures_are_distinguishable_and_carry_profile_name() {
         let (_home, context) = test_context();
-        let profile = context.capture_profile("A").unwrap();
-        context.apply_profile(&profile.id).unwrap();
+        let profile = context.codex_capture_profile("A").unwrap();
+        context.codex_apply_profile(&profile.id).unwrap();
 
         // live 不存在是正常态，但结局仍要带出配置名
         std::fs::remove_file(context.paths.codex_config()).unwrap();
@@ -538,6 +580,6 @@ mod tests {
                 SyncMaterial::default(),
             )
             .unwrap();
-        assert!(context.database.profiles().unwrap().is_empty());
+        assert!(context.database.codex_profiles().unwrap().is_empty());
     }
 }

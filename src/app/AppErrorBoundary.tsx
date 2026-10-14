@@ -17,7 +17,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("CGswitch 界面渲染失败", error, info.componentStack); // i18n-exempt: 仅写控制台，用户不可见
+    console.error("Agmux 界面渲染失败", error, info.componentStack); // i18n-exempt: 仅写控制台，用户不可见
   }
 
   render() {

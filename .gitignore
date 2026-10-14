@@ -50,6 +50,7 @@ docs/mcp-module-design.md
 docs/third-party-agent-plugin-ecosystem-whitepaper.md
 docs/architecture-report-*.md
 
-# 本地视觉 demo / 决策辅助文件归档（不进 git）
-归档/
+# 本地个人工作目录（不进 git）
+/work/
 balance-hover-demo.html
+.codex/skills/desktop-debug/SKILL.md

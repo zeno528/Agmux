@@ -1,4 +1,11 @@
-export interface ProfileSummary {
+export interface ChatgptModel {
+  slug: string;
+  display_name: string;
+  supported_reasoning_levels: { effort: string }[];
+  default_reasoning_level: string | null;
+}
+
+export interface CodexProfileSummary {
   id: string;
   name: string;
   kind: "official" | "third_party";
@@ -13,6 +20,7 @@ export interface ProfileSummary {
   model: string | null;
   provider: string | null;
   reasoning_effort: string | null;
+  fast_mode: boolean;
   /** 供应商是否已配置非空 API 端点。 */
   has_base_url: boolean;
   has_key: boolean;
@@ -24,7 +32,7 @@ export interface ProfileSummary {
   updated_at: string;
 }
 
-export interface ProfileDetail {
+export interface CodexProfileDetail {
   id: string;
   name: string;
   description: string | null;
@@ -51,10 +59,12 @@ export interface ProfileDetail {
   show_balance: boolean;
   /** 最近一次成功获取的供应商模型列表。 */
   fetched_models: string[];
+  fetched_model_efforts?: Record<string, string[]>;
+  fetched_model_defaults?: Record<string, string>;
   updated_at: string;
 }
 
-export interface ProfileConnectionResult {
+export interface CodexProfileConnectionResult {
   ok: boolean;
   latency_ms: number | null;
   status: number | null;
@@ -208,6 +218,9 @@ export interface AuthStatus {
 /** 界面语言设置；"system" 表示跟随系统语言。 */
 export type LanguageSetting = "system" | "zh-CN" | "en-US";
 
+/** 侧栏顶层视图；startup_view 用它做冷启动落页。 */
+export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles";
+
 export interface Settings {
   theme: "system" | "light" | "dark";
   language: LanguageSetting;
@@ -216,9 +229,17 @@ export interface Settings {
   silent_start: boolean;
   minimize_to_tray: boolean;
   tray_click_action: "show_window" | "show_menu";
+  /** 冷启动时默认打开的页面；托盘/后台恢复不拽页。 */
+  startup_view: AppView;
+  /** macOS 供应商终端的宿主终端；Windows 分支不读取此字段。 */
+  macos_terminal: "terminal" | "ghostty";
   auto_check_update: boolean;
   auto_backup_interval_hours: number;
   database_backup_keep_count: number;
+  proxy_mode: "auto" | "off" | "custom";
+  proxy_url: string;
+  /** 供应商终端的最近工作目录（最近使用在前）。卡片下拉框的新建/删除直接改这里。 */
+  claude_terminal_dirs: string[];
 }
 
 export interface PluginSkill {
@@ -266,6 +287,7 @@ export interface ClaudeProfileSummary {
   /** token 是否已设置；明文只在详情里回显（卡片测试连通按钮的门控）。 */
   has_token: boolean;
   model: string | null;
+  reasoning_effort: string | null;
   description: string | null;
   icon: string | null;
   admin_url: string | null;
@@ -366,8 +388,8 @@ export interface PathInfo {
 }
 
 export interface AppState {
-  profiles: ProfileSummary[];
-  active_profile_id: string | null;
+  codex_profiles: CodexProfileSummary[];
+  active_codex_profile_id: string | null;
   /** Claude Code 侧当前激活的供应商（claude_profiles 表）。 */
   active_claude_profile_id: string | null;
   codex: CodexAppStatus;
@@ -376,4 +398,30 @@ export interface AppState {
   auth_status: AuthStatus;
   /** 供应商级余额/用量缓存（上次成功查询结果），保证卡片静默显示不闪烁。 */
   balance_cache: Record<string, ProfileBalanceInfo>;
+}
+/** CLI 拒绝结果：阶段和错误类别用于界面翻译，message 保留诊断信息。 */
+export interface CliFailure {
+  stage: string;
+  kind: string;
+  message: string;
+}
+
+export interface CliStatus {
+  installation: "missing" | "native" | "other" | "conflict" | "broken";
+  source: string | null;
+  version: string | null;
+  path: string | null;
+  other_paths: string[];
+  embedded_paths?: string[];
+  platform: string;
+  network: "direct" | "proxy";
+  proxy: string | null;
+  busy: boolean;
+}
+
+export interface CliUpdate {
+  status: CliStatus;
+  latest_version: string;
+  channel: string;
+  available: boolean;
 }

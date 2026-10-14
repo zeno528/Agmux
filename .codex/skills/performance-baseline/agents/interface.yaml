@@ -1,7 +1,7 @@
 interface:
-  display_name: "CGswitch 性能基线"
-  short_description: "测量、比较并保存 CGswitch 性能基线"
-  default_prompt: "Use $performance-baseline to measure CGswitch performance and append a comparable baseline record."
+  display_name: "Agmux 性能基线"
+  short_description: "测量、比较并保存 Agmux 性能基线"
+  default_prompt: "Use $performance-baseline to measure Agmux performance and append a comparable baseline record."
 compatibility:
   canonical_format: "agent-skills"
   adapter_targets:

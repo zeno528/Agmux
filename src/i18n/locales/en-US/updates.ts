@@ -1,7 +1,7 @@
 /** App update strings (status-bar notice, upgrade flow). */
 export default {
   notice: {
-    title: "New version available: v{{version}}",
+    title: "Update available",
     available: "Update",
     updateNow: "Restart to update",
     later: "Later",
@@ -12,7 +12,7 @@ export default {
     updated: "Updated to v{{version}}",
   },
   error: {
-    proxyHint: "Cannot reach GitHub. Check your system proxy and try again.",
+    proxyHint: "Cannot reach GitHub. Check your system proxy and try again",
     checkFailed: "Update check failed",
   },
   webMock: {

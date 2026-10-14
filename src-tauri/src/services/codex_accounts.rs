@@ -1,6 +1,6 @@
 use super::{
     app_err, atomic_write, backup_file, normalize_auth_override, now_ms, parse_external_auth_json,
-    read_optional_text, AppContext, AppResult, AuthSource, ManagedAccount, ProfileKind,
+    read_optional_text, AppContext, AppResult, AuthSource, CodexProfileKind, ManagedAccount,
 };
 use crate::auth::codex_oauth::{CodexOAuthManager, ExternalCodexAuth};
 
@@ -47,7 +47,7 @@ impl AppContext {
     pub fn desktop_auth_accounts(&self) -> AppResult<Vec<ManagedAccount>> {
         let mut seen: Vec<(String, Option<String>)> = Vec::new();
         let mut accounts = Vec::new();
-        for stored in self.database.profiles()? {
+        for stored in self.database.codex_profiles()? {
             if stored
                 .payload
                 .effective_auth_source(stored.kind, stored.account_id.as_deref())
@@ -84,7 +84,7 @@ impl AppContext {
         &self,
         account_id: &str,
     ) -> AppResult<Option<(String, Option<String>)>> {
-        for stored in self.database.profiles()? {
+        for stored in self.database.codex_profiles()? {
             if stored
                 .payload
                 .effective_auth_source(stored.kind, stored.account_id.as_deref())
@@ -104,7 +104,7 @@ impl AppContext {
 
     /// 指定 Desktop 配置自身认证快照的 access_token（测试连接按配置维度取用）。
     pub fn desktop_profile_access_token(&self, id: &str) -> AppResult<Option<String>> {
-        let stored = self.database.profile(id)?;
+        let stored = self.database.codex_profile(id)?;
         Ok(normalize_auth_override(stored.payload.raw_auth.as_deref())
             .and_then(|text| parse_external_auth_json(&text))
             .map(|auth| auth.access_token))
@@ -123,16 +123,16 @@ impl AppContext {
 
     /// 是否为官方订阅供应商（无 API 供应商，凭据走 ChatGPT 订阅）。
     pub fn is_subscription_profile(&self, id: &str) -> AppResult<bool> {
-        Ok(self.database.profile(id)?.kind == ProfileKind::Official)
+        Ok(self.database.codex_profile(id)?.kind == CodexProfileKind::Official)
     }
 
     /// 官方供应商绑定的订阅账号；Desktop 配置不绑定，OAuth 配置必须绑定。
     pub fn bound_account_id(&self, id: &str) -> AppResult<Option<String>> {
-        Ok(self.database.profile(id)?.account_id.clone())
+        Ok(self.database.codex_profile(id)?.account_id.clone())
     }
 
     pub fn profile_auth_source(&self, id: &str) -> AppResult<Option<AuthSource>> {
-        let profile = self.database.profile(id)?;
+        let profile = self.database.codex_profile(id)?;
         Ok(profile
             .payload
             .effective_auth_source(profile.kind, profile.account_id.as_deref()))
@@ -148,9 +148,9 @@ impl AppContext {
     }
 
     /// 仅 OAuth 配置允许切换绑定账号；Desktop 配置的认证来源在创建时固定。
-    pub fn set_profile_account(&self, id: &str, account_id: Option<&str>) -> AppResult<()> {
-        let stored = self.database.profile(id)?;
-        if stored.kind != ProfileKind::Official {
+    pub fn codex_set_profile_account(&self, id: &str, account_id: Option<&str>) -> AppResult<()> {
+        let stored = self.database.codex_profile(id)?;
+        if stored.kind != CodexProfileKind::Official {
             return Err(app_err!("第三方供应商不支持绑定订阅账号"));
         }
         if stored
@@ -174,11 +174,15 @@ impl AppContext {
             return Err(app_err!("订阅账号不存在"));
         }
         self.database
-            .set_profile_account(id, Some(account_id), &now_ms().to_string())
+            .codex_set_profile_account(id, Some(account_id), &now_ms().to_string())?;
+        if stored.account_id.as_deref() != Some(account_id) {
+            self.codex_set_profile_fetched_models(id, Vec::new(), None, None)?;
+        }
+        Ok(())
     }
 
     /// 切换 OAuth 配置所绑定的账号时，数据库绑定和 live auth 写入必须按激活顺序完成。
-    pub async fn set_profile_account_and_apply_active(
+    pub async fn codex_set_profile_account_and_apply_active(
         &self,
         id: &str,
         account_id: Option<&str>,
@@ -206,10 +210,10 @@ impl AppContext {
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
         let previous_account = self.bound_account_id(id)?;
-        self.set_profile_account(id, account_id)?;
+        self.codex_set_profile_account(id, account_id)?;
         if let Some(content) = content {
             if let Err(error) = self.write_auth_json(&content) {
-                let _ = self.database.set_profile_account(
+                let _ = self.database.codex_set_profile_account(
                     id,
                     previous_account.as_deref(),
                     &now_ms().to_string(),

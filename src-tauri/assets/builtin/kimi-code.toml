@@ -1,0 +1,11 @@
+model_provider = "kimi-code"
+model = "k3-256k"
+model_reasoning_effort = "high"
+model_catalog_json = "~/.codex/models.json"
+web_search = "live"
+
+[model_providers.kimi-code]
+name = "Kimi Code"
+base_url = "https://api.kimi.com/coding/v1"
+wire_api = "responses"
+experimental_bearer_token = "<YOUR_API_KEY>"

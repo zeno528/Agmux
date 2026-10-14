@@ -34,7 +34,7 @@ use super::{
 // ==================== AppContext 服务 ====================
 
 impl AppContext {
-    /// Codex CLI 直接写 config.toml 后，收拢 CGswitch 管理的全局段；无变化不落盘。
+    /// Codex CLI 直接写 config.toml 后，收拢 Agmux 管理的全局段；无变化不落盘。
     fn normalize_plugin_config_order(&self) -> AppResult<()> {
         let config_path = self.paths.codex_config();
         let text = self.read_live_config()?;
@@ -597,7 +597,11 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
                 plugin_store_path(codex_home, &marketplace, &name, version.as_deref(), &path);
             let manifest = read_manifest(&plugin_path);
             summaries.push(PluginSummary {
-                version: version.or(manifest.as_ref().and_then(|item| item.version.clone())),
+                // 版本以 manifest 为准（根因见 store.rs），读不到才回落 CLI 版本。
+                version: manifest
+                    .as_ref()
+                    .and_then(|item| item.version.clone())
+                    .or(version),
                 display_name: manifest
                     .as_ref()
                     .and_then(|item| item.interface.as_ref())
@@ -636,7 +640,7 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::plugins::cli::codex_cli_file_name;
+    use crate::services::codex_cli::file_name;
     use crate::services::plugins::test_context;
 
     /// CLI 在而 list 失败时必须报错，不能回退缓存扫描：plugins/cache 是全量市场目录
@@ -648,7 +652,7 @@ mod tests {
         // spawn/执行必败，让分支稳定落在"CLI 在但 list 失败"，与本机真实 CLI 解耦
         let bin = home.path().join(".codex").join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join(codex_cli_file_name()), "not an executable").unwrap();
+        std::fs::write(bin.join(file_name()), "not an executable").unwrap();
         // 缓存里放可扫条目：若错误被缓存扫描吞掉，这里会被冒充成已安装列表返回
         let manifest_dir = home
             .path()

@@ -1,11 +1,11 @@
 [package]
-name = "cgswitch"
-version = "0.27.0"
+name = "agmux"
+version = "0.35.2"
 description = "A lightweight Codex model profile switcher"
 authors = ["zeno528"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.85.0"
+rust-version = "1.98"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,7 +13,7 @@ rust-version = "1.85.0"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "cgswitch_lib"
+name = "agmux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -27,6 +27,7 @@ tauri-plugin-log = "2.9.2"
 tauri-plugin-window-state = "2.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
+semver = "1.0"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 rusqlite_migration = "2.6.0"
 toml_edit = "0.25.15"
@@ -49,6 +50,8 @@ windows = { version = "0.62.2", features = [
   "Win32_Graphics_Dwm",
   "Win32_Storage_FileSystem",
   "Win32_System_Com",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
   "Win32_UI_HiDpi",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",

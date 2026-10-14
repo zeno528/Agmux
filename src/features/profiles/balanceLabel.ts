@@ -8,11 +8,12 @@ import type { TFunction } from "i18next";
  * 表中没有的取值（如 "12天" 这类动态窗口）原样返回，与改动前行为一致。
  * 彻底解法是后端改下发窗口代码、文案全归前端，见 docs/i18n-glossary.md 的 P2。
  */
-const WINDOW_LABEL_KEYS: Record<string, "balance.window5h" | "balance.window7d" | "balance.window30d" | "card.quota" | "balance.period"> = {
+const WINDOW_LABEL_KEYS: Record<string, "balance.window5h" | "balance.window7d" | "balance.window30d" | "card.usage" | "balance.period"> = {
   "5小时": "balance.window5h", // i18n-exempt: 与后端下发值比对，不是界面文案
   "7天": "balance.window7d", // i18n-exempt: 与后端下发值比对
   "30天": "balance.window30d", // i18n-exempt: 与后端下发值比对
-  "额度": "card.quota", // i18n-exempt: 与后端下发值比对
+  "额度": "card.usage", // i18n-exempt: 兼容后端旧值并统一为用量
+  "用量": "card.usage", // i18n-exempt: 与后端下发值比对
   "周期": "balance.period", // i18n-exempt: 与后端下发值比对
 };
 

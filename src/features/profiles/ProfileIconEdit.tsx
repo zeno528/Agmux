@@ -1,4 +1,4 @@
-import { ArrowLeft, Save } from "lucide-react";
+import { ChevronLeft, Save } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProfileIconTile } from "../../components/ProfileIconTile";
@@ -22,7 +22,7 @@ export default function ProfileIconEdit({ icon, onBack, onSave }: ProfileIconEdi
     <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <span className="apple-title">{t("icons.pageTitle")}</span>
         </button>
       </div>

@@ -2,7 +2,6 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AppSelect } from "../../components/AppSelect";
-import { AppDisclosure } from "../../components/AppDisclosure";
 import type { KVPair } from "./mcpFormData";
 
 export function PairEditor({ pairs, onChange, label, addLabel, keyPlaceholder, valuePlaceholder }: { pairs: KVPair[]; onChange: (pairs: KVPair[]) => void; label: string; addLabel?: string; keyPlaceholder: string; valuePlaceholder: string }) {
@@ -53,6 +52,7 @@ export function TimeoutInput({ value, onChange, placeholder, min = 1, step = 1 }
 interface McpConnectionFormProps {
   name: string;
   setName: (value: string) => void;
+  nameReadOnly?: boolean;
   transport: string;
   setTransport: (value: string) => void;
   command: string;
@@ -65,8 +65,6 @@ interface McpConnectionFormProps {
   setEnvPairs: (value: KVPair[]) => void;
   headerPairs: KVPair[];
   setHeaderPairs: (value: KVPair[]) => void;
-  advancedOpen: boolean;
-  setAdvancedOpen: (value: boolean) => void;
   disabled?: boolean;
   extraTransports?: { label: string; value: string }[];
   httpFields?: ReactNode;
@@ -75,9 +73,9 @@ interface McpConnectionFormProps {
 }
 
 export default function McpConnectionForm({
-  name, setName, transport, setTransport, command, setCommand, argsText, setArgsText,
+  name, setName, nameReadOnly = false, transport, setTransport, command, setCommand, argsText, setArgsText,
   url, setUrl, envPairs, setEnvPairs, headerPairs, setHeaderPairs,
-  advancedOpen, setAdvancedOpen, disabled = false, extraTransports = [],
+  disabled = false, extraTransports = [],
   httpFields, httpAdvancedFields, timeoutFields,
 }: McpConnectionFormProps) {
   const { t } = useTranslation("mcp");
@@ -87,7 +85,11 @@ export default function McpConnectionForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <div className="field-label mb-1.5">{t("edit.name")}</div>
-            <input className="app-input mono" maxLength={64} placeholder={t("edit.namePlaceholder")} value={name} onChange={(event) => setName(event.target.value)} />
+            {nameReadOnly ? (
+              <div className="app-input flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium text-(--text-secondary)">{name}</span>
+              </div>
+            ) : <input className="app-input mono" maxLength={64} placeholder={t("edit.namePlaceholder")} value={name} onChange={(event) => setName(event.target.value)} />}
           </div>
           <div>
             <div className="field-label mb-1.5">{t("edit.transport")}</div>
@@ -112,18 +114,7 @@ export default function McpConnectionForm({
           </div>
           {httpFields}
         </>}
-        <AppDisclosure
-          className="mcp-advanced-disclosure mt-3"
-          open={advancedOpen}
-          onOpenChange={setAdvancedOpen}
-          summary={(
-            <>
-              <span className="field-subtitle">{t("edit.advanced")}</span>
-            </>
-          )}
-          showIcon
-          iconPosition="start"
-        >
+        <div className="mt-4 grid gap-4">
           {transport === "stdio" ? <>
             <PairEditor label={t("edit.env")} addLabel={t("edit.addVariable")} pairs={envPairs} onChange={setEnvPairs} keyPlaceholder={t("edit.envKeyPlaceholder")} valuePlaceholder={t("edit.valuePlaceholder")} />
           </> : <>
@@ -131,7 +122,7 @@ export default function McpConnectionForm({
             {httpAdvancedFields}
           </>}
           {timeoutFields}
-        </AppDisclosure>
+        </div>
       </fieldset>
     </>
   );

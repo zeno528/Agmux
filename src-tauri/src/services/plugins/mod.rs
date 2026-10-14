@@ -3,11 +3,11 @@
 //! 安装模型（以实测的 Codex CLI 0.149 为准）：
 //! - 安装 = `codex plugin marketplace add <git 源>` + `codex plugin add <插件@市场>`；
 //!   卸载 = `codex plugin remove <插件@市场>`——官方路径，状态由 Codex 自己维护；
-//! - 预览走 CGswitch 自己的 GitHub 拉取（清单、文件列表、内容类型，不落盘）；
+//! - 预览走 Agmux 自己的 GitHub 拉取（清单、文件列表、内容类型，不落盘）；
 //! - 列表以 `codex plugin list` 为主源（覆盖官方运行时/捆绑/外部市场，含启停状态），
 //!   CLI 不在时回退扫 `~/.codex/plugins/cache/`；Skill 注册表 `~/.agents/.skill-lock.json`
 //!   与家目录四套 marketplace 布局的 local 条目也在列；
-//! - origin 语义：cgswitch=本应用经 CLI 安装；codex=用户自装的外部市场插件（可卸载）；
+//! - origin 语义：agmux=本应用经 CLI 安装；codex=用户自装的外部市场插件（可卸载）；
 //!   official=openai 运行时/捆绑市场（只读）；skill=Skill 注册表（只读）；
 //!   personal/claude/cursor=家目录 local 条目（可禁用/移除，条目暂存可恢复）。
 
@@ -214,7 +214,7 @@ mod ops;
 mod skills;
 mod store;
 
-pub use cli::detect_system_proxy;
+pub(crate) use cli::{wait_child_with_timeout, ChildOutput};
 
 #[cfg(test)]
 pub(super) fn test_context() -> (tempfile::TempDir, AppContext) {

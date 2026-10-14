@@ -1,6 +1,6 @@
 ---
 name: local-build
-description: 快速本地编译 CGswitch 安装包（自动检测 Windows / macOS 并走对应构建分支，Windows 默认出 NSIS exe + MSI，用户明确说"只要一个 exe"时仅出 NSIS 单产物；macOS 出 DMG / APP），构建完成后打开产物目录并列出安装包路径，供用户直接安装测试，不用等 GitHub Actions 发行工作流。当用户说"本地编译"、"本地构建"、"打个本地包"、"本地出个安装包"、"构建本地测试版"、"打个 exe 就行"时使用。
+description: 快速本地编译 Agmux 安装包（自动检测 Windows / macOS 并走对应构建分支，Windows 默认出 NSIS exe + MSI，用户明确说"只要一个 exe"时仅出 NSIS 单产物；macOS 出 DMG / APP），构建完成后打开产物目录并列出安装包路径，供用户直接安装测试，不用等 GitHub Actions 发行工作流。当用户说"本地编译"、"本地构建"、"打个本地包"、"本地出个安装包"、"构建本地测试版"、"打个 exe 就行"时使用。
 ---
 
 # 本地快速编译
@@ -46,7 +46,7 @@ foreach ($bmp in @('src-tauri/icons/installer-header.bmp', 'src-tauri/icons/inst
 }
 ```
 
-NSIS 3.11 Modern UI 的官方推荐尺寸是 header `150×57`、welcome/finish sidebar `164×314`。这些是 96-DPI 下的逻辑控件尺寸，不是高 DPI 的 2x 资源规格；CGswitch 为 163-DPI/高 DPI 场景交付 `300×114`、`328×628` 的矢量重采样 BMP，保持相同宽高比。默认 `MUI_*_BITMAP_STRETCH` 为 `FitControl`，高 DPI 或 CJK 字体会让控件变大并触发运行时放大。用户反馈发糊时，先区分"源图低分辨率"和"安装器运行时缩放"，不要仅靠换 BMP 编码判断画质。
+NSIS 3.11 Modern UI 的官方推荐尺寸是 header `150×57`、welcome/finish sidebar `164×314`。这些是 96-DPI 下的逻辑控件尺寸，不是高 DPI 的 2x 资源规格；Agmux 为 163-DPI/高 DPI 场景交付 `300×114`、`328×628` 的矢量重采样 BMP，保持相同宽高比。默认 `MUI_*_BITMAP_STRETCH` 为 `FitControl`，高 DPI 或 CJK 字体会让控件变大并触发运行时放大。用户反馈发糊时，先区分"源图低分辨率"和"安装器运行时缩放"，不要仅靠换 BMP 编码判断画质。
 
 ### 构建
 
@@ -58,7 +58,7 @@ NSIS 3.11 Modern UI 的官方推荐尺寸是 header `150×57`、welcome/finish s
 用 PowerShell 工具在项目根目录执行，timeout 设 600000（10 分钟）：
 
 ```powershell
-$buildLog = Join-Path $env:TEMP "cgswitch-tauri-build-$PID.log"
+$buildLog = Join-Path $env:TEMP "agmux-tauri-build-$PID.log"
 pnpm tauri build 2>&1 | Tee-Object -FilePath $buildLog   # 快速模式改为: pnpm tauri build --bundles nsis
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (Select-String -LiteralPath $buildLog -Pattern 'Unsupported format|warning 5040' -Quiet) {
@@ -82,9 +82,9 @@ Invoke-Item "src-tauri/target/release/bundle/nsis"
 
 | 产物 | 路径 | 说明 |
 |:---|:---|:---|
-| NSIS 安装包（推荐） | `src-tauri\target\release\bundle\nsis\CGswitch_<版本>_x64-setup.exe` | 标准安装体验 |
-| MSI 安装包（仅默认构建） | `src-tauri\target\release\bundle\msi\CGswitch_<版本>_x64_en-US.msi` | 备选 |
-| 绿色版 | `src-tauri\target\release\cgswitch.exe` | 免安装直接运行 |
+| NSIS 安装包（推荐） | `src-tauri\target\release\bundle\nsis\Agmux_<版本>_x64-setup.exe` | 标准安装体验 |
+| MSI 安装包（仅默认构建） | `src-tauri\target\release\bundle\msi\Agmux_<版本>_x64_en-US.msi` | 备选 |
+| 绿色版 | `src-tauri\target\release\agmux.exe` | 免安装直接运行 |
 
 ## Step 2M: macOS 分支
 
@@ -117,9 +117,9 @@ open "src-tauri/target/release/bundle/dmg"
 
 | 产物 | 路径 | 说明 |
 |:---|:---|:---|
-| DMG 安装包（推荐） | `src-tauri/target/release/bundle/dmg/CGswitch_<版本>_<架构>.dmg` | 拖入 Applications |
-| APP 直接运行 | `src-tauri/target/release/bundle/macos/CGswitch.app` | 免安装直接运行 |
-| 裸二进制 | `src-tauri/target/release/cgswitch` | 排查用 |
+| DMG 安装包（推荐） | `src-tauri/target/release/bundle/dmg/Agmux_<版本>_<架构>.dmg` | 拖入 Applications |
+| APP 直接运行 | `src-tauri/target/release/bundle/macos/Agmux.app` | 免安装直接运行 |
+| 裸二进制 | `src-tauri/target/release/agmux` | 排查用 |
 
 ## 注意事项
 
@@ -138,7 +138,7 @@ Windows 专属：
 
 macOS 专属：
 
-- Gatekeeper 拦截未签名 app——首次打开右键"打开"，或 `xattr -cr "/Applications/CGswitch.app"`
+- Gatekeeper 拦截未签名 app——首次打开右键"打开"，或 `xattr -cr "/Applications/Agmux.app"`
 - DMG 架构须与装机架构一致（`uname -m` 核对），跨架构包能装但跑不起来或走 Rosetta
 
 ## 常见问题

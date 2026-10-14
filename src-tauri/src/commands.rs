@@ -5,21 +5,78 @@ use crate::auth::codex_oauth::{
     parse_external_auth_json, AuthStatus, BrowserLoginStart, CodexOAuthManager, CodexOAuthState,
     ManagedAccount,
 };
-use crate::builtin;
 use crate::codex::config as codex_config;
+use crate::codex_builtin;
 use crate::error::{app_err, AppResult};
 use crate::models::{
     AppState, AuthSource, ClaudeProfileDetail, ClaudeProfileInput, ClaudeProfileSummary,
-    CodexAppStatus, McpDiffEntryAction, McpServerSpec, McpSyncPreview, ProfileBalanceInfo,
-    ProfileDetail, ProfileSummary, Settings, TrayClickAction,
+    CodexAppStatus, CodexProfileDetail, CodexProfileSummary, McpDiffEntryAction, McpServerSpec,
+    McpSyncPreview, ProfileBalanceInfo, Settings, TrayClickAction,
 };
 use crate::services::{
-    AppContext, DatabaseBackupInfo, MarketplacePlugin, PluginMarketplace, PluginPreview,
-    PluginSkill, PluginSummary, PluginUpdate, ProfileBalance, ProfileConnectionResult,
-    SkillSummary, SkillTool,
+    AppContext, CliFailure, CliStatus, CliUpdate, CodexProfileConnectionResult, DatabaseBackupInfo,
+    MarketplacePlugin, PluginMarketplace, PluginPreview, PluginSkill, PluginSummary, PluginUpdate,
+    ProfileBalance, SkillSummary, SkillTool,
 };
 
-fn should_try_next_account_credential(result: &ProfileConnectionResult) -> bool {
+/// CLI 状态检测走阻塞线程池；两端命令共用壳，兜底文案只此一份。
+async fn cli_status_blocking(
+    state: State<'_, AppContext>,
+    detect: fn(&AppContext) -> Result<CliStatus, CliFailure>,
+) -> Result<CliStatus, CliFailure> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || detect(&state))
+        .await
+        .map_err(|_| CliFailure {
+            stage: "detect",
+            kind: "internal",
+            message: "CLI 检测任务失败".into(),
+        })?
+}
+
+#[tauri::command]
+pub async fn claude_get_cli_status(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    cli_status_blocking(state, AppContext::claude_get_cli_status).await
+}
+
+#[tauri::command]
+pub async fn claude_check_cli_update(
+    state: State<'_, AppContext>,
+) -> Result<CliUpdate, CliFailure> {
+    state.claude_check_cli_update().await
+}
+
+#[tauri::command]
+pub async fn claude_install_cli(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    state.claude_run_cli(true).await
+}
+
+#[tauri::command]
+pub async fn claude_update_cli(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    state.claude_run_cli(false).await
+}
+
+#[tauri::command]
+pub async fn codex_get_cli_status(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    cli_status_blocking(state, AppContext::codex_get_cli_status).await
+}
+
+#[tauri::command]
+pub async fn codex_check_cli_update(state: State<'_, AppContext>) -> Result<CliUpdate, CliFailure> {
+    state.codex_check_cli_update().await
+}
+
+#[tauri::command]
+pub async fn codex_install_cli(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    state.codex_run_cli(true).await
+}
+
+#[tauri::command]
+pub async fn codex_update_cli(state: State<'_, AppContext>) -> Result<CliStatus, CliFailure> {
+    state.codex_run_cli(false).await
+}
+
+fn should_try_next_account_credential(result: &CodexProfileConnectionResult) -> bool {
     matches!(result.status, Some(401 | 403))
         && !result
             .error
@@ -31,7 +88,7 @@ async fn test_account_connection(
     state: &AppContext,
     manager: &CodexOAuthManager,
     account_id: &str,
-) -> AppResult<ProfileConnectionResult> {
+) -> AppResult<CodexProfileConnectionResult> {
     // live 凭证只作为同步输入；验证统一使用托管账号记录中的有效 access_token。
     state.sync_live_oauth_auth(manager).await?;
     let workspace = manager.workspace_of(account_id).await;
@@ -77,8 +134,9 @@ pub fn report_startup_mark(
     detail: Option<String>,
 ) {
     tauri_plugin_log::log::info!(
-        "[app.startup] stage={stage} frontend_elapsed_ms={frontend_elapsed_ms} rust_elapsed_ms={} detail={detail:?} msg=\"前端启动里程碑\"",
-        state.0.elapsed().as_millis()
+        "[app.startup] stage={stage} frontend_elapsed_ms={frontend_elapsed_ms} rust_elapsed_ms={} detail={:?} msg=\"前端启动里程碑\"",
+        state.0.elapsed().as_millis(),
+        detail.as_deref().unwrap_or("-"),
     );
 }
 
@@ -171,6 +229,19 @@ pub fn claude_get_common_settings(state: State<'_, AppContext>) -> AppResult<Opt
     state.claude_common_settings()
 }
 
+/// 在新终端里启动一个绑定该供应商的 Claude Code 会话（`claude --settings` 覆盖）。
+/// 只读旁路：不切激活、不改 live、不触发回写。
+/// async 是给 macOS 的：osascript 要等 Terminal 自动化授权弹窗，同步 command 跑在
+/// 主线程会把整个 UI 冻到用户处理完弹窗（Tauri 官方文档：无 async 的 command 在主线程执行）。
+#[tauri::command]
+pub async fn claude_open_terminal(
+    id: String,
+    cwd: Option<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_open_terminal(&id, cwd.as_deref())
+}
+
 #[tauri::command]
 pub fn claude_save_common_settings(
     text: Option<String>,
@@ -240,10 +311,13 @@ pub async fn claude_fetch_models(base_url: String, auth_token: String) -> AppRes
     crate::services::fetch_claude_models(&base_url, &auth_token).await
 }
 
-/// 创建态表单的测试连通：向真实调用路径 /v1/messages 判活，成功回传耗时。
+/// 创建态表单的测试连通：空请求判活，返回与 Codex 相同的状态和诊断结果。
 #[tauri::command]
-pub async fn claude_test_connection(base_url: String, auth_token: String) -> AppResult<u64> {
-    crate::services::probe_claude_messages_reachable(&base_url, &auth_token).await
+pub async fn claude_test_connection(
+    base_url: String,
+    auth_token: String,
+) -> AppResult<CodexProfileConnectionResult> {
+    crate::services::test_claude_connection(&base_url, &auth_token).await
 }
 
 #[tauri::command]
@@ -270,7 +344,10 @@ pub fn claude_duplicate_profile(
 }
 
 #[tauri::command]
-pub async fn claude_test_profile(id: String, state: State<'_, AppContext>) -> AppResult<u64> {
+pub async fn claude_test_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileConnectionResult> {
     state.claude_test_profile(&id).await
 }
 
@@ -360,12 +437,15 @@ pub async fn uninstall_plugin(name: String, state: State<'_, AppContext>) -> App
 }
 
 #[tauri::command]
-pub fn capture_profile(name: String, state: State<'_, AppContext>) -> AppResult<ProfileSummary> {
-    state.capture_profile(&name)
+pub fn codex_capture_profile(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileSummary> {
+    state.codex_capture_profile(&name)
 }
 
 #[tauri::command]
-pub fn add_builtin_profile(
+pub fn codex_add_builtin_profile(
     kind: String,
     description: Option<String>,
     base_url: Option<String>,
@@ -373,8 +453,8 @@ pub fn add_builtin_profile(
     admin_url: Option<String>,
     account_id: Option<String>,
     state: State<'_, AppContext>,
-) -> AppResult<ProfileSummary> {
-    state.add_builtin_profile(
+) -> AppResult<CodexProfileSummary> {
+    state.codex_add_builtin_profile(
         &kind,
         description.as_deref(),
         base_url.as_deref(),
@@ -385,25 +465,25 @@ pub fn add_builtin_profile(
 }
 
 #[tauri::command]
-pub fn get_builtin_catalog(
+pub fn codex_get_builtin_catalog(
     kind: String,
     state: State<'_, AppContext>,
 ) -> AppResult<Option<String>> {
-    state.get_builtin_catalog(&kind)
+    state.codex_get_builtin_catalog(&kind)
 }
 
 // 内置供应商的 config.toml 渲染结果（与创建/应用一致）：前端创建页预览的唯一来源。
 // minimax 的 model_catalog_json 行由 render_config 插入，返回原文会让预览缺该行、模型目录 tab 不显示。
 #[tauri::command]
-pub fn get_builtin_config(kind: String) -> AppResult<String> {
-    let template = builtin::template(&kind)?;
+pub fn codex_get_builtin_config(kind: String) -> AppResult<String> {
+    let template = codex_builtin::template(&kind)?;
     Ok(String::from_utf8_lossy(&template.render_config(None)?).into_owned())
 }
 
 #[tauri::command]
 // 参数个数受前端 IPC 调用约束（一次性提交 config/catalog/auth 三件套），不宜拆结构体
 #[allow(clippy::too_many_arguments)]
-pub fn add_custom_profile(
+pub fn codex_add_custom_profile(
     name: String,
     description: Option<String>,
     config_text: String,
@@ -413,8 +493,8 @@ pub fn add_custom_profile(
     catalog_text: Option<String>,
     auth_text: Option<String>,
     state: State<'_, AppContext>,
-) -> AppResult<ProfileSummary> {
-    state.add_custom_profile(
+) -> AppResult<CodexProfileSummary> {
+    state.codex_add_custom_profile(
         &name,
         description.as_deref(),
         &config_text,
@@ -427,13 +507,13 @@ pub fn add_custom_profile(
 }
 
 #[tauri::command]
-pub async fn test_profile_connection(
+pub async fn codex_test_profile_connection(
     id: String,
     base_url: Option<String>,
     api_key: Option<String>,
     state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
-) -> AppResult<ProfileConnectionResult> {
+) -> AppResult<CodexProfileConnectionResult> {
     // 官方订阅：测认证连通性（token 有效 + 网络可达），走 Codex 官方后端端点
     if state.is_subscription_profile(&id)? {
         let source = state.profile_auth_source(&id)?;
@@ -449,7 +529,7 @@ pub async fn test_profile_connection(
                     .desktop_profile_access_token(&id)?
                     .ok_or_else(|| app_err!("该 Codex 配置尚未保存有效登录"))?;
                 // 日志主体带配置名：id 无法对人区分配置
-                let name = state.get_profile(&id)?.name;
+                let name = state.codex_get_profile(&id)?.name;
                 let log_context = format!(
                     "profile_id={id} profile_name=\"{}\" source=desktop",
                     name.replace('"', "'")
@@ -462,22 +542,43 @@ pub async fn test_profile_connection(
         };
     }
     state
-        .test_profile_connection(&id, base_url.as_deref(), api_key.as_deref())
+        .codex_test_profile_connection(&id, base_url.as_deref(), api_key.as_deref())
         .await
 }
 
 // 创建态表单测试连通：供应商尚未保存，没有 profile id，地址/密钥实时传入
 #[tauri::command]
-pub async fn test_provider_connection(
+pub async fn codex_test_provider_connection(
     base_url: String,
     api_key: String,
-) -> AppResult<ProfileConnectionResult> {
+) -> AppResult<CodexProfileConnectionResult> {
     crate::services::test_provider_connection(&base_url, &api_key).await
 }
 
-// 获取供应商可用模型 ID 列表（OpenAI 兼容 GET /models）
+// 获取 ChatGPT 订阅账号的 Codex 模型目录。
 #[tauri::command]
-pub async fn fetch_provider_models(
+pub async fn codex_fetch_chatgpt_models(
+    id: Option<String>,
+    source: AuthSource,
+    account_id: Option<String>,
+    refresh: bool,
+    state: State<'_, AppContext>,
+    oauth: State<'_, CodexOAuthState>,
+) -> AppResult<Vec<crate::services::ChatgptModel>> {
+    state
+        .codex_fetch_chatgpt_models(
+            id.as_deref(),
+            source,
+            account_id.as_deref(),
+            &oauth.0,
+            refresh,
+        )
+        .await
+}
+
+// 获取供应商可用模型 ID 列表（OpenAI 兼容 GET /models）。
+#[tauri::command]
+pub async fn codex_fetch_provider_models(
     base_url: String,
     api_key: String,
 ) -> Result<Vec<String>, String> {
@@ -485,20 +586,20 @@ pub async fn fetch_provider_models(
 }
 
 #[tauri::command]
-pub async fn get_profile_balance(
+pub async fn codex_get_profile_balance(
     id: String,
     state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
 ) -> AppResult<ProfileBalance> {
-    state.get_profile_balance(&id, &oauth.0).await
+    state.codex_get_profile_balance(&id, &oauth.0).await
 }
 
 #[tauri::command]
-pub async fn get_claude_profile_balance(
+pub async fn claude_get_profile_balance(
     id: String,
     state: State<'_, AppContext>,
 ) -> AppResult<ProfileBalance> {
-    state.get_claude_profile_balance(&id).await
+    state.claude_get_profile_balance(&id).await
 }
 
 #[tauri::command]
@@ -564,30 +665,32 @@ pub fn rename_profile(
 }
 
 #[tauri::command]
-pub fn set_profile_icon(
+pub fn codex_set_profile_icon(
     id: String,
     icon: Option<String>,
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
-    state.set_profile_icon(&id, icon.as_deref())
+    state.codex_set_profile_icon(&id, icon.as_deref())
 }
 
 #[tauri::command]
-pub fn set_profile_show_balance(
+pub fn codex_set_profile_show_balance(
     id: String,
     enabled: bool,
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
-    state.set_profile_show_balance(&id, enabled)
+    state.codex_set_profile_show_balance(&id, enabled)
 }
 
 #[tauri::command]
-pub fn set_profile_fetched_models(
+pub fn codex_set_profile_fetched_models(
     id: String,
     models: Vec<String>,
+    efforts: Option<std::collections::BTreeMap<String, Vec<String>>>,
+    defaults: Option<std::collections::BTreeMap<String, String>>,
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
-    state.set_profile_fetched_models(&id, models)
+    state.codex_set_profile_fetched_models(&id, models, efforts, defaults)
 }
 
 #[tauri::command]
@@ -600,30 +703,36 @@ pub fn set_profile_balance(
 }
 
 #[tauri::command]
-pub async fn set_profile_account(
+pub async fn codex_set_profile_account(
     id: String,
     account_id: Option<String>,
     state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
 ) -> Result<(), String> {
     state
-        .set_profile_account_and_apply_active(&id, account_id.as_deref(), &oauth.0)
+        .codex_set_profile_account_and_apply_active(&id, account_id.as_deref(), &oauth.0)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn duplicate_profile(id: String, state: State<'_, AppContext>) -> AppResult<ProfileSummary> {
-    state.duplicate_profile(&id)
+pub fn codex_duplicate_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileSummary> {
+    state.codex_duplicate_profile(&id)
 }
 
 #[tauri::command]
-pub fn get_profile(id: String, state: State<'_, AppContext>) -> AppResult<ProfileDetail> {
-    state.get_profile(&id)
+pub fn codex_get_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileDetail> {
+    state.codex_get_profile(&id)
 }
 
 #[tauri::command]
-pub fn update_profile(
+pub fn codex_update_profile(
     id: String,
     name: String,
     description: Option<String>,
@@ -631,8 +740,8 @@ pub fn update_profile(
     api_key: Option<String>,
     admin_url: Option<String>,
     state: State<'_, AppContext>,
-) -> AppResult<ProfileSummary> {
-    state.update_profile(
+) -> AppResult<CodexProfileSummary> {
+    state.codex_update_profile(
         &id,
         &name,
         description.as_deref(),
@@ -643,14 +752,25 @@ pub fn update_profile(
 }
 
 #[tauri::command]
-pub fn update_profile_config(
+pub fn codex_set_profile_model(
+    id: String,
+    model: Option<String>,
+    effort: Option<String>,
+    fast: Option<bool>,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileDetail> {
+    state.codex_set_profile_model(&id, model.as_deref(), effort.as_deref(), fast)
+}
+
+#[tauri::command]
+pub fn codex_update_profile_config(
     id: String,
     config_text: String,
     catalog_text: Option<String>,
     auth_text: Option<String>,
     state: State<'_, AppContext>,
-) -> AppResult<ProfileDetail> {
-    state.update_profile_config(
+) -> AppResult<CodexProfileDetail> {
+    state.codex_update_profile_config(
         &id,
         &config_text,
         catalog_text.as_deref(),
@@ -659,7 +779,7 @@ pub fn update_profile_config(
 }
 
 #[tauri::command]
-pub fn patch_chatgpt_context_config(
+pub fn codex_patch_chatgpt_context_config(
     config_text: String,
     enabled: bool,
     compact_token_limit: i64,
@@ -668,12 +788,15 @@ pub fn patch_chatgpt_context_config(
 }
 
 #[tauri::command]
-pub fn patch_system_proxy_config(config_text: String, enabled: bool) -> AppResult<String> {
+pub fn codex_patch_system_proxy_config(config_text: String, enabled: bool) -> AppResult<String> {
     crate::codex::config::patch_system_proxy(&config_text, enabled)
 }
 
 #[tauri::command]
-pub fn patch_context_management_config(config_text: String, enabled: bool) -> AppResult<String> {
+pub fn codex_patch_context_management_config(
+    config_text: String,
+    enabled: bool,
+) -> AppResult<String> {
     crate::codex::config::patch_context_management(&config_text, enabled)
 }
 
@@ -689,22 +812,22 @@ pub fn format_toml(text: String) -> String {
 }
 
 #[tauri::command]
-pub fn delete_profile(id: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.delete_profile(&id)
+pub fn codex_delete_profile(id: String, state: State<'_, AppContext>) -> AppResult<()> {
+    state.codex_delete_profile(&id)
 }
 
 #[tauri::command]
-pub fn reorder_profiles(ids: Vec<String>, state: State<'_, AppContext>) -> AppResult<()> {
-    state.reorder_profiles(&ids)
+pub fn codex_reorder_profiles(ids: Vec<String>, state: State<'_, AppContext>) -> AppResult<()> {
+    state.codex_reorder_profiles(&ids)
 }
 
 #[tauri::command]
-pub async fn apply_profile(
+pub async fn codex_apply_profile(
     id: String,
     state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
 ) -> Result<(), String> {
-    let result = state.apply_profile_with_auth(&id, &oauth.0).await;
+    let result = state.codex_apply_profile_with_auth(&id, &oauth.0).await;
     if let Err(error) = &result {
         tauri_plugin_log::log::warn!(
             "[apply.profile.switch] profile_id={id} outcome=failure failure_kind=internal error={error:?} msg=\"配置切换失败\""
@@ -725,36 +848,36 @@ pub async fn restart_codex(state: State<'_, AppContext>) -> AppResult<()> {
 
 /// MCP 服务器管理：直接读写 live ~/.codex/config.toml 的 [mcp_servers.*] 段。
 #[tauri::command]
-pub fn list_mcp_servers(state: State<'_, AppContext>) -> AppResult<Vec<McpServerSpec>> {
-    state.list_mcp_servers()
+pub fn codex_list_mcp_servers(state: State<'_, AppContext>) -> AppResult<Vec<McpServerSpec>> {
+    state.codex_list_mcp_servers()
 }
 
 #[tauri::command]
-pub fn list_claude_mcp_servers(state: State<'_, AppContext>) -> AppResult<Vec<McpServerSpec>> {
-    state.claude_mcp_servers()
+pub fn claude_list_mcp_servers(state: State<'_, AppContext>) -> AppResult<Vec<McpServerSpec>> {
+    state.claude_list_mcp_servers()
 }
 
 #[tauri::command]
-pub fn get_claude_mcp_server_json(
+pub fn claude_get_mcp_server_json(
     name: String,
     state: State<'_, AppContext>,
 ) -> AppResult<Option<String>> {
-    state.claude_mcp_server_json(&name)
+    state.claude_get_mcp_server_json(&name)
 }
 
 #[tauri::command]
-pub fn save_claude_mcp_server(
+pub fn claude_save_mcp_server(
     original_name: Option<String>,
     name: String,
     json: String,
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
-    state.save_claude_mcp_server(original_name.as_deref(), &name, &json)
+    state.claude_save_mcp_server(original_name.as_deref(), &name, &json)
 }
 
 #[tauri::command]
-pub fn delete_claude_mcp_server(name: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.delete_claude_mcp_server(&name)
+pub fn claude_delete_mcp_server(name: String, state: State<'_, AppContext>) -> AppResult<()> {
+    state.claude_delete_mcp_server(&name)
 }
 
 /// 测试 MCP 最小 initialize 握手；include_tools 为 true 时才额外读取 tools/list。
@@ -773,23 +896,18 @@ pub async fn probe_mcp_server(
 }
 
 #[tauri::command]
-pub fn save_mcp_server(
+pub fn codex_save_mcp_server(
     original_name: Option<String>,
     spec: McpServerSpec,
     fragment: Option<String>,
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
-    state.save_mcp_server_with_fragment(
-        original_name.as_deref(),
-        spec,
-        fragment.as_deref(),
-        SkillTool::Codex,
-    )
+    state.save_mcp_server_with_fragment(original_name.as_deref(), spec, fragment.as_deref())
 }
 
 #[tauri::command]
-pub fn delete_mcp_server(name: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.delete_mcp_server(&name)
+pub fn codex_delete_mcp_server(name: String, state: State<'_, AppContext>) -> AppResult<()> {
+    state.codex_delete_mcp_server(&name)
 }
 
 /// MCP 引擎级开关：只移除该引擎用户范围 live 条目，数据库镜像保留以便恢复。
@@ -843,8 +961,8 @@ pub fn revert_mcp_live_entries(
 
 /// 创建表单预填用：优先数据库 MCP 镜像，首次无镜像时回退 live。
 #[tauri::command]
-pub fn get_mcp_section_toml(state: State<'_, AppContext>) -> AppResult<String> {
-    state.mcp_section_toml()
+pub fn codex_get_mcp_section_toml(state: State<'_, AppContext>) -> AppResult<String> {
+    state.codex_mcp_section_toml()
 }
 
 /// 用户显式恢复：数据库镜像写回 live config.toml，返回恢复的服务器数量。
@@ -858,20 +976,37 @@ pub fn restore_mcp_from_database(state: State<'_, AppContext>) -> AppResult<usiz
 /// 同步命令在主线程等锁会把窗口消息泵占死。与 restart_codex 同理丢到 blocking 线程：
 /// 这里确实会阻塞数秒，不能占着 async runtime 的工作线程。
 #[tauri::command]
-pub async fn mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<McpSyncPreview> {
+pub async fn codex_mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<McpSyncPreview> {
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.mcp_sync_preview())
+    tauri::async_runtime::spawn_blocking(move || state.codex_mcp_sync_preview())
         .await
         .map_err(|error| app_err!("MCP 差异检查任务失败: {error}"))?
 }
 
+#[tauri::command]
+pub async fn claude_mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<McpSyncPreview> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.mcp_sync_preview(SkillTool::Claude))
+        .await
+        .map_err(|error| app_err!("MCP 差异检查任务失败: {error}"))?
+}
+
+#[tauri::command]
+pub fn claude_resolve_mcp_entries(
+    actions: Vec<McpDiffEntryAction>,
+    adopt: bool,
+    state: State<'_, AppContext>,
+) -> AppResult<usize> {
+    state.claude_resolve_mcp_entries(&actions, adopt)
+}
+
 /// MCP 编辑页初始化：读取 live 中指定服务器的原始片段（含未建模键与注释）。
 #[tauri::command]
-pub fn get_mcp_server_toml(
+pub fn codex_get_mcp_server_toml(
     name: String,
     state: State<'_, AppContext>,
 ) -> AppResult<Option<String>> {
-    state.mcp_server_toml(&name)
+    state.codex_mcp_server_toml(&name)
 }
 
 /// MCP 编辑页实时同步：把表单建模字段写进单服务器片段（表单 → 编辑器）。
@@ -1009,6 +1144,19 @@ pub async fn auth_get_quota(
 }
 
 #[tauri::command]
+pub async fn auth_warmup(
+    source: AuthSource,
+    account_id: String,
+    state: State<'_, AppContext>,
+    oauth: State<'_, CodexOAuthState>,
+) -> Result<(), String> {
+    state
+        .warmup_auth_account(source, &account_id, &oauth.0)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn auth_preview(
     account_id: String,
     oauth: State<'_, CodexOAuthState>,
@@ -1052,12 +1200,25 @@ pub fn open_url(url: String) -> AppResult<()> {
         let result =
             unsafe { ShellExecuteW(None, &operation, &url_wide, None, None, SW_SHOWNORMAL) };
         if result.0 as usize <= 32 {
+            if url.starts_with("https://auth.openai.com/oauth/authorize?") {
+                tauri_plugin_log::log::warn!(
+                    "[auth.login.browser] stage=browser_open outcome=failure failure_kind=io_error shell_code={} msg=\"OAuth 授权浏览器打开失败\"",
+                    result.0 as usize
+                );
+            }
             return Err(app_err!("无法打开系统浏览器"));
         }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg(&url).spawn();
+        if let Err(error) = std::process::Command::new("open").arg(&url).spawn() {
+            if url.starts_with("https://auth.openai.com/oauth/authorize?") {
+                tauri_plugin_log::log::warn!(
+                    "[auth.login.browser] stage=browser_open outcome=failure failure_kind=io_error error_kind={:?} msg=\"OAuth 授权浏览器打开失败\"",
+                    error.kind()
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -1065,6 +1226,37 @@ pub fn open_url(url: String) -> AppResult<()> {
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppContext>) -> AppResult<Settings> {
     state.settings()
+}
+
+/// 只接管网络配置与资源注册，下载、签名验证和安装继续由官方更新插件执行。
+#[tauri::command]
+pub async fn check_app_update(webview: tauri::Webview) -> AppResult<Option<serde_json::Value>> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let network = crate::network::Network::current()
+        .await
+        .map_err(|error| app_err!("{error}"))?;
+    let updater = network
+        .updater(webview.updater_builder())
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|error| app_err!("创建更新器失败: {error}"))?;
+    let Some(update) = updater
+        .check()
+        .await
+        .map_err(|error| app_err!("检查更新失败: {error}"))?
+    else {
+        return Ok(None);
+    };
+    let mut metadata = serde_json::json!({
+        "currentVersion": update.current_version,
+        "version": update.version,
+        "date": update.raw_json.get("pub_date"),
+        "body": update.body,
+        "rawJson": update.raw_json,
+    });
+    metadata["rid"] = serde_json::json!(webview.resources_table().add(update));
+    Ok(Some(metadata))
 }
 
 /// 应用内更新安装成功前写入「已更新到 vX」标记（须在启动安装器/退出进程前完成落盘）。
@@ -1089,21 +1281,36 @@ fn require_update_version(version: Option<String>) -> AppResult<String> {
         .ok_or_else(|| app_err!("更新日志缺少版本号"))
 }
 
+/// CLI 更新计时器的跳过决策留痕：真实检查的成败由 services/cli.rs 落 Info/Warn，
+/// 这里只补"这轮为什么没查"的痕迹。Debug 级，release 自动消失。
+#[tauri::command]
+pub fn report_cli_update_tick(client: String, decision: String) {
+    let msg = match decision.as_str() {
+        "cooldown_skip" => "冷却中跳过本轮更新检查",
+        "not_native" => "非原生安装，不参与更新检查",
+        "detect_failed" => "本地检测失败，跳过本轮更新检查",
+        _ => "更新检查计时器决策",
+    };
+    tauri_plugin_log::log::debug!(
+        "[app.cli.update] client={client:?} decision={decision} outcome=skipped msg={msg:?}"
+    );
+}
+
 #[tauri::command]
 pub fn log_update_event(event: String, version: Option<String>) -> AppResult<()> {
     match event.as_str() {
         "check_available" => {
             let version = require_update_version(version)?;
             tauri_plugin_log::log::info!(
-                "[update.check] version={version:?} outcome=success msg=\"检测到新版本 {version}\""
+                "[update.check] version={version:?} outcome=success msg=\"检测到应用新版本\""
             );
         }
         "check_latest" => {
-            tauri_plugin_log::log::info!("[update.check] outcome=success msg=\"未检测到可用更新\"");
+            tauri_plugin_log::log::info!("[update.check] outcome=success msg=\"应用已是最新版本\"");
         }
         "check_failure" => {
             tauri_plugin_log::log::warn!(
-                "[update.check] outcome=failure failure_kind=network_error msg=\"检查更新失败\""
+                "[update.check] outcome=failure failure_kind=network_error msg=\"应用检查更新失败\""
             );
         }
         "download_start" => {
@@ -1177,6 +1384,14 @@ pub async fn save_settings(
     Ok(saved)
 }
 
+#[tauri::command]
+pub async fn get_proxy_status() -> AppResult<Option<String>> {
+    crate::network::Network::current()
+        .await
+        .map(|network| network.display)
+        .map_err(|error| app_err!("{error}"))
+}
+
 fn sync_autostart(app: &AppHandle, settings: &Settings) -> AppResult<()> {
     use tauri_plugin_autostart::ManagerExt;
     // 同上：dev 构建不得写入指向 target/debug 的开机自启
@@ -1233,7 +1448,7 @@ mod tests {
     #[test]
     fn cached_auth_failure_allows_same_account_fallback_but_not_network_or_region_errors() {
         assert!(should_try_next_account_credential(
-            &ProfileConnectionResult {
+            &CodexProfileConnectionResult {
                 ok: false,
                 latency_ms: Some(10),
                 status: Some(401),
@@ -1241,7 +1456,7 @@ mod tests {
             }
         ));
         assert!(should_try_next_account_credential(
-            &ProfileConnectionResult {
+            &CodexProfileConnectionResult {
                 ok: false,
                 latency_ms: Some(10),
                 status: Some(403),
@@ -1249,7 +1464,7 @@ mod tests {
             }
         ));
         assert!(!should_try_next_account_credential(
-            &ProfileConnectionResult {
+            &CodexProfileConnectionResult {
                 ok: false,
                 latency_ms: Some(10),
                 status: Some(403),
@@ -1257,7 +1472,7 @@ mod tests {
             }
         ));
         assert!(!should_try_next_account_credential(
-            &ProfileConnectionResult {
+            &CodexProfileConnectionResult {
                 ok: false,
                 latency_ms: None,
                 status: None,

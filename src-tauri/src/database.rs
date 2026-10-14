@@ -7,12 +7,14 @@ use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{app_err, AppResult};
-use crate::models::{ClaudeProfileInput, ProfileKind, ProfilePayload, ProfileSummary};
+use crate::models::{
+    ClaudeProfileInput, CodexProfileKind, CodexProfilePayload, CodexProfileSummary,
+};
 use crate::paths::AppPaths;
-use crate::services::profile_config::{parse_provider_detail, stored_provider_api_key};
+use crate::services::codex_profile_config::{parse_provider_detail, stored_provider_api_key};
 use crate::services::SkillTool;
 
-/// MCP 镜像行：共享片段 + 每引擎独立安装状态与开关（卸载不等同于禁用）。
+/// MCP 镜像行：Codex TOML 与 Claude JSON 各自独立，卸载不等同于禁用。
 pub struct McpServerRecord {
     pub name: String,
     pub toml: String,
@@ -120,7 +122,7 @@ fn migrations() -> Migrations<'static> {
             "ALTER TABLE claude_profiles ADD COLUMN kind TEXT;
              ALTER TABLE claude_profiles ADD COLUMN admin_url TEXT",
         ),
-        // 编辑页描述与模型列表持久化（对齐 Codex description / set_profile_fetched_models）
+        // 编辑页描述与模型列表持久化（对齐 Codex description / codex_set_profile_fetched_models）
         M::up(
             "ALTER TABLE claude_profiles ADD COLUMN description TEXT;
              ALTER TABLE claude_profiles ADD COLUMN fetched_models TEXT",
@@ -149,6 +151,15 @@ fn migrations() -> Migrations<'static> {
         M::up(
             "ALTER TABLE mcp_servers ADD COLUMN codex_installed INTEGER NOT NULL DEFAULT 1;
              ALTER TABLE mcp_servers ADD COLUMN claude_installed INTEGER NOT NULL DEFAULT 1",
+        ),
+        // Claude 卡片终端入口的最近工作目录（全局一份）；历史迁移只能在末尾追加。
+        M::up("ALTER TABLE app_state ADD COLUMN claude_terminal_dirs TEXT"),
+        M::up(
+            "CREATE TABLE chatgpt_model_cache (
+               cache_key TEXT PRIMARY KEY,
+               models_json TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+             )",
         ),
     ])
 }
@@ -242,7 +253,10 @@ impl Database {
         })
     }
 
-    pub fn profiles(&self) -> AppResult<Vec<StoredProfile>> {
+    /// Codex 供应商表访问方法以 `codex_` 显式归属；SQL 仍读写历史 `profiles` 表与
+    /// `app_state.active_profile_id` 列（schema 改名属持久化迁移，不在命名重构范围）。
+    /// 这层名称映射只住在这里，页面/服务一律用 `codex_*` 方法名。
+    pub fn codex_profiles(&self) -> AppResult<Vec<StoredCodexProfile>> {
         let connection = self.lock()?;
         let mut statement = connection
             .prepare(
@@ -261,7 +275,7 @@ impl Database {
         Ok(profiles)
     }
 
-    pub fn reorder_profiles(&self, ids: &[String], timestamp: &str) -> AppResult<()> {
+    pub fn codex_reorder_profiles(&self, ids: &[String], timestamp: &str) -> AppResult<()> {
         let mut connection = self.lock()?;
         let transaction = connection
             .transaction()
@@ -280,7 +294,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn profile(&self, id: &str) -> AppResult<StoredProfile> {
+    pub fn codex_profile(&self, id: &str) -> AppResult<StoredCodexProfile> {
         let connection = self.lock()?;
         connection
             .query_row(
@@ -294,12 +308,12 @@ impl Database {
             .ok_or_else(|| app_err!("供应商配置不存在"))
     }
 
-    pub fn insert_profile(
+    pub fn codex_insert_profile(
         &self,
         name: &str,
-        payload: &ProfilePayload,
+        payload: &CodexProfilePayload,
         timestamp: &str,
-    ) -> AppResult<ProfileSummary> {
+    ) -> AppResult<CodexProfileSummary> {
         let id = format!(
             "profile-{timestamp}-{}",
             PROFILE_ID_SEQ.fetch_add(1, Ordering::Relaxed)
@@ -307,9 +321,9 @@ impl Database {
         let payload_json =
             serde_json::to_string(payload).map_err(|_| app_err!("供应商配置序列化失败"))?;
         let kind = if payload.provider_id.is_none() {
-            ProfileKind::Official
+            CodexProfileKind::Official
         } else {
-            ProfileKind::ThirdParty
+            CodexProfileKind::ThirdParty
         };
         let connection = self.lock()?;
         connection
@@ -325,7 +339,12 @@ impl Database {
         ))
     }
 
-    pub fn set_profile_icon(&self, id: &str, icon: Option<&str>, timestamp: &str) -> AppResult<()> {
+    pub fn codex_set_profile_icon(
+        &self,
+        id: &str,
+        icon: Option<&str>,
+        timestamp: &str,
+    ) -> AppResult<()> {
         let connection = self.lock()?;
         let changed = connection
             .execute(
@@ -339,7 +358,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_profile_account(
+    pub fn codex_set_profile_account(
         &self,
         id: &str,
         account_id: Option<&str>,
@@ -358,13 +377,13 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_profile(
+    pub fn codex_update_profile(
         &self,
         id: &str,
         name: &str,
-        payload: &ProfilePayload,
+        payload: &CodexProfilePayload,
         timestamp: &str,
-    ) -> AppResult<StoredProfile> {
+    ) -> AppResult<StoredCodexProfile> {
         let payload_json =
             serde_json::to_string(payload).map_err(|_| app_err!("供应商配置序列化失败"))?;
         let connection = self.lock()?;
@@ -404,7 +423,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_profile(&self, id: &str) -> AppResult<()> {
+    pub fn codex_delete_profile(&self, id: &str) -> AppResult<()> {
         let connection = self.lock()?;
         let changed = connection
             .execute("DELETE FROM profiles WHERE id=?1", params![id])
@@ -433,6 +452,40 @@ impl Database {
             accounts.push(row.map_err(|error| app_err!("订阅账号数据无效: {error}"))?);
         }
         Ok(accounts)
+    }
+
+    pub fn chatgpt_models(
+        &self,
+        key: &str,
+    ) -> AppResult<Option<Vec<crate::services::ChatgptModel>>> {
+        let text: Option<String> = self
+            .lock()?
+            .query_row(
+                "SELECT models_json FROM chatgpt_model_cache WHERE cache_key=?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| app_err!("读取账号模型缓存失败: {error}"))?;
+        text.map(|text| serde_json::from_str(&text).map_err(|_| app_err!("账号模型缓存格式无效")))
+            .transpose()
+    }
+
+    pub fn set_chatgpt_models(
+        &self,
+        key: &str,
+        models: &[crate::services::ChatgptModel],
+    ) -> AppResult<()> {
+        if models.is_empty() {
+            return Err(app_err!("ChatGPT 未返回可用模型，保留原有缓存"));
+        }
+        let text = serde_json::to_string(models).map_err(|_| app_err!("序列化账号模型缓存失败"))?;
+        self.lock()?.execute(
+            "INSERT INTO chatgpt_model_cache(cache_key, models_json, updated_at) VALUES(?1, ?2, ?3)
+             ON CONFLICT(cache_key) DO UPDATE SET models_json=excluded.models_json, updated_at=excluded.updated_at",
+            params![key, text, crate::paths::now_ms().to_string()],
+        ).map_err(|error| app_err!("保存账号模型缓存失败: {error}"))?;
+        Ok(())
     }
 
     pub fn upsert_account(&self, account: &StoredAccount) -> AppResult<()> {
@@ -575,7 +628,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_mcp_server(&self, name: &str) -> AppResult<()> {
+    pub fn codex_delete_mcp_server(&self, name: &str) -> AppResult<()> {
         let connection = self.lock()?;
         connection
             .execute("DELETE FROM mcp_servers WHERE name = ?1", params![name])
@@ -589,6 +642,7 @@ impl Database {
         original_name: Option<&str>,
         record: &McpServerRecord,
         timestamp: &str,
+        tool: SkillTool,
     ) -> AppResult<()> {
         let mut connection = self.lock()?;
         let transaction = connection
@@ -604,8 +658,18 @@ impl Database {
             params![record.name, record.toml, timestamp, record.codex_enabled, record.claude_enabled, record.claude_json, old_name, record.codex_installed, record.claude_installed],
         ).map_err(|error| app_err!("无法保存 MCP 服务器: {error}"))?;
         if old_name != record.name {
+            let columns = match tool {
+                SkillTool::Codex => "codex_installed=0, codex_enabled=0",
+                SkillTool::Claude => "claude_installed=0, claude_enabled=0",
+            };
             transaction
-                .execute("DELETE FROM mcp_servers WHERE name=?1", params![old_name])
+                .execute(
+                    &format!("UPDATE mcp_servers SET {columns} WHERE name=?1"),
+                    params![old_name],
+                )
+                .map_err(|error| app_err!("无法更新旧 MCP 名称: {error}"))?;
+            transaction
+                .execute("DELETE FROM mcp_servers WHERE name=?1 AND codex_installed=0 AND claude_installed=0", params![old_name])
                 .map_err(|error| app_err!("无法删除旧 MCP 名称: {error}"))?;
         }
         transaction
@@ -614,7 +678,7 @@ impl Database {
     }
 
     /// 全量替换 Codex 活跃片段集：管理规模小，整表重写最简单。
-    /// 已知行的引擎开关原样带过；不在新集合里的 Codex 关闭行保留（片段还要喂 Claude 端与恢复）。
+    /// 已知行的另一端快照和状态原样保留，新增 Codex 条目不安装到 Claude。
     pub fn replace_mcp_server_fragments(
         &self,
         fragments: &[(String, String)],
@@ -630,13 +694,6 @@ impl Database {
         before_commit: impl FnOnce(&mut [McpServerRecord]) -> AppResult<()>,
     ) -> AppResult<()> {
         let previous = self.mcp_server_records()?;
-        let mut connection = self.lock()?;
-        let transaction = connection
-            .transaction()
-            .map_err(|error| app_err!("无法开始 MCP 写入事务: {error}"))?;
-        transaction
-            .execute("DELETE FROM mcp_servers", [])
-            .map_err(|error| app_err!("无法清理 MCP 服务器: {error}"))?;
         let mut rows: Vec<McpServerRecord> = fragments
             .iter()
             .map(|(name, toml)| {
@@ -646,10 +703,10 @@ impl Database {
                     name: name.clone(),
                     toml: toml.clone(),
                     codex_enabled: existing.is_none_or(|record| record.codex_enabled),
-                    claude_enabled: existing.is_none_or(|record| record.claude_enabled),
+                    claude_enabled: existing.is_some_and(|record| record.claude_enabled),
                     claude_json: existing.and_then(|record| record.claude_json.clone()),
                     codex_installed: true,
-                    claude_installed: existing.is_none_or(|record| record.claude_installed),
+                    claude_installed: existing.is_some_and(|record| record.claude_installed),
                 }
             })
             .collect();
@@ -663,7 +720,23 @@ impl Database {
                 rows.push(record);
             }
         }
-        // 回调只能读写文件，不能重新进入数据库连接锁。
+        self.replace_mcp_server_records_with(rows, timestamp, before_commit)
+    }
+
+    pub fn replace_mcp_server_records_with(
+        &self,
+        mut rows: Vec<McpServerRecord>,
+        timestamp: &str,
+        before_commit: impl FnOnce(&mut [McpServerRecord]) -> AppResult<()>,
+    ) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始 MCP 写入事务: {error}"))?;
+        transaction
+            .execute("DELETE FROM mcp_servers", [])
+            .map_err(|error| app_err!("无法清理 MCP 服务器: {error}"))?;
+        // 回调不能重新进入数据库连接锁。
         before_commit(&mut rows)?;
         for (index, record) in rows.iter().enumerate() {
             transaction
@@ -704,7 +777,7 @@ impl Database {
             .map(|state| state.unwrap_or((None, None)))
     }
 
-    pub fn set_active_profile(&self, id: Option<&str>) -> AppResult<()> {
+    pub fn set_active_codex_profile(&self, id: Option<&str>) -> AppResult<()> {
         let connection = self.lock()?;
         connection
             .execute(
@@ -917,7 +990,7 @@ impl Database {
             .map_err(|error| app_err!("无法提交配置删除事务: {error}"))
     }
 
-    /// 卡片拖拽排序持久化（对齐 Codex reorder_profiles：事务内逐行写 sort_order）。
+    /// 卡片拖拽排序持久化（对齐 Codex codex_reorder_profiles：事务内逐行写 sort_order）。
     pub fn reorder_claude_profiles(&self, ids: &[String], timestamp: &str) -> AppResult<()> {
         let mut connection = self.lock()?;
         let transaction = connection
@@ -994,7 +1067,7 @@ impl Database {
     }
 
     /// 最近一次成功应用的供应商 id（应用记录被删除时返回 None 由调用方回退匹配）。
-    pub fn latest_applied_profile(&self) -> AppResult<Option<String>> {
+    pub fn codex_latest_applied_profile(&self) -> AppResult<Option<String>> {
         let connection = self.lock()?;
         connection
             .query_row(
@@ -1030,9 +1103,9 @@ impl Database {
                 [],
                 |row| row.get(0),
             )
-            .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))?;
+            .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))?;
         if has_profiles == 0 {
-            return Err(app_err!("备份文件不是有效的 CGswitch 数据库"));
+            return Err(app_err!("备份文件不是有效的 Agmux 数据库"));
         }
 
         let mut connection = self.lock()?;
@@ -1046,6 +1119,7 @@ impl Database {
             .and_then(|_| transaction.execute("DELETE FROM app_state", []))
             .and_then(|_| transaction.execute("DELETE FROM mcp_servers", []))
             .and_then(|_| transaction.execute("DELETE FROM claude_profiles", []))
+            .and_then(|_| transaction.execute("DELETE FROM chatgpt_model_cache", []))
             .map_err(|error| app_err!("恢复前清理数据失败: {error}"))?;
 
         // 旧 schema 备份没有身份两列/套餐列：按旧列复制后回填；新备份带列复制
@@ -1056,7 +1130,7 @@ impl Database {
                     params![name],
                     |row| row.get(0),
                 )
-                .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))
+                .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))
         };
         let source_has_identity_columns = source_column("chatgpt_account_id")?;
         let source_has_plan_type = source_column("plan_type")?;
@@ -1098,6 +1172,19 @@ impl Database {
             backfill_account_plan_type(&transaction)
                 .map_err(|error| app_err!("回填账号套餐失败: {error}"))?;
         }
+        // 旧备份没有账号模型缓存；恢复后保持空缓存，不混入恢复前的账号数据。
+        let has_model_cache: i64 = source.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chatgpt_model_cache'",
+            [], |row| row.get(0),
+        ).map_err(|error| app_err!("读取备份模型缓存失败: {error}"))?;
+        if has_model_cache > 0 {
+            copy_intersected_columns(
+                &source,
+                &transaction,
+                "chatgpt_model_cache",
+                &["cache_key", "models_json", "updated_at"],
+            )?;
+        }
         // app_state 按列交集复制：旧 schema 备份缺 active_claude_profile_id 时落列默认 NULL
         copy_intersected_columns(
             &source,
@@ -1118,7 +1205,7 @@ impl Database {
                 [],
                 |row| row.get(0),
             )
-            .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))?;
+            .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))?;
         if source_has_sort_order > 0 {
             copy_table(
                 &source,
@@ -1155,7 +1242,7 @@ impl Database {
                 [],
                 |row| row.get(0),
             )
-            .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))?;
+            .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))?;
         if has_mcp_servers > 0 {
             copy_intersected_columns(
                 &source,
@@ -1181,7 +1268,7 @@ impl Database {
                 [],
                 |row| row.get(0),
             )
-            .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))?;
+            .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))?;
         if has_claude_profiles > 0 {
             // 列与 CLAUDE_PROFILE_COLUMNS 正典序求交集：备份有哪些列就复制哪些，缺列落默认 NULL
             copy_intersected_columns(
@@ -1201,7 +1288,7 @@ impl Database {
     fn lock(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
         self.connection
             .lock()
-            .map_err(|_| app_err!("数据库连接锁已损坏，请重启 CGswitch"))
+            .map_err(|_| app_err!("数据库连接锁已损坏，请重启 Agmux"))
     }
 }
 
@@ -1253,7 +1340,7 @@ fn copy_intersected_columns(
                 params![name],
                 |row| row.get(0),
             )
-            .map_err(|error| app_err!("备份文件不是有效的 CGswitch 数据库: {error}"))?;
+            .map_err(|error| app_err!("备份文件不是有效的 Agmux 数据库: {error}"))?;
         if present > 0 {
             columns.push(name);
         }
@@ -1275,12 +1362,12 @@ fn copy_intersected_columns(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredProfile {
+pub struct StoredCodexProfile {
     pub id: String,
     pub name: String,
-    pub payload: ProfilePayload,
+    pub payload: CodexProfilePayload,
     pub icon: Option<String>,
-    pub kind: ProfileKind,
+    pub kind: CodexProfileKind,
     pub account_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -1354,14 +1441,14 @@ pub struct StoredAccount {
     pub plan_type: Option<String>,
 }
 
-fn profile_from_row(row: &Row<'_>) -> rusqlite::Result<StoredProfile> {
+fn profile_from_row(row: &Row<'_>) -> rusqlite::Result<StoredCodexProfile> {
     let id = row.get(0)?;
     let name = row.get(1)?;
     let payload_json = row.get::<_, String>(2)?;
     let payload = serde_json::from_str(&payload_json).map_err(|_| rusqlite::Error::InvalidQuery)?;
     let kind_raw: String = row.get(4)?;
-    let kind = ProfileKind::from_db(&kind_raw).ok_or(rusqlite::Error::InvalidQuery)?;
-    Ok(StoredProfile {
+    let kind = CodexProfileKind::from_db(&kind_raw).ok_or(rusqlite::Error::InvalidQuery)?;
+    Ok(StoredCodexProfile {
         id,
         name,
         payload,
@@ -1390,35 +1477,74 @@ fn account_from_row(row: &Row<'_>) -> rusqlite::Result<StoredAccount> {
 fn summary(
     id: &str,
     name: &str,
-    payload: &ProfilePayload,
+    payload: &CodexProfilePayload,
     icon: Option<&str>,
     account_id: Option<&str>,
     created_at: &str,
     updated_at: &str,
-) -> ProfileSummary {
-    ProfileSummary {
+) -> CodexProfileSummary {
+    let mut model = display_text(payload.model_values.get("model"));
+    let mut reasoning_effort = display_text(payload.model_values.get("model_reasoning_effort"));
+    if payload.provider_id.is_none() {
+        let has_local_catalog = payload.model_values.contains_key("model_catalog_json");
+        let local_catalog = if has_local_catalog {
+            payload
+                .raw_catalog
+                .as_deref()
+                .and_then(|text| serde_json::from_str(text).ok())
+                .and_then(|value| crate::services::parse_chatgpt_models(value).ok())
+        } else {
+            None
+        };
+        model = model.or_else(|| {
+            if has_local_catalog {
+                local_catalog
+                    .as_ref()?
+                    .first()
+                    .map(|model| model.slug.clone())
+            } else {
+                payload.fetched_models.first().cloned()
+            }
+        });
+        reasoning_effort = reasoning_effort.or_else(|| {
+            let id = model.as_ref()?;
+            if has_local_catalog {
+                local_catalog
+                    .as_ref()?
+                    .iter()
+                    .find(|model| &model.slug == id)?
+                    .default_reasoning_level
+                    .clone()
+            } else {
+                payload.fetched_model_defaults.get(id).cloned()
+            }
+        });
+    }
+    CodexProfileSummary {
         id: id.into(),
         name: name.into(),
         kind: if payload.provider_id.is_some() {
-            ProfileKind::ThirdParty
+            CodexProfileKind::ThirdParty
         } else {
-            ProfileKind::Official
+            CodexProfileKind::Official
         },
         account_id: account_id.map(str::to_string),
         auth_source: payload.effective_auth_source(
             if payload.provider_id.is_some() {
-                ProfileKind::ThirdParty
+                CodexProfileKind::ThirdParty
             } else {
-                ProfileKind::Official
+                CodexProfileKind::Official
             },
             account_id,
         ),
         auth_account_id: None,
         // 套餐由 get_state 聚合时按绑定账号/live 认证填充，Database 层不知道
         plan_type: None,
-        model: display_text(payload.model_values.get("model")),
+        model,
         provider: payload.provider_id.clone(),
-        reasoning_effort: display_text(payload.model_values.get("model_reasoning_effort")),
+        reasoning_effort,
+        fast_mode: display_text(payload.model_values.get("service_tier")).as_deref()
+            == Some("fast"),
         has_base_url: payload
             .provider_body
             .as_deref()
@@ -1438,7 +1564,7 @@ fn display_text(value: Option<&String>) -> Option<String> {
     value.map(|raw| raw.trim().trim_matches('"').to_string())
 }
 
-pub fn profile_summary(profile: &StoredProfile) -> ProfileSummary {
+pub fn codex_profile_summary(profile: &StoredCodexProfile) -> CodexProfileSummary {
     summary(
         &profile.id,
         &profile.name,
@@ -1455,12 +1581,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn account_models_preserve_valid_cache_and_survive_backup_and_legacy_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(dir.path()).unwrap();
+        let db = Database::open(&paths).unwrap();
+        let models: Vec<crate::services::ChatgptModel> = serde_json::from_value(serde_json::json!([
+            {"slug":"fixture", "display_name":"Fixture", "visibility":"list",
+                "supported_reasoning_levels":[{"effort":"low"}], "default_reasoning_level":"low"}]
+        )).unwrap();
+        db.set_chatgpt_models("account-a", &models).unwrap();
+        assert!(db.set_chatgpt_models("account-a", &[]).is_err());
+        assert_eq!(
+            db.chatgpt_models("account-a").unwrap().unwrap()[0].slug,
+            "fixture"
+        );
+        assert!(db.chatgpt_models("account-b").unwrap().is_none());
+        let backup = dir.path().join("models.db");
+        db.export_database(&backup).unwrap();
+        db.set_chatgpt_models("account-b", &models).unwrap();
+        db.restore_from_backup(&backup).unwrap();
+        let cached = db.chatgpt_models("account-a").unwrap().unwrap();
+        assert_eq!(cached[0].supported_reasoning_levels[0].effort, "low");
+        assert!(db.chatgpt_models("account-b").unwrap().is_none());
+        let legacy = dir.path().join("legacy-models.db");
+        let mut old = Connection::open(&legacy).unwrap();
+        migrations().to_version(&mut old, 21).unwrap();
+        drop(old);
+        db.restore_from_backup(&legacy).unwrap();
+        assert!(db.chatgpt_models("account-a").unwrap().is_none());
+    }
+
+    #[test]
     fn rename_profile_only_changes_target_clients_name_and_timestamp() {
         let dir = tempfile::tempdir().unwrap();
         let paths = crate::paths::from_home(dir.path()).unwrap();
         let db = Database::open(&paths).unwrap();
         let codex = db
-            .insert_profile("codex-fixture", &ProfilePayload::default(), "1")
+            .codex_insert_profile("codex-fixture", &CodexProfilePayload::default(), "1")
             .unwrap();
         let claude = db
             .insert_claude_profile(
@@ -1477,9 +1634,10 @@ mod tests {
                 "1",
             )
             .unwrap();
-        db.set_active_profile(Some(&codex.id)).unwrap();
+        db.set_active_codex_profile(Some(&codex.id)).unwrap();
         db.set_active_claude_profile(Some(&claude.id)).unwrap();
-        let mut expected_codex = serde_json::to_value(db.profile(&codex.id).unwrap()).unwrap();
+        let mut expected_codex =
+            serde_json::to_value(db.codex_profile(&codex.id).unwrap()).unwrap();
         let mut expected_claude =
             serde_json::to_value(db.claude_profile(&claude.id).unwrap()).unwrap();
 
@@ -1492,7 +1650,7 @@ mod tests {
             expected_claude
         );
         assert_eq!(
-            serde_json::to_value(db.profile(&codex.id).unwrap()).unwrap(),
+            serde_json::to_value(db.codex_profile(&codex.id).unwrap()).unwrap(),
             expected_codex
         );
 
@@ -1501,7 +1659,7 @@ mod tests {
         expected_codex["name"] = "renamed-codex".into();
         expected_codex["updated_at"] = "3".into();
         assert_eq!(
-            serde_json::to_value(db.profile(&codex.id).unwrap()).unwrap(),
+            serde_json::to_value(db.codex_profile(&codex.id).unwrap()).unwrap(),
             expected_codex
         );
         assert_eq!(
@@ -1599,6 +1757,42 @@ mod tests {
         assert!(names.contains(&"claude_profiles".into()));
     }
 
+    #[test]
+    fn migration_from_v20_preserves_claude_profile_and_opens_v21() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(dir.path()).unwrap();
+        paths.ensure().unwrap();
+        {
+            let mut connection = Connection::open(&paths.database).unwrap();
+            migrations().to_version(&mut connection, 20).unwrap();
+            connection
+                .execute_batch(
+                    "INSERT INTO claude_profiles(id, name, created_at, updated_at)
+                 VALUES('claude-existing', 'Existing', '1', '1');
+                 INSERT INTO app_state(singleton, active_claude_profile_id)
+                 VALUES(1, 'claude-existing')",
+                )
+                .unwrap();
+        }
+
+        let db = Database::open(&paths).unwrap();
+        assert_eq!(
+            db.claude_profile("claude-existing").unwrap().name,
+            "Existing"
+        );
+        assert_eq!(
+            db.active_claude_profile().unwrap().as_deref(),
+            Some("claude-existing")
+        );
+        let connection = db.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            22
+        );
+    }
+
     /// Claude 支持引入前（user_version = 7）的存量库升级：既有数据完好，
     /// Claude 表全列与激活位就位且默认空，global_enabled 给存量 MCP 行落默认 1。
     #[test]
@@ -1626,7 +1820,7 @@ mod tests {
         let db = Database::open(&paths).unwrap();
 
         // 既有 Codex 数据完好
-        let profiles = db.profiles().unwrap();
+        let profiles = db.codex_profiles().unwrap();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "GLM");
         assert_eq!(db.accounts().unwrap()[0].refresh_token, "rt-1");
@@ -1732,7 +1926,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 20);
+        assert_eq!(version, 22);
         let show_balance: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('claude_profiles') WHERE name = 'show_balance'",
@@ -1779,18 +1973,23 @@ mod tests {
         let paths = crate::paths::from_home(dir.path()).unwrap();
         let db = Database::open(&paths).unwrap();
 
-        let payload = ProfilePayload::default();
-        let summary = db.insert_profile("GLM High", &payload, "1").unwrap();
+        let payload = CodexProfilePayload::default();
+        let summary = db.codex_insert_profile("GLM High", &payload, "1").unwrap();
         assert_eq!(summary.icon, None);
 
-        db.set_profile_icon(&summary.id, Some("zhipu"), "2")
+        db.codex_set_profile_icon(&summary.id, Some("zhipu"), "2")
             .unwrap();
-        assert_eq!(db.profiles().unwrap()[0].icon.as_deref(), Some("zhipu"));
+        assert_eq!(
+            db.codex_profiles().unwrap()[0].icon.as_deref(),
+            Some("zhipu")
+        );
 
-        db.set_profile_icon(&summary.id, None, "3").unwrap();
-        assert_eq!(db.profiles().unwrap()[0].icon, None);
+        db.codex_set_profile_icon(&summary.id, None, "3").unwrap();
+        assert_eq!(db.codex_profiles().unwrap()[0].icon, None);
 
-        assert!(db.set_profile_icon("missing", Some("zhipu"), "4").is_err());
+        assert!(db
+            .codex_set_profile_icon("missing", Some("zhipu"), "4")
+            .is_err());
     }
 
     #[test]
@@ -1800,23 +1999,26 @@ mod tests {
         let db = Database::open(&paths).unwrap();
 
         // 无供应商 → 官方；有供应商 → 第三方
-        let mut official = ProfilePayload::default();
+        let mut official = CodexProfilePayload::default();
         official
             .model_values
             .insert("model".into(), "\"gpt-5.6\"".into());
-        let official_id = db.insert_profile("官方", &official, "1").unwrap().id;
-        let third = ProfilePayload {
+        let official_id = db.codex_insert_profile("官方", &official, "1").unwrap().id;
+        let third = CodexProfilePayload {
             provider_id: Some("ZAI".into()),
             provider_body: Some("name = \"ZAI\"".into()),
             ..Default::default()
         };
-        let third_id = db.insert_profile("第三方", &third, "2").unwrap().id;
+        let third_id = db.codex_insert_profile("第三方", &third, "2").unwrap().id;
         assert_eq!(
-            db.profile(&official_id).unwrap().kind,
-            ProfileKind::Official
+            db.codex_profile(&official_id).unwrap().kind,
+            CodexProfileKind::Official
         );
-        assert_eq!(db.profile(&third_id).unwrap().kind, ProfileKind::ThirdParty);
-        assert!(!profile_summary(&db.profile(&third_id).unwrap()).has_base_url);
+        assert_eq!(
+            db.codex_profile(&third_id).unwrap().kind,
+            CodexProfileKind::ThirdParty
+        );
+        assert!(!codex_profile_summary(&db.codex_profile(&third_id).unwrap()).has_base_url);
 
         let account = StoredAccount {
             id: "acc-1".into(),
@@ -1839,19 +2041,19 @@ mod tests {
         assert!(db.accounts().unwrap().is_empty());
 
         assert_eq!(db.app_state().unwrap(), (None, None));
-        db.set_active_profile(Some(&official_id)).unwrap();
+        db.set_active_codex_profile(Some(&official_id)).unwrap();
         db.set_default_account(Some("acc-1")).unwrap();
         let (active, default) = db.app_state().unwrap();
         assert_eq!(active.as_deref(), Some(official_id.as_str()));
         assert_eq!(default.as_deref(), Some("acc-1"));
-        db.set_active_profile(None).unwrap();
+        db.set_active_codex_profile(None).unwrap();
         db.set_default_account(None).unwrap();
         assert_eq!(db.app_state().unwrap(), (None, None));
     }
 
     #[test]
     fn profile_summary_reports_non_empty_provider_endpoint() {
-        let payload = ProfilePayload {
+        let payload = CodexProfilePayload {
             provider_id: Some("ZAI".into()),
             provider_body: Some("base_url = \"https://api.example\"".into()),
             ..Default::default()
@@ -1859,7 +2061,7 @@ mod tests {
         let summary_with_url = summary("id", "name", &payload, None, None, "1", "1");
         assert!(summary_with_url.has_base_url);
 
-        let empty_payload = ProfilePayload {
+        let empty_payload = CodexProfilePayload {
             provider_id: Some("ZAI".into()),
             provider_body: Some("base_url = \"  \"".into()),
             ..Default::default()
@@ -2003,7 +2205,7 @@ mod tests {
         assert_eq!(accounts[0].plan_type.as_deref(), Some("plus"));
         // 恢复未重映射 id：供应商绑定原样有效
         assert_eq!(
-            db.profiles().unwrap()[0].account_id.as_deref(),
+            db.codex_profiles().unwrap()[0].account_id.as_deref(),
             Some("ws-1")
         );
     }

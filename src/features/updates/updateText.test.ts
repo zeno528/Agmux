@@ -12,7 +12,7 @@ const fixedT = (language: "zh-CN" | "en-US") => {
 describe("updateFailureMessage", () => {
   it("将网络层错误转成系统代理提示", () => {
     expect(updateFailureMessage(new Error("error sending request for url"), fixedT("zh-CN"))).toBe(
-      "无法连接 GitHub，请检查系统代理后重试",
+      "无法连接 GitHub，请检查网络代理后重试",
     );
   });
 
@@ -22,7 +22,7 @@ describe("updateFailureMessage", () => {
 
   it("英文界面下网络层错误给出英文提示", () => {
     expect(updateFailureMessage(new Error("network timeout"), fixedT("en-US"))).toBe(
-      "Cannot reach GitHub. Check your system proxy and try again.",
+      "Cannot reach GitHub. Check your system proxy and try again",
     );
   });
 });

@@ -62,7 +62,7 @@ export function useProfileBalance({ profileId, showBalance, supportsBalance, has
     }
     const request = (async () => {
       try {
-        const result = source === "claude" ? await api.getClaudeProfileBalance(profileId) : await api.getProfileBalance(profileId);
+        const result = source === "claude" ? await api.claudeGetProfileBalance(profileId) : await api.codexGetProfileBalance(profileId);
         const infos = result.balance_infos;
         if (!infos[0]) throw new Error("查询未返回余额/用量数据"); // i18n-exempt: 该消息只被当布尔用，界面渲染的是固定文案 balance.queryFailed
         setBalanceError("");

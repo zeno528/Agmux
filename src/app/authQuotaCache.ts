@@ -1,4 +1,4 @@
-import type { ProfileBalanceInfo, ProfileSummary } from "../types";
+import type { ProfileBalanceInfo, CodexProfileSummary } from "../types";
 
 type AuthSource = "desktop" | "oauth";
 
@@ -9,7 +9,7 @@ export function authQuotaCacheKey(source: AuthSource, accountId: string) {
   return `auth:${source}:${accountId}`;
 }
 
-export function profileAuthQuotaCacheKey(profile: ProfileSummary) {
+export function profileAuthQuotaCacheKey(profile: CodexProfileSummary) {
   if (profile.kind !== "official") return null;
   const source = profile.auth_source ?? (profile.account_id ? "oauth" : "desktop");
   const accountId = profile.account_id ?? profile.auth_account_id;

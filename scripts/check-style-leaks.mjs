@@ -10,7 +10,7 @@ const SRC_ROOT = fileURLToPath(new URL("../src", import.meta.url));
 
 const WHITELIST = [
   { file: "features/mcp/McpView.tsx", class: "text-[10px]", reason: "MCP 传输类型徽标：低于 meta-xs 的特例字号" },
-  { file: "features/profiles/ProfileEdit.tsx", class: "text-[13px]", reason: "编辑页 tab：介于 setting-title 与 field-label 之间的既有字号" },
+  { file: "features/codex/CodexProfileEdit.tsx", class: "text-[13px]", reason: "编辑页 tab：介于 setting-title 与 field-label 之间的既有字号" },
   { file: "features/claude/ClaudeProfileEdit.tsx", class: "text-[13px]", reason: "编辑页 tab：与 Codex ProfileEdit 同款编辑器 tab 的同一字号契约" },
   { file: "app/AppShell.tsx", class: "overflow-y-auto", reason: "<main> 本身：AGENTS.md 钦定的普通页唯一纵向滚动容器" },
   { file: "features/skills/SkillsView.tsx", class: "overflow-auto", reason: "Skill 内容预览弹窗的长文本滚动：弹窗不在页面流内" },
@@ -58,7 +58,7 @@ const RULES = [
    曾有三处各写一套 Windows 优先栈（侧栏导航、输入框占位符、侧栏 wordmark），
    macOS 上前两者落不到 San Francisco，占位符还与输入文字不同字体。 */
 const FONT_WHITELIST = [
-  { text: 'font-family: "Segoe UI Variable Display", "Bahnschrift", "Segoe UI", -apple-system, sans-serif;', reason: "侧栏应用名 wordmark：刻意的品牌几何字体，末尾带 -apple-system 回退" },
+  { text: 'font-family: "Corbel", "Segoe UI Variable Display", "Segoe UI", -apple-system, sans-serif;', reason: "侧栏应用名 wordmark：优先系统自带 Corbel，末尾带 -apple-system 回退" },
 ];
 /* 只取出声明，允许与否在代码里判：把排除项写进正则会被 \s* 的回溯绕过
    （「冒号后零空白」时否定断言成立，于是 var(--font-ui) 也被误判）。 */
@@ -90,9 +90,8 @@ const STRUCTURAL_CHECKS = [
     name: "使用 apple-edit-content 的文件必须同时包含 apple-page-bar",
     // app/AppShell.tsx 只在 DOM 查询里引用该类名（页面进场动画的挂载点选择器），
     // 自身不渲染任何页面布局骨架，页头由各 feature 页自备。
-    // 设置页不设标题和返回按钮，顶部标签栏与中间滚动区组成页面骨架。
     // 共享编辑器只查询正文容器以监听可用高度，不创建页面布局或页头。
-    exempt: (rel) => rel === "app/AppShell.tsx" || rel === "features/settings/SettingsView.tsx" || rel === "components/ConfigTextEditor.tsx",
+    exempt: (rel) => rel === "app/AppShell.tsx" || rel === "components/ConfigTextEditor.tsx",
     holds: (content) => content.includes("apple-page-bar"),
   },
 ];

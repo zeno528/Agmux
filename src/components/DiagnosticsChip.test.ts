@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const componentSource = readFileSync(new URL("./DiagnosticsChip.tsx", import.meta.url), "utf8");
-const profileEditSource = readFileSync(new URL("../features/profiles/ProfileEdit.tsx", import.meta.url), "utf8");
+const profileEditSource = readFileSync(new URL("../features/codex/CodexProfileEdit.tsx", import.meta.url), "utf8");
 const claudeMcpEditSource = readFileSync(new URL("../features/mcp/ClaudeMcpEdit.tsx", import.meta.url), "utf8");
 
 describe("DiagnosticsChip 共享诊断 chip", () => {

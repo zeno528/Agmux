@@ -1,11 +1,11 @@
 ---
 name: release
-description: CGswitch 发版流水线（**默认仅本地 commit 为止**）：AI 读 CHANGELOG 历史与 git 三态（最新 tag / HEAD VERSION / working tree VERSION），CHANGELOG 草稿以**实际代码 diff**（`git diff <上一tag>..HEAD` 逐文件阅读）为唯一依据、commit 信息不可信，**单次弹窗合并确认** bump 级别 + CHANGELOG 草稿（一次 AskUserQuestion 问完）→ 确认后**一次性执行**：跑 `node scripts/bump-version.mjs <level>`（**禁止手写**）→ 写入 CHANGELOG + 本地 commit。**写入本地 commit 即终止**；AI 不主动询问、不主动执行任何 push / 盯构建 / 发布动作。Release 工作流**只手动触发**：push main / push tag 都不自动构建；dispatch 传 `release_mode` 三选一——draft（默认）构建完停在草稿、公开发布仍须用户确认，prerelease=构建完自动预发行，latest=构建完自动正式发行并通知关注者。当用户说"发版"、"发行"、"release"、"发个新版本"、"发布新版本"时使用。
+description: Agmux 发版流水线（**默认仅本地 commit 为止**）：AI 读 CHANGELOG 历史与 git 三态（最新 tag / HEAD VERSION / working tree VERSION），CHANGELOG 草稿以**实际代码 diff**（`git diff <上一tag>..HEAD` 逐文件阅读）为唯一依据、commit 信息不可信，**单次弹窗合并确认** bump 级别 + CHANGELOG 草稿（一次 AskUserQuestion 问完）→ 确认后**一次性执行**：跑 `node scripts/bump-version.mjs <level>`（**禁止手写**）→ 写入 CHANGELOG + 本地 commit。**写入本地 commit 即终止**；AI 不主动询问、不主动执行任何 push / 盯构建 / 发布动作。Release 工作流**只手动触发**：push main / push tag 都不自动构建；dispatch 传 `release_mode` 三选一——draft（默认）构建完停在草稿、公开发布仍须用户确认，prerelease=构建完自动预发行，latest=构建完自动正式发行并通知关注者。当用户说"发版"、"发行"、"release"、"发个新版本"、"发布新版本"时使用。
 ---
 
-# CGswitch 发版
+# Agmux 发版
 
-分工：本 skill 做需要判断的部分——bump 级别建议、CHANGELOG 内容草稿（段落标题 `## [版本] - 起草日` 由 Agent 写、经用户合并确认）、本地 commit、跑 bump-version 命令；`.github/workflows/release.yml` 做确定性的部分——校验（含 CHANGELOG 第一段版本号 == VERSION 的 fail-fast 校验）、三平台构建、创建 tag 与发行页（发行说明 = CHANGELOG 第一段原文照抄）、上传资产。**工作流不回写 main**；CHANGELOG 无归档步骤。草稿不会通知关注者；执行发布那一刻 GitHub 才给关注者发通知邮件。
+分工：本 skill 做需要判断的部分——bump 级别建议、CHANGELOG 整段内容草稿（不是只改版本标题）、本地 commit、跑 bump-version 命令；`.github/workflows/release.yml` 做确定性的部分——校验（含 CHANGELOG 第一段版本号 == VERSION 的 fail-fast 校验）、三平台构建、创建 tag 与发行页（发行说明 = CHANGELOG 第一段原文照抄）、上传资产。**工作流不回写 main**；CHANGELOG 无归档步骤。草稿不会通知关注者；执行发布那一刻 GitHub 才给关注者发通知邮件。
 
 工作流**只手动触发**（`workflow_dispatch`），无任何自动触发器：push main / push tag 都不构建——发版是显式决策。触发时传 `release_mode` 三选一：`draft`（默认）构建完停在**草稿**，等人工发布；`prerelease` 构建完自动预发行（不占 latest 指针）；`latest` 构建完自动正式发行并通知关注者。每次 dispatch 只产生**一条** run（headBranch=main）。工作流用 `GITHUB_TOKEN` 代建 tag，不会递归触发自身。
 
@@ -70,14 +70,23 @@ Step 2–4（push / 盯构建 / 发布）属于扩展流程，**必须用户明�
 CHANGELOG 写作规则：
 
 - 用用户视角描述变更（"新增 xxx 功能"），不要照抄 commit 标题。
-- 空分区整节省略；可用分区：新增 / 修复 / 界面与样式 / 性能优化 / 重构 / 移除 / 安全；都不匹配时可自拟简洁分区名（如 文档 / 依赖升级）。
+- 按实际代码差异重新组织本次版本的完整正文；替换未发布段落时，旧正文只作为待核对清单，不原样沿用，不只替换标题。用户明确要求仅改标题时除外。
+- 先按模块列出用户可见变更，再核对新增、修复和交互细节，避免用“完善／优化”概括掉独立变化；大 diff 分文件分批读取，输出截断必须补读，未读完不得声称已完整核对。
+- 默认按以下顺序分区，空分区整节省略，不为凑标题拆分同一变更：
+  - **更名与迁移**：产品名、仓库入口、数据目录或备份命名的变化，写清旧数据如何处理。
+  - **新增**：新增的用户功能与使用入口。
+  - **修复**：原先的具体问题，以及修复后的行为。
+  - **界面与交互**：布局、操作方式与反馈变化。
+  - **性能优化**：仅记录有实际测量依据的改善，不从代码变化推断提速。
+  - **移除**：用户需要知道的功能移除；涉及安全的用户可见变化可单列 **安全**。
 - **不进入 CHANGELOG 的改动**（从 diff 判断，非 commit 标题；无用户可见影响）：
   - 纯版本号 bump（`chore(release): vX.Y.Z`）
   - 纯 CI / 工作流变更
   - 纯文档类提交
+  - 纯内部重构与普通依赖升级；影响用户功能、兼容性或安全时，归入对应分区说明实际影响
   - 纯文案 / 按钮 / 标签 / 提示语等措辞小改（不影响功能）
-  - 纯图标 / 品牌资源更新（不影响功能）
-- 已有段落风格时（查看 `CHANGELOG.md` 旧版本段落），沿用旧格式。
+  - 纯图标 / 品牌资源替换（不影响功能）；涉及产品名称、入口或数据迁移时必须记录，不适用此排除项
+- 沿用历史段落的 Markdown 格式，不沿用其过时分区或未经代码核对的结论。
 
 CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段写几段，不是固定三段）：
 
@@ -100,7 +109,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
    node scripts/bump-version.mjs patch   # 或 minor / major（若用户选沿用基线则跳过）
    ```
 
-2. 检查脚本输出"版本号已从 X.Y.Z 更新为 A.B.C"，记下 A.B.C 作为本版本号；lockfile 未跟上的话 AI 跑：`cargo update -p cgswitch --manifest-path src-tauri/Cargo.toml`（lockfile 已对齐可跳过）。
+2. 检查脚本输出"版本号已从 X.Y.Z 更新为 A.B.C"，记下 A.B.C 作为本版本号；lockfile 未跟上的话 AI 跑：`cargo update -p agmux --manifest-path src-tauri/Cargo.toml`（lockfile 已对齐可跳过）。
 3. 写入 CHANGELOG：
    - **幽灵版本并入**：若顶部已有段落且是「幽灵版本」（标题版本号无 tag、无 GitHub Release——上次准备好但没发出去的残留）或历史遗留的 `## [Unreleased]`，其内容并入本次新段落一起发布，**不**保留没有 tag 的版本段；顶部段落已正常发行则直接进行下一步。
    - 在既有段落上方插入 Step 0 已确认的新版本段落，标题写 `## [<A.B.C>] - <今天日期>`（A.B.C = bump 后版本号，必须与 VERSION 一致，工作流会校验）。
@@ -141,7 +150,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
 3. 变体处理：
    - 用户点选「预发布」：加 `--prerelease`，去掉 `--latest`
    - 用户要改日志：改 `CHANGELOG.md` 对应版本段落，提交推送后工作流自动重跑，用新段落更新既有草稿后再发布
-4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/CGswitch/releases/tag/v<版本>`
+4. 发布后告知用户：关注者通知已发出，附 release 页面链接 `https://github.com/zeno528/Agmux/releases/tag/v<版本>`
 
 ## 示例
 

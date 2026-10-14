@@ -1,9 +1,12 @@
-import { providerIconThemeClass, providerIconUrl } from "../icons";
+import type { ReactNode } from "react";
+import { providerIconUrl } from "../icons";
 
 interface ProfileIconTileProps {
   name: string;
   icon: string | null;
   size?: "xs" | "sm" | "fill" | "lg";
+  /** 悬停容器时居中浮现的覆盖动作（如打开官网）；提供时 Logo 悬停退隐让位。 */
+  overlay?: ReactNode;
 }
 
 const sizes = {
@@ -13,12 +16,13 @@ const sizes = {
   lg: { tile: "h-[76px] w-[76px] rounded-[22px]", image: "h-10 w-10", text: "text-xl" },
 } as const;
 
-export function ProfileIconTile({ name, icon, size = "sm" }: ProfileIconTileProps) {
+export function ProfileIconTile({ name, icon, size = "sm", overlay }: ProfileIconTileProps) {
   const current = sizes[size];
   const iconUrl = providerIconUrl(icon);
   return (
-    <span className={`grid shrink-0 place-items-center bg-(--tile-bg) ${current.tile}`} aria-hidden="true">
-      {iconUrl ? <img src={iconUrl} alt="" className={`${current.image} ${providerIconThemeClass(icon)}`} /> : <span className={`font-bold text-accent ${current.text}`}>{name.charAt(0)}</span>}
+    <span className={`group/tile relative grid shrink-0 place-items-center bg-(--provider-icon-bg) ${current.tile}`}>
+      {iconUrl ? <img src={iconUrl} alt="" aria-hidden="true" className={`${current.image} ${overlay ? "transition-[opacity,transform] duration-150 group-hover/tile:scale-90 group-hover/tile:opacity-20" : ""}`} /> : <span aria-hidden="true" className={`font-bold text-accent ${current.text}`}>{name.charAt(0)}</span>}
+      {overlay}
     </span>
   );
 }

@@ -2,7 +2,7 @@
   "app": {
     "windows": [
       {
-        "title": "CGswitch",
+        "title": "Agmux",
         "width": 1080,
         "height": 720,
         "minWidth": 1000,

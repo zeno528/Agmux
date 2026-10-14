@@ -1,7 +1,7 @@
 //! 模型列表获取服务
 //!
 //! 通过 OpenAI 兼容的 GET /models 端点拉取供应商可用模型列表。
-//! URL 候选策略参考 cc-switch 的 model_fetch.rs，按 CGswitch 只做
+//! URL 候选策略参考 cc-switch 的 model_fetch.rs，按 Agmux 只做
 //! Responses（原生）直连的场景做了简化：无 Anthropic/Google 协议头，
 //! 无兼容子路径剥离。
 
@@ -29,16 +29,21 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
         return Err("请先填写 API Key 再获取模型列表".to_string());
     }
 
-    let client = reqwest::Client::builder()
+    let client = crate::network::Network::current()
+        .await
+        .map_err(|error| error.to_string())?
+        .builder()
         .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
         .build()
-        .map_err(|error| format!("构建 HTTP 客户端失败: {error}"))?;
+        .map_err(|error| super::connections::provider_request_error_message(&error).to_string())?;
 
     let mut last_err: Option<String> = None;
     for url in &candidates {
         let response = match client.get(url).bearer_auth(api_key).send().await {
             Ok(response) => response,
-            Err(error) => return Err(format!("请求失败: {error}")),
+            Err(error) => {
+                return Err(super::connections::provider_request_error_message(&error).to_string())
+            }
         };
 
         let status = response.status();
@@ -46,7 +51,7 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
             let parsed: ModelsResponse = response
                 .json()
                 .await
-                .map_err(|error| format!("响应解析失败: {error}"))?;
+                .map_err(|_| format!("HTTP {}: requestFailed", status.as_u16()))?;
             let mut models: Vec<String> = parsed
                 .data
                 .unwrap_or_default()
@@ -57,21 +62,21 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
             return Ok(models);
         }
 
-        let body = truncate_body(redact(&response.text().await.unwrap_or_default(), api_key));
+        let body = super::connections::provider_response_error(
+            &response.text().await.unwrap_or_default(),
+            api_key,
+        );
         // 404/405：路径猜错，试下一候选；其他错误（401/403/5xx）直接返回
         if status == reqwest::StatusCode::NOT_FOUND
             || status == reqwest::StatusCode::METHOD_NOT_ALLOWED
         {
-            last_err = Some(format!("HTTP {status}: {body}"));
+            last_err = Some(format!("HTTP {}: {body}", status.as_u16()));
             continue;
         }
-        return Err(format!("HTTP {status}: {body}"));
+        return Err(format!("HTTP {}: {body}", status.as_u16()));
     }
 
-    Err(format!(
-        "所有候选端点均失败: {}",
-        last_err.unwrap_or_else(|| "无候选".to_string())
-    ))
+    Err(last_err.unwrap_or_else(|| "requestFailed".to_string()))
 }
 
 /// 已知供应商的模型列表端点特例：base_url 与模型端点不同族、无法从 URL 推导。

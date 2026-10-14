@@ -5,17 +5,22 @@ import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { createPortal } from "react-dom";
 import { api } from "../../api";
+import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import { useFeedback } from "../../app/Feedback";
 import { getCachedClaudeProfiles, loadClaudeProfiles, setClaudeProfilesCache } from "../../app/managementDataCache";
+import { CliUpgradePill } from "../../components/CliUpgradePill";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import SortableCard from "../../components/SortableCard";
+import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
-import { ProfileCardActions, ProfileCardContent, ProfileDragPreviewShell, connectionGate, getCachedProfileBalance, getCachedProfileBalanceError } from "../profiles/ProfileCard";
+import { ProfileCardActions, ProfileCardContent, connectionGate } from "../profiles/ProfileCard";
 import { useProfileBalance } from "../profiles/useProfileBalance";
 import ProfileNameDialog from "../profiles/ProfileNameDialog";
 import { claudeBalanceQueryKinds } from "../../presets";
 import ClaudeProfileEdit from "./ClaudeProfileEdit";
 import type { ClaudeProfileDetail, ClaudeProfileSummary, ProfileBalanceInfo } from "../../types";
+import ProfileModelSelector from "../profiles/ProfileModelSelector";
+import { claudeEffortLevels } from "../../components/ReasoningEffortSlider";
+import { buildSettingsText, patchEnvValue, readAdvancedSettings, readEnvValue, readModelMappings, resolveOneMillionByDeclaration, setOneMillionModelSuffix } from "./profileEnvText";
 
 function cardProfile(profile: ClaudeProfileSummary) {
   return {
@@ -24,32 +29,16 @@ function cardProfile(profile: ClaudeProfileSummary) {
     kind: "third_party" as const,
     provider: profile.kind ?? null,
     model: profile.model,
-    reasoning_effort: null,
+    reasoning_effort: profile.reasoning_effort,
     plan_type: null,
     admin_url: profile.admin_url,
     show_balance: profile.show_balance,
   };
 }
 
-/** 拖拽浮层预览：按源卡片几何渲染同款卡片（非交互）。 */
-function ClaudeDragPreview({ profile, width, height, active, busy, balanceCache }: { profile: ClaudeProfileSummary; width: number | null; height: number | null; active: boolean; busy: boolean; balanceCache: Record<string, ProfileBalanceInfo> }) {
-  const feedback = useFeedback();
-  const { t: tProfiles } = useTranslation("profiles");
-  const hasCredential = Boolean(profile.base_url) && profile.has_token;
-  const balance = getCachedProfileBalance(profile.id, balanceCache[profile.id] ?? null);
-  const balanceError = getCachedProfileBalanceError(profile.id);
-  return (
-    <ProfileDragPreviewShell width={width} height={height} active={active}>
-      <ProfileCardContent profile={cardProfile(profile)} hideModel balanceInfos={balance ? [balance] : []} balanceError={balanceError} balanceRefreshing={false} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} />
-      <ProfileCardActions active={active} busy={busy} testing={false} dragging connectionDisabled={!hasCredential} connectionTitle={tProfiles("connection.test")} />
-    </ProfileDragPreviewShell>
-  );
-}
-
-function ClaudeProfileCard({ profile, active, dragHover, busy, testing, activationEpoch, coldStart, balanceCache, onRename, onEdit, onApply, onDuplicate, onTest, onRemove }: {
+function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, coldStart, balanceCache, onRename, onEdit, onApply, onDuplicate, onTest, onRemove, onChanged }: {
   profile: ClaudeProfileSummary;
   active: boolean;
-  dragHover: boolean;
   busy: boolean;
   testing: boolean;
   activationEpoch: number;
@@ -61,6 +50,7 @@ function ClaudeProfileCard({ profile, active, dragHover, busy, testing, activati
   onDuplicate: () => void;
   onTest: () => void;
   onRemove: () => void;
+  onChanged: () => Promise<void>;
 }) {
   const feedback = useFeedback();
   const { t } = useTranslation("profiles");
@@ -83,15 +73,40 @@ function ClaudeProfileCard({ profile, active, dragHover, busy, testing, activati
     missingKey: tClaude("checkProviderFields"),
   });
   return (
-    <SortableCard id={profile.id} active={active} dragHover={dragHover} onClick={onEdit} title={t("card.clickToEdit")} handleTitle={t("card.dragToReorder")}>
+    <SortableCard id={profile.id} active={active} onClick={onEdit} title={t("card.clickToEdit")} handleTitle={t("card.dragToReorder")}>
       <ProfileCardContent profile={cardProfile(profile)} hideModel balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} onRename={onRename} />
-      <ProfileCardActions active={active} busy={busy} testing={testing} connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
+      <ProfileCardActions modelControl={
+        <ProfileModelSelector model={profile.model} effort={profile.reasoning_effort} levels={claudeEffortLevels} disabled={busy}
+          formatModelLabel={(value) => setOneMillionModelSuffix(value, false)}
+          onLoad={async () => {
+            const detail = await api.claudeGetProfile(profile.id);
+            const text = buildSettingsText(detail);
+            // 对齐编辑页：映射里在用的自定义 id 也进列表；每个候选按 1M 声明解析成最终形态，
+            // 列表所见即所选所写，未声明 1M 的模型一眼可辨（要开就回编辑页）。
+            const mappings = Object.values(readModelMappings(text)).map((value) => value.trim()).filter(Boolean);
+            const models = [...detail.fetched_models, ...mappings].map((value) => resolveOneMillionByDeclaration(text, value));
+            return { model: readEnvValue(text, "ANTHROPIC_MODEL"), effort: readAdvancedSettings(text).effortLevel, models };
+          }}
+          onSave={async (changes) => {
+            const detail = await api.claudeGetProfile(profile.id);
+            let rawSettings = buildSettingsText(detail);
+            if (changes.model !== undefined) {
+              const model = resolveOneMillionByDeclaration(rawSettings, changes.model);
+              rawSettings = patchEnvValue(rawSettings, "ANTHROPIC_MODEL", model || null);
+            }
+            if (changes.effort !== undefined) rawSettings = patchEnvValue(rawSettings, "CLAUDE_CODE_EFFORT_LEVEL", changes.effort || null, "effortLevel");
+            await api.claudeSaveProfile({ id: detail.id, name: detail.name, baseUrl: detail.base_url, authToken: detail.auth_token,
+              model: detail.model, description: detail.description, fetchedModels: detail.fetched_models, kind: detail.kind,
+              adminUrl: detail.admin_url, extraEnv: detail.extra_env, rawSettings, icon: detail.icon, showBalance: detail.show_balance });
+            await onChanged();
+          }} />
+      } active={active} busy={busy} testing={testing} connectionDisabled={connection.disabled} connectionTitle={connection.title} terminalProfileId={profile.id} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
     </SortableCard>
   );
 }
 
 // 页面数据只在进页时加载（AppShell 按 view==="claude" 挂载本组件），不入启动关键路径。
-export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo> }) {
+export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache, popEpoch }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo>; popEpoch: number }) {
   const feedback = useFeedback();
   const { t } = useTranslation("claude");
   // 卡片外壳/操作行的悬停文案直接用 profiles 资源（与 Codex 同词），不另造 key
@@ -121,6 +136,14 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
 
   useEffect(() => { void refresh(); }, []);
 
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（保存流程自带刷新，弹回不产生数据变化）。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setEditingProfile(null);
+    setEditDetail(null);
+    setCreatingProfile(false);
+  }, [popEpoch]);
+
   const persistOrder = async (previous: ClaudeProfileSummary[], next: ClaudeProfileSummary[]) => {
     try {
       await api.claudeReorderProfiles(next.map((item) => item.id));
@@ -131,7 +154,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
       feedback.error(String(error));
     }
   };
-  const { sensors, draggedId, dragHoverId, dragWidth, dragHeight, onDragStart, onDragEnd, onDragCancel } = useCardDragReorder(items, setItems, persistOrder);
+  const { sensors, dragPreview, onDragStart, onDragEnd, onDragCancel } = useCardDragReorder(items, setItems, persistOrder);
 
   const openCreate = () => {
     if (!busy) setCreatingProfile(true);
@@ -194,12 +217,12 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     );
   }
 
-  const applyProfile = async (profile: ClaudeProfileSummary) => {
+  const claudeApplyProfile = async (profile: ClaudeProfileSummary) => {
     if (busy) return;
     setBusy(true);
     try {
       await api.claudeApplyProfile(profile.id);
-      feedback.success(t("appliedToast"));
+      feedback.success(t("feedback.applySuccess", { ns: "common" }));
       onChanged();
     } catch (error) {
       feedback.error(String(error));
@@ -208,7 +231,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     }
   };
 
-  const duplicateProfile = async (profile: ClaudeProfileSummary) => {
+  const claudeDuplicateProfile = async (profile: ClaudeProfileSummary) => {
     if (busy) return;
     setBusy(true);
     try {
@@ -227,16 +250,17 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     if (testingId) return;
     setTestingId(profile.id);
     try {
-      const latency = await api.claudeTestProfile(profile.id);
-      feedback.success(t("connectionOk", { latency: ` · ${latency}ms` }));
+      const result = await api.claudeTestProfile(profile.id);
+      if (!result.ok) feedback.error(t("connectionFailed", { error: connectionErrorMessage(result, tProfiles) }));
+      else feedback.success(t("connectionOk", { latency: ` · ${result.latency_ms}ms` }));
     } catch (error) {
-      feedback.error(t("connectionFailed", { error: String(error) }));
+      feedback.error(t("connectionFailed", { error: connectionExceptionMessage(error, tProfiles) }));
     } finally {
       setTestingId(null);
     }
   };
 
-  const deleteProfile = async (profile: ClaudeProfileSummary) => {
+  const claudeDeleteProfile = async (profile: ClaudeProfileSummary) => {
     if (busy) return;
     const confirmed = await feedback.confirm({
       title: tProfiles("confirm.deleteTitle"),
@@ -258,17 +282,16 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     }
   };
 
-  const draggedProfile = draggedId ? items.find((profile) => profile.id === draggedId) ?? null : null;
-
   return (
     <section className="apple-scroll-page mx-auto w-full max-w-none">
       <header className="apple-page-bar flex-wrap justify-between gap-4">
         <div className="provider-page-brand">
           <img src="/claude-code.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>Claude Code</span>
+          <CliUpgradePill client="claude" />
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={openCreate}>
+          <button type="button" className="apple-action-button app-button--primary disabled:!opacity-100" disabled={busy} onClick={openCreate}>
             <Plus className="h-4 w-4" />
             {tProfiles("toolbar.addProvider")}
           </button>
@@ -277,7 +300,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
       <div className="apple-edit-content">
         {!loaded ? null : items.length === 0 ? (
           <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}>
-            <p className="muted">{t("empty")}</p>
+            <p className="muted">{tProfiles("empty.description")}</p>
             <button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={() => { setProfileName(""); setModalProfile(null); setModal("capture"); }}>
               <Camera className="h-4 w-4" strokeWidth={2} />
               {tProfiles("toolbar.capture")}
@@ -289,21 +312,21 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
               <div className="profile-list relative space-y-[var(--gap-page)]">
                 {items.map((profile) => {
                   return (
-                    <ClaudeProfileCard key={profile.id} profile={profile} active={profile.id === activeId} dragHover={profile.id === dragHoverId} busy={busy} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache} onRename={() => openRename(profile)} onEdit={() => void openEdit(profile)} onApply={() => void applyProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />
+                    <ClaudeProfileCard key={profile.id} profile={profile} active={profile.id === activeId} busy={busy} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache} onChanged={async () => { await refresh(); onChanged(); }} onRename={() => openRename(profile)} onEdit={() => void openEdit(profile)} onApply={() => void claudeApplyProfile(profile)} onDuplicate={() => void claudeDuplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void claudeDeleteProfile(profile)} />
                   );
                 })}
               </div>
             </SortableContext>
             {createPortal(
               <DragOverlay dropAnimation={null}>
-                {draggedProfile ? <ClaudeDragPreview profile={draggedProfile} width={dragWidth} height={dragHeight} active={draggedProfile.id === activeId} busy={busy} balanceCache={balanceCache} /> : null}
+                {dragPreview ? <CardDragPreview card={dragPreview} /> : null}
               </DragOverlay>,
               document.body,
             )}
           </DndContext>
         )}
       </div>
-      <ProfileNameDialog mode={modal} name={profileName} busy={busy} description={modal === "capture" ? t("captureDescription") : undefined} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
+      <ProfileNameDialog mode={modal} name={profileName} busy={busy} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
     </section>
   );
 }

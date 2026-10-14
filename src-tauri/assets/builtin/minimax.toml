@@ -1,6 +1,7 @@
-model = "MiniMax-M3"
 model_provider = "minimax"
-model_context_window = 1000000
+model_context_window = 524288
+preferred_auth_method = "apikey"
+forced_login_method = "api"
 
 [model_providers.minimax]
 name = "MiniMax"

@@ -10,8 +10,10 @@
 :root {
   color-scheme: light;
   --accent: #007aff;
+  /* Ultra 推理档位的标题与轨道共用紫色，按浅深主题适配。 */
+  --reasoning-ultra: #af52de;
   --primary-button-bg: #2d2d2b;
-  --primary-button-hover-bg: #222220;
+  --primary-button-hover-bg: #1c1c1e;
   --primary-button-text: #ffffff;
   --secondary-button-bg: #efefed;
   --secondary-button-hover-bg: #e5e5e3;
@@ -50,8 +52,9 @@
   --profile-chip-bg: rgb(0 0 0 / 0.04);
   --input-bg: var(--main-surface-bg);
   --profile-meta-text: rgba(60, 60, 67, 0.68);
-  /* 品牌图标底色：按文字色派生的浅灰砖，深浅主题共用同一公式自动适配 */
+  /* 通用浅灰底色随主题适配；Logo 容器固定浅色，单色图标保持深色。 */
   --tile-bg: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  --provider-icon-bg: #e9e9e6;
   --scrollbar-thumb: color-mix(in srgb, var(--text-secondary) 15%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--text-secondary) 40%, transparent);
   /* 全局间距参数：页头/标题到首个内容区块，以及相邻卡片/分区之间 */
@@ -61,21 +64,21 @@
   --gap-card: 1.25rem;
   /* 大卡片正文左右内缩：与上下节奏分离，避免内容贴近卡片边缘 */
   --gap-card-inline: 1.5rem;
-  /* 右侧所有页面的内容到主容器边缘的统一留白 */
-  --gap-main: 2rem;
+  /* 右侧所有页面的内容到主容器边缘的统一留白：52px 物理像素 ÷ 1.5 = 34.6667px CSS 像素 */
+  --gap-main: 2.1666666667rem;
   /* 操作按钮（药丸）之间的统一间距：弹窗底部与编辑页操作栏共用 */
   --gap-actions: 0.75rem;
   /* 弹窗内容/操作区到弹窗底边的统一留白（标准弹窗、hero 弹窗操作区、oauth 弹窗共用） */
   --dialog-pad-bottom: 1.5rem;
   /* 全局控件与窗口几何：页面、编辑页和侧边栏只从这里取尺寸 */
   --font-size-base: 0.875rem;
-  --sidebar-width-expanded: 8rem;
-  --sidebar-width-collapsed: 3rem;
+  --sidebar-width-expanded: 9.5rem;
+  --sidebar-width-collapsed: 3.125rem; /* 75px 物理像素 ÷ 1.5 = 50px CSS 像素 */
   --sidebar-nav-height: 2.25rem;
   --sidebar-nav-radius: 0.625rem;
   --sidebar-nav-padding: 0.5625rem;
-  --sidebar-icon-size: 1.125rem;
-  --brand-logo-size: 1.75rem;
+  --sidebar-icon-size: 1.25rem; /* 20px CSS 像素，150% 缩放下约 30px 物理像素 */
+  --brand-logo-size: 1.625rem; /* 26px CSS 像素，150% 缩放下约 39px 物理像素 */
   --control-height: 2.25rem;
   /* 标题栏内的按钮、搜索和状态胶囊统一高度；普通表单控件仍使用 --control-height。 */
   --toolbar-control-height: calc(var(--control-height) + 2px);
@@ -97,10 +100,19 @@
   --motion-fast: 150ms;
   --motion-sidebar: 240ms;
   --motion-layout: 360ms;
+  /* 浮层（菜单/下拉/提示）统一的进场节奏：等比 scale + 淡入，200ms 强缓出。
+     出场曲线曾用 antd 的 motionEaseInQuint（cubic-bezier(.755,.05,.855,.06)），
+     但那条 200ms 里前 140ms 只走完 14%，可见动作全挤在最后 3 帧；
+     它是为悬停菜单的 mouseLeaveDelay 设计的，单独用在悬停提示卡的出场上。 */
+  --motion-popover: 200ms;
+  --motion-popover-in: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-popover-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 主题滑块与设置导航横条共用同一滑动节奏。 */
+  --motion-segment-slide: 340ms cubic-bezier(0.22, 1, 0.36, 1);
   /* 页面顶部栏与底部操作栏统一高度 */
   --toolbar-height: 3.625rem;
   /* 窗口标题栏高度：品牌区与窗口控制按钮共用同一垂直中心 */
-  --window-chrome-height: 2rem;
+  --window-chrome-height: 2.2083333333rem; /* 53px 物理像素 ÷ 1.5 = 35.3333px CSS 像素 */
   /* 卡片、高亮分区和配置编辑器容器统一圆角 */
   --radius-card: 1.125rem;
   /* 右侧滚动条占位宽度，启动时由 JS 实测写入，保证左右视觉间距完全一致 */
@@ -111,8 +123,9 @@
   color-scheme: dark;
   /* VS Code Dark+：编辑区/侧栏/标题栏/输入框/选中项/主按钮 */
   --accent: #007aff;
+  --reasoning-ultra: #bf5af2;
   --primary-button-bg: #f0f0ee;
-  --primary-button-hover-bg: #e2e2df;
+  --primary-button-hover-bg: #d6d6d3;
   --primary-button-text: #1c1c1e;
   --secondary-button-bg: #3b3c41;
   --secondary-button-hover-bg: #46474d;
@@ -137,6 +150,7 @@
   --chip-success: #63e68a;
   --toast-icon-foreground: #ffffff;
   --chip-bg: var(--main-surface-bg);
+  --provider-icon-bg: #e9e9e6;
   --profile-chip-bg: #1e1e1e;
   --input-bg: var(--main-surface-bg);
   --profile-meta-text: rgba(255, 255, 255, 0.62);
@@ -197,6 +211,7 @@ body {
 
 .panel,
 .apple-group,
+.app-segmented-control,
 .apple-list-row,
 .apple-editor-surface {
   box-shadow: var(--card-edge-shadow);
@@ -308,16 +323,22 @@ body {
   color: var(--text-primary);
 }
 
-/* 供应商卡片余额/用量药丸统一复用主容器底色，主题只需调整 --main-surface-bg。 */
+/* 供应商卡片余额/用量药丸统一复用主容器底色、去描边，主题只需调整 --main-surface-bg。 */
 .profile-card-meta .apple-chip {
   background: var(--main-surface-bg);
+  border-color: transparent;
   font-size: 12px;
-  transition: border-color var(--motion-fast) ease;
 }
 
-/* 余额/用量药丸悬停：只提亮细描边，不改变尺寸、背景、文字或布局。 */
-.profile-card-meta .apple-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+.profile-card-meta .apple-chip,
+button.plan-badge {
+  transition: background-color var(--motion-fast) ease;
+}
+
+/* 余额/用量药丸去描边；更新药丸默认沿用 .plan-badge 的版本号样式。 */
+.profile-card-meta .apple-chip:hover,
+button.plan-badge:hover:not(:disabled) {
+  background: var(--hover-bg);
 }
 
 .profile-card-meta {
@@ -453,12 +474,31 @@ body {
   line-height: 1.35;
 }
 
-/* 设置页顶栏选项：五个分区统一使用清晰的中高字重 */
+/* 设置页顶栏导航：分区统一使用清晰的中高字重 */
 .settings-tab {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.35;
+}
+
+/* 横条按选项宽度的 85% 居中，复用主题控件的滑动节奏。 */
+.settings-tab-indicator {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  height: 3.5px;
+  border-radius: 999px;
+  pointer-events: none;
+  transition: transform var(--motion-segment-slide), width var(--motion-segment-slide);
+}
+
+.settings-tab-indicator::before {
+  content: "";
+  position: absolute;
+  inset: 0 7.5%;
+  border-radius: inherit;
+  background: var(--text-primary);
 }
 
 /* 设置页标签栏的基线使用全局分割线语义，但降低线宽与对比度，避免压过标签内容。 */
@@ -474,8 +514,8 @@ body {
 
 /* 卡片主标题（供应商名、拖拽预览名）：介于页标题与小节标题之间 */
 .title-md {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 550;
   letter-spacing: -0.01em;
 }
 
@@ -496,6 +536,43 @@ body {
 
 :root.dark .setting-description {
   color: var(--text-secondary);
+}
+
+/* CLI 管理卡事实行：头部下发丝线分隔的「图标 + 灰标签 + 值」并排小字 */
+.cli-facts {
+  align-items: center;
+  border-top: 1px solid var(--panel-divider);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  padding-top: 0.625rem;
+}
+
+.cli-fact {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 0.75rem;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.cli-fact > svg {
+  flex: none;
+  opacity: 0.65;
+}
+
+/* 路径胶囊：限宽省略，全文看 title 悬浮 */
+.cli-fact-path {
+  background: var(--tile-bg);
+  border-radius: 0.375rem;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  max-width: 18.75rem;
+  overflow: hidden;
+  padding: 0.0625rem 0.4375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 设置页图标容器：边界复用全局面板，图标颜色跟随主按钮的深浅主题语义色 */
@@ -630,7 +707,7 @@ body:has(.app-dialog-overlay) .window-control-button {
 .apple-main-card {
   margin: 0 3px 3px 0;
   border: 1px solid rgb(0 0 0 / 0.07);
-  border-radius: 0.75rem;
+  border-radius: 14px;
   background: var(--main-surface-bg);
 }
 
@@ -657,7 +734,7 @@ body:has(.app-dialog-overlay) .window-control-button {
   transition: background-color var(--motion-fast) ease-out, color var(--motion-fast) ease-out;
 }
 
-.window-control-button:hover {
+[data-window-controls-hover="true"] .window-control-button:hover {
   background: var(--hover-bg);
 }
 
@@ -666,7 +743,7 @@ body:has(.app-dialog-overlay) .window-control-button {
   height: 1rem;
 }
 
-.window-control-button--close:hover {
+[data-window-controls-hover="true"] .window-control-button--close:hover {
   background: #e81123;
   color: #ffffff;
 }
@@ -690,14 +767,14 @@ body:has(.app-dialog-overlay) .window-control-button {
   width: var(--sidebar-width-collapsed);
 }
 
-/* 侧边栏应用名 wordmark：Windows 自带几何字体 Bahnschrift + 黑白品牌色 */
+/* 侧边栏应用名 wordmark：优先系统字体 Corbel，不加载额外字体资源 */
 .apple-wordmark {
   color: #1c1c1e;
-  font-family: "Segoe UI Variable Display", "Bahnschrift", "Segoe UI", -apple-system, sans-serif;
+  font-family: "Corbel", "Segoe UI Variable Display", "Segoe UI", -apple-system, sans-serif;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  line-height: 1;
+  line-height: 1.2;
 }
 
 :root.dark .apple-wordmark {
@@ -722,7 +799,6 @@ body:has(.app-dialog-overlay) .window-control-button {
 .drag-dragging {
   background: var(--panel-bg);
   border-radius: 12px;
-  cursor: grabbing;
   opacity: 1;
   scale: 1.02;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
@@ -734,25 +810,211 @@ body:has(.app-dialog-overlay) .window-control-button {
   overflow: hidden;
 }
 
-.profile-card-actions--dragging {
-  opacity: 1;
+/* 按钮周围留白属于操作区；左侧缩窄，负 margin 同步抵消 padding，内容位置不变。 */
+.profile-list .profile-card-actions {
+  align-self: stretch;
+  cursor: default;
+  margin: -1.125rem -1.25rem -1.125rem calc(var(--gap-section) * -0.25);
+  padding: 1.125rem 1.25rem 1.125rem calc(var(--gap-section) * 0.25);
+}
+
+/* 操作行的模型/推理档位信息与常显按钮组保持间距 */
+.profile-card-action-meta {
+  align-items: center;
+  color: var(--text-primary);
+  display: inline-flex;
+  flex: 0 1 auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  gap: 0.375rem;
+  margin-inline-end: var(--gap-actions);
+  max-width: min(26vw, 18rem);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* 模型名单行截断（容器 nowrap） */
+.profile-card-action-meta__model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-model-default { font-weight: 500; }
+
+/* 模型与档位整体可点击；悬浮卡片沿用全局菜单定位、描边和阴影。 */
+.profile-model-trigger { position: relative; border-radius: 999px; padding: 0.375rem 0.625rem; cursor: pointer; }
+/* 原内容隐藏但保留占位，浮卡提示覆盖其上，药丸宽度不随提示文字改变。 */
+.profile-model-trigger[aria-expanded="true"] > :not(.profile-model-trigger__prompt) { visibility: hidden; }
+.profile-model-trigger__prompt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.profile-model-trigger:hover, .profile-model-trigger[aria-expanded="true"] { background: var(--secondary-button-hover-bg); }
+/* 关闭浮卡时底色立即消失，避免全局按钮淡出留下提示高亮。 */
+.profile-model-trigger[aria-expanded="false"] { transition-property: transform, opacity; }
+.profile-model-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.profile-model-trigger:disabled { cursor: not-allowed; }
+/* 模型列表与推理等级共用浮卡外壳，圆角比页面卡片略小。 */
+.app-select-menu.profile-model-popover { border-radius: calc(var(--radius-card) - 0.125rem); padding: calc(var(--gap-section) * 0.625); overflow-x: hidden; }
+/* 切换时保留浮卡外壳，内容轻移淡入，避免整张卡片透明重现造成闪烁。 */
+.profile-model-content { animation: profile-model-content-in var(--motion-popover) var(--motion-popover-in) both; }
+@keyframes profile-model-content-in {
+  from { opacity: 0.6; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) { .profile-model-content { animation: none; } }
+.profile-model-current { display: inline-flex; align-items: center; justify-content: center; gap: 0.125rem; min-width: 0; max-width: 100%; padding: 0.125rem 0.375rem; border-radius: var(--radius-control); color: var(--text-secondary); }
+.profile-model-current svg { flex-shrink: 0; }
+.profile-model-current span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 原生模型按钮的热区覆盖整个等级/模型标题区，复用原点击和键盘行为。 */
+.profile-model-current::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-control); }
+.profile-model-current:focus-visible { outline: none; }
+.profile-model-current:focus-visible::after { outline: 2px solid var(--accent); }
+.profile-model-option { padding-block: 0.25rem; }
+
+/* 原生 range 负责拖动/键盘，圆头与填色复用主题分段控件的动效 token。 */
+.reasoning-effort-slider { --effort-thumb-size: 1.75rem; --effort-track-height: 1.5rem; min-width: 0; }
+.reasoning-effort-slider__header { display: grid; grid-template-columns: var(--icon-button-size) minmax(0, 1fr) var(--icon-button-size); align-items: start; gap: 0.25rem; margin-bottom: calc(var(--gap-section) * 0.5); }
+.reasoning-effort-slider__heading { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; gap: 0.125rem; padding: 0.125rem; border-radius: var(--radius-control); transition: background-color var(--motion-fast) ease-out; }
+.reasoning-effort-slider__heading:is(:hover, :focus-within) { background: var(--secondary-button-hover-bg); }
+.reasoning-effort-slider strong { color: var(--effort-color); }
+/* 等级文字按顺序上下滚动并淡化；所有档位共用一格，宽度稳定且连续拖动可中途转向。 */
+.reasoning-effort-slider__label { display: grid; overflow: hidden; }
+.reasoning-effort-slider__label-step {
+  grid-area: 1 / 1;
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    transform var(--motion-layout) var(--motion-popover-in),
+    opacity var(--motion-layout) var(--motion-popover-in),
+    filter var(--motion-layout) var(--motion-popover-in);
+}
+.reasoning-effort-slider__label-step[data-current="true"] { opacity: 1; filter: blur(0); }
+.reasoning-effort-slider__header .apple-icon-button { color: var(--text-secondary); }
+.reasoning-effort-slider__header .profile-model-fast[aria-pressed="true"] { color: var(--accent); }
+.reasoning-effort-slider__track {
+  container-type: inline-size;
+  position: relative;
+  height: var(--effort-track-height);
+  border-radius: 999px;
+  background: var(--secondary-button-bg);
+  box-shadow: var(--card-edge-shadow);
+  isolation: isolate;
+}
+.reasoning-effort-slider__quota-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--reasoning-ultra); font-size: 13px; font-weight: 550; white-space: nowrap; opacity: 0; pointer-events: none; }
+.reasoning-effort-slider:has(.reasoning-effort-slider__quota-hint):has(input:active) .reasoning-effort-slider__quota-hint { opacity: 1; }
+.reasoning-effort-slider:has(.reasoning-effort-slider__quota-hint):has(input:active) .reasoning-effort-slider__heading > :not(.reasoning-effort-slider__quota-hint),
+.reasoning-effort-slider:has(.reasoning-effort-slider__quota-hint):has(input:active) .reasoning-effort-slider__leading,
+.reasoning-effort-slider:has(.reasoning-effort-slider__quota-hint):has(input:active) .reasoning-effort-slider__header > .apple-icon-button { visibility: hidden; }
+.reasoning-effort-slider__fill { position: absolute; inset: 0; border-radius: inherit; background: var(--effort-color); clip-path: inset(0 calc((1 - var(--effort-progress)) * (100cqw - var(--effort-thumb-size)) + var(--effort-thumb-size) / 2) 0 0); transition: clip-path var(--motion-segment-slide); pointer-events: none; }
+.reasoning-effort-slider[data-selected="false"] .reasoning-effort-slider__fill { opacity: 0; }
+.reasoning-effort-slider:has(input:focus-visible) strong { text-decoration: underline; text-underline-offset: 0.2em; }
+.reasoning-effort-slider__track input {
+  appearance: none;
+  position: absolute;
+  top: calc((var(--effort-track-height) - var(--effort-thumb-size)) / 2);
+  left: 0;
+  z-index: 1;
+  width: 100%;
+  height: var(--effort-thumb-size);
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.reasoning-effort-slider__track input::-webkit-slider-thumb { appearance: none; width: var(--effort-thumb-size); height: var(--effort-thumb-size); }
+.reasoning-effort-slider__track input::-moz-range-thumb { width: var(--effort-thumb-size); height: var(--effort-thumb-size); border: 0; }
+.reasoning-effort-slider__thumb-rail {
+  position: absolute;
+  top: calc((var(--effort-track-height) - var(--effort-thumb-size)) / 2);
+  left: calc(var(--effort-progress) * (100cqw - var(--effort-thumb-size)));
+  z-index: 3;
+  width: var(--effort-thumb-size);
+  height: var(--effort-thumb-size);
+  transition: left var(--motion-segment-slide);
   pointer-events: none;
 }
-
-.profile-card-actions > .apple-action-button {
-  height: var(--icon-button-size);
-  font-weight: 600;
+.reasoning-effort-slider__thumb { display: block; width: var(--effort-thumb-size); height: var(--effort-thumb-size); border-radius: 50%; background: #fff; box-shadow: var(--card-edge-shadow); transition: transform var(--motion-segment-slide); }
+/* 悬停圆头或拖动时保持放大，结束后沿同一过渡回落；不拦截原生 range 的拖动。 */
+.reasoning-effort-slider__track:is([data-thumb-hover], :has(input:active)):not(:has(input[aria-disabled="true"])) .reasoning-effort-slider__thumb { transform: scale(1.1); }
+/* 仅在拖动直写期间（track 带内联 --effort-progress）停播过渡，圆头逐帧贴住指针；
+   按下原生跳档、点击圆点与松手滑入都不带内联变量，照常平滑。 */
+.reasoning-effort-slider__track[style*="--effort-progress"] .reasoning-effort-slider__thumb-rail,
+.reasoning-effort-slider__track[style*="--effort-progress"] .reasoning-effort-slider__fill { transition: none; }
+/* 等级圆点可直接点选；当前圆点让出事件，使白色圆头仍由原生 range 拖动。 */
+.reasoning-effort-slider__stops { position: absolute; inset: 0; pointer-events: none; }
+.reasoning-effort-slider__stop { position: absolute; top: calc((var(--effort-track-height) - var(--effort-thumb-size)) / 2); left: calc(var(--effort-progress) * (100cqw - var(--effort-thumb-size))); z-index: 2; display: grid; place-items: center; width: var(--effort-thumb-size); height: var(--effort-thumb-size); border-radius: 50%; pointer-events: auto; cursor: pointer; }
+.reasoning-effort-slider__stop span { width: 0.25rem; height: 0.25rem; border-radius: 50%; background: var(--text-secondary); opacity: 0.4; transition: transform var(--motion-fast) ease-out, opacity var(--motion-fast) ease-out; }
+.reasoning-effort-slider__stop[data-filled="true"] span { background: #fff; }
+.reasoning-effort-slider__stop:is(:hover, :focus-visible) span { transform: scale(1.75); opacity: 1; }
+.reasoning-effort-slider__stop:focus-visible { outline: 2px solid var(--accent); }
+/* 选中不提前隐藏圆点，由移动中的圆头自然盖住；仅让出原生拖动事件。 */
+.reasoning-effort-slider__stop[aria-pressed="true"] { pointer-events: none; }
+.reasoning-effort-slider__gradient { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.04) 22%, rgb(255 255 255 / 0.14) 50%, rgb(255 255 255 / 0.04) 78%, transparent 100%); background-size: 220% 100%; filter: blur(1px); animation: effort-gradient-flow 1.6s linear infinite; pointer-events: none; }
+.reasoning-effort-slider__particles { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; opacity: var(--effort-energy); }
+.reasoning-effort-slider__particles::before, .reasoning-effort-slider__particles::after {
+  --effort-particle-span: 17rem;
+  content: "";
+  position: absolute;
+  /* 预留上下漂浮幅度和粒子半径，两种模式共用位置，切换不跳位。 */
+  inset: 6px calc(-1 * var(--effort-particle-span));
+  background-image:
+    radial-gradient(circle at 12% 17%, rgb(255 255 255 / 0.8) 1px, transparent 2px),
+    radial-gradient(circle at 21% 42%, rgb(255 255 255 / 0.6) 0.7px, transparent 1.7px),
+    radial-gradient(circle at 29% 71%, rgb(255 255 255 / 0.6) 0.7px, transparent 1.7px),
+    radial-gradient(circle at 43% 43%, rgb(255 255 255 / 0.7) 1.2px, transparent 2.2px),
+    radial-gradient(circle at 56% 84%, rgb(255 255 255 / 0.5) 0.6px, transparent 1.6px),
+    radial-gradient(circle at 63% 60%, rgb(255 255 255 / 0.7) 0.8px, transparent 1.8px),
+    radial-gradient(circle at 72% 29%, rgb(255 255 255 / 0.8) 1.4px, transparent 2.4px),
+    radial-gradient(circle at 84% 62%, rgb(255 255 255 / 0.6) 0.9px, transparent 1.9px),
+    radial-gradient(circle at 96% 51%, rgb(255 255 255 / 0.5) 0.6px, transparent 1.6px);
+  background-size: var(--effort-particle-span) 100%;
+  background-repeat: repeat-x;
+  animation: effort-particle-drift calc(var(--effort-particle-duration) * 2) linear infinite,
+    effort-particle-float 9.5s ease-in-out infinite;
+  animation-play-state: running, paused;
+}
+.reasoning-effort-slider__particles::after {
+  --effort-particle-span: 13rem;
+  background-image:
+    radial-gradient(circle at 7% 58%, rgb(255 255 255 / 0.6) 1px, transparent 2px),
+    radial-gradient(circle at 23% 72%, rgb(255 255 255 / 0.6) 0.7px, transparent 1.7px),
+    radial-gradient(circle at 38% 24%, rgb(255 255 255 / 0.8) 0.6px, transparent 1.6px),
+    radial-gradient(circle at 48% 54%, rgb(255 255 255 / 0.6) 0.7px, transparent 1.7px),
+    radial-gradient(circle at 61% 78%, rgb(255 255 255 / 0.5) 0.8px, transparent 1.8px),
+    radial-gradient(circle at 74% 16%, rgb(255 255 255 / 0.6) 0.7px, transparent 1.7px),
+    radial-gradient(circle at 89% 39%, rgb(255 255 255 / 0.7) 1.2px, transparent 2.2px),
+    radial-gradient(circle at 96% 68%, rgb(255 255 255 / 0.5) 0.6px, transparent 1.6px);
+  opacity: 0.6;
+  animation-duration: calc(var(--effort-particle-duration) * 2.7), 15.5s;
+  animation-delay: -3s, 0s;
+}
+/* 保留两段动画的当前位置，Fast 切换只暂停/继续；两层漂浮节奏错开。 */
+.reasoning-effort-slider__particles[data-floating="true"]::before,
+.reasoning-effort-slider__particles[data-floating="true"]::after { animation-play-state: paused, running; }
+.reasoning-effort-slider[data-selected="false"] .reasoning-effort-slider__particles::before,
+.reasoning-effort-slider[data-selected="false"] .reasoning-effort-slider__particles::after { animation-play-state: paused; }
+/* 禁用光标只给滑轨；档位圆点在保存 busy 的一瞬也会短暂禁用，标 not-allowed 会让点击处闪红色光标。 */
+.reasoning-effort-slider input[aria-disabled="true"] { cursor: not-allowed; }
+/* 圆点豁免全局禁用光标：busy 瞬间的短暂禁用不该在点击处闪红。 */
+.reasoning-effort-slider__stop:disabled { cursor: pointer; }
+/* 保存 busy 期间浮卡整体静默：点选后的圆点会让出事件、指针落到 aria-disabled 的滑轨上，
+   瞬态禁用一律不显示禁用光标；浮卡之外真正禁用的场景不受影响。 */
+.profile-model-popover[aria-busy="true"] :is(button:disabled, [aria-disabled="true"]) { cursor: pointer; }
+@keyframes effort-particle-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(calc(-1 * var(--effort-particle-span)), 0, 0); } }
+@keyframes effort-particle-float {
+  0%, 100% { translate: 0 0; }
+  13% { translate: 2px -3px; }
+  37% { translate: -1px 3px; }
+  58% { translate: 2px 1px; }
+  79% { translate: -2px -2px; }
+}
+@keyframes effort-gradient-flow { from { background-position: -100% 0; } to { background-position: 100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-effort-slider__thumb-rail, .reasoning-effort-slider__thumb, .reasoning-effort-slider__fill, .reasoning-effort-slider__quota-hint, .reasoning-effort-slider__label-step { transition: none; }
+  .reasoning-effort-slider__gradient,
+  .reasoning-effort-slider__particles::before, .reasoning-effort-slider__particles::after { animation: none; }
 }
 
-.profile-list > .apple-group.is-drag-hover .profile-card-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transition: none;
-}
-
-/* 拖拽期间全局禁止文本选中，防止路过卡片时标题/内容被框选 */
+/* 实际拖拽开始后统一抓手光标并禁止文本选中，结束时恢复。 */
 body.drag-active,
 body.drag-active * {
+  cursor: grabbing !important;
   user-select: none !important;
   -webkit-user-select: none !important;
 }
@@ -768,7 +1030,7 @@ body.drag-active * {
 }
 
 .apple-sidebar-label {
-  max-width: 160px;
+  max-width: 9.5rem;
   overflow: hidden;
   opacity: 1;
   transition:
@@ -777,30 +1039,10 @@ body.drag-active * {
   white-space: nowrap;
 }
 
-/* 侧栏分组：用边线分隔产品区域，收缩后保留品牌标识 */
-.apple-sidebar-group + .apple-sidebar-group {
+/* 侧栏内容区：只把两个客户端与下方功能入口分开 */
+.apple-sidebar-group--content {
   border-top: 1px solid var(--panel-border);
   padding-top: 0.75rem;
-}
-
-.apple-sidebar-group-label {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font-size: 11px;
-  font-weight: 500;
-  gap: 0.5rem;
-  height: 1.5rem;
-  letter-spacing: 0.05em;
-  padding: 0 var(--sidebar-nav-padding);
-  margin-bottom: 0.25rem;
-  text-transform: uppercase;
-}
-
-.apple-sidebar-group-label img {
-  width: var(--sidebar-icon-size);
-  height: var(--sidebar-icon-size);
-  flex-shrink: 0;
 }
 
 .apple-sidebar-flyout {
@@ -830,16 +1072,19 @@ body.drag-active * {
   transform: translate(0, -50%);
 }
 
-/* 侧边栏品牌按钮浮标：锚定品牌行（宽度随侧边栏自适应），
+/* 侧边栏品牌和收起按钮浮标：锚定品牌行（宽度随侧边栏自适应），
    展开时浮标在侧边栏右缘外、收缩时在栏外右侧；两种状态悬停都显示动作提示 */
-.apple-sidebar-brand + .apple-sidebar-flyout {
+.apple-sidebar-brand + .apple-sidebar-flyout,
+.apple-sidebar-collapse + .apple-sidebar-flyout {
   /* 品牌行高 36px，浮标保持在行垂直中心（基类 top: 50%） */
   /* 与其他按钮浮标一致：距侧边栏右缘 3.6px（导航按钮 mx-1.5 内缩 6px + 0.6rem 间距） */
   left: calc(100% + 0.225rem);
 }
 
 .apple-sidebar-brand:hover + .apple-sidebar-flyout,
-.apple-sidebar-brand:focus-visible + .apple-sidebar-flyout {
+.apple-sidebar-brand:focus-visible + .apple-sidebar-flyout,
+.apple-sidebar-collapse:hover + .apple-sidebar-flyout,
+.apple-sidebar-collapse:focus-visible + .apple-sidebar-flyout {
   opacity: 1;
   transform: translate(0, -50%);
 }
@@ -850,7 +1095,8 @@ body.drag-active * {
 
 .app-selection-state:not([data-active="true"]):hover,
 .app-selection-state:not([data-active="true"]):focus-visible { background: var(--hover-bg); }
-.app-selection-state[data-active="true"] { background: var(--active-bg); color: var(--accent); }
+.app-selection-state[data-active="true"] { background: var(--active-bg); }
+.app-select-option[data-active="true"] { color: var(--accent); }
 
 .apple-sidebar-nav-button {
   align-items: center;
@@ -868,12 +1114,12 @@ body.drag-active * {
   transition:
     gap var(--motion-sidebar) cubic-bezier(0.22, 1, 0.36, 1),
     padding var(--motion-sidebar) cubic-bezier(0.22, 1, 0.36, 1),
-    background-color var(--motion-fast) ease-out,
-    color var(--motion-fast) ease-out;
+    background-color var(--motion-fast) ease-out;
 }
 
 /* 图标包在角标锚点 span 里（MCP 角标/通用 badge），不能用 > 直接子选择器 */
-.apple-sidebar-nav-button svg {
+.apple-sidebar-nav-button svg,
+.apple-sidebar-nav-button img {
   width: var(--sidebar-icon-size);
   height: var(--sidebar-icon-size);
   flex-shrink: 0;
@@ -881,19 +1127,6 @@ body.drag-active * {
 
 .update-notice {
   position: relative;
-}
-
-.update-notice-trigger__icon {
-  transition: transform var(--motion-fast) ease-out;
-}
-
-.update-notice-trigger:hover .update-notice-trigger__icon,
-.update-notice-trigger:focus-visible .update-notice-trigger__icon {
-  transform: scale(1.04);
-}
-
-.update-notice-trigger:active .update-notice-trigger__icon {
-  transform: scale(0.94);
 }
 
 /* 供应商页头的产品标识与侧栏分组共用现有 logo 资源，保持同一品牌层级。 */
@@ -916,14 +1149,10 @@ body.drag-active * {
 }
 
 .update-notice--sidebar {
-  flex-shrink: 0;
-  margin-top: auto;
-  padding: 0.75rem 0.375rem;
+  margin-bottom: 0.25rem;
 }
 
-/* 侧栏导航标签不设 color：深浅两色都继承 body（浅 #1c1c1e / 深 #ffffff），激活项继承按钮的 text-accent。
-   这里曾有一条 :root.dark 写死 #ffffff 的规则——它与 body 深色值重复，却因「直接规则压过继承」
-   把激活态的 accent 截胡，导致深色下激活项不变色。不要再加回来。 */
+/* 侧栏导航标签不设 color：深浅两色都继承 body（浅 #1c1c1e / 深 #ffffff），激活项也不单独变色。 */
 
 .apple-sidebar--collapsed .apple-sidebar-label {
   max-width: 0;
@@ -932,7 +1161,7 @@ body.drag-active * {
 
 .apple-sidebar--collapsed .apple-sidebar-nav-button {
   gap: 0;
-  /* 36px 按钮内 18px 图标居中：padding 9px 可过渡，避免 justify-content 瞬间切换造成撞边弹回 */
+  /* 图标居中靠对称 padding 过渡完成，避免 justify-content 瞬间切换造成撞边弹回 */
   padding-left: var(--sidebar-nav-padding);
   padding-right: var(--sidebar-nav-padding);
 }
@@ -946,7 +1175,8 @@ body.drag-active * {
 
 /* 品牌按钮（logo+名字）：复用导航按钮的固定图标锚点，收缩时只保留 Logo */
 .apple-sidebar-brand {
-  gap: 0.1875rem;
+  /* logo 缩小 2px 后补 1px 间距，保持 Agmux 文本的起始位置不变 */
+  gap: 0.25rem;
   height: 2.25rem;
   transform: translateY(-0.375rem);
   /* logo 放大后按尺寸差减半，保持中心与导航按钮图标共线 */
@@ -975,6 +1205,30 @@ body.drag-active * {
   font-weight: 600;
   letter-spacing: -0.015em;
   line-height: 1.2;
+}
+
+/* 插件 / MCP / Skill 页头统一：名称 · 总数，Skill 额外显示两端启用数。 */
+.management-page-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.management-page-title--compact { gap: 0.375rem; }
+
+.management-page-title__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+
+.management-page-title__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  white-space: nowrap;
 }
 
 /* 页面顶部返回栏：全宽出血越过 main 的 px-8、负上边距顶到窗口顶部，
@@ -1019,6 +1273,8 @@ body.drag-active * {
 }
 
 .apple-edit-toolbar--footer {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: flex-end;
   gap: var(--gap-actions);
@@ -1051,10 +1307,14 @@ body.drag-active * {
   overflow-x: hidden;
   overflow-y: auto;
   padding-left: var(--gap-main);
-  padding-right: calc(var(--gap-main) - 8px);
+  /* Chromium 在 scrollbar-gutter: stable + 8px 自定义滚动条下实际占用 10px，
+     扣除真实槽宽后，正文左右可见留白才完全相等。 */
+  padding-right: calc(var(--gap-main) - 10px);
   padding-bottom: var(--gap-section);
   padding-top: var(--gap-page);
   position: relative;
+  /* 将编辑器的定位图层限制在正文叠层内，避免滚动时代码盖过底部操作栏。 */
+  isolation: isolate;
   scrollbar-gutter: stable;
   /* 滚到边界不向 main/窗口传导（滚动链阻断），窗口级滚动条不会被动触发 */
   overscroll-behavior: contain;
@@ -1089,9 +1349,8 @@ body.drag-active * {
   padding-bottom: 0;
 }
 
-/* 平铺网格：列数随可用宽度自适应（auto-fill），不写断点阶梯——阶梯让密度随窗口
-   跳变，且末行按固定列数留空。图标选择页（图标主导）与预设网格（图标+名称）共用，
-   行距与列宽策略只在此定义，页面不得内联重写。 */
+/* 平铺网格默认随可用宽度自适应（auto-fill），供应商选择按下方窗口状态规则固定列数。
+   图标选择页与供应商网格共用基础行距；列宽策略集中在此，页面不内联重写。 */
 .apple-tile-grid {
   display: grid;
   gap: 0.375rem;
@@ -1101,6 +1360,16 @@ body.drag-active * {
 /* 图标 + 名称的预设行需要更宽的最小列（默认值服务图标主导的纯方块网格） */
 .apple-tile-grid--labeled {
   grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+}
+
+/* 供应商网格普通窗口两列，视口超过 96rem（最大化、全屏或手动拉宽）时四列。 */
+.apple-tile-grid--providers {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 96rem) {
+  .apple-tile-grid--providers {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* 结构性防呆：首卡片间距只来自上方 padding-top（--gap-page），任何首子元素
@@ -1168,7 +1437,7 @@ body.drag-active * {
   align-items: center;
   gap: 0.375rem;
   border-radius: 0.5rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
   text-align: left;
   transition: background-color 150ms ease-out;
 }
@@ -1306,37 +1575,31 @@ body.drag-active * {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
 
-.profile-list > .apple-group,
-.profile-drag-preview {
+.profile-list > .apple-group {
   border-radius: var(--radius-card);
 }
 
-.profile-list > .apple-group.brand-gradient-surface .profile-card-content__text,
-.profile-drag-preview.brand-gradient-surface .profile-card-content__text {
+.profile-list > .apple-group.brand-gradient-surface .profile-card-content__text {
   color: var(--text-primary);
 }
 
-.profile-list > .apple-group.brand-gradient-surface .profile-card-meta,
-.profile-drag-preview.brand-gradient-surface .profile-card-meta {
+.profile-list > .apple-group.brand-gradient-surface .profile-card-meta {
   color: var(--text-secondary);
 }
 
-.profile-list > .apple-group.brand-gradient-surface .profile-card-meta .apple-chip,
-.profile-drag-preview.brand-gradient-surface .profile-card-meta .apple-chip {
-  border-color: color-mix(in srgb, var(--primary-button-bg) 22%, transparent);
+.profile-list > .apple-group.brand-gradient-surface .profile-card-meta .apple-chip {
+  border-color: transparent;
   background: var(--main-surface-bg);
   color: color-mix(in srgb, var(--primary-button-bg) 82%, transparent);
 }
 
-.profile-list > .apple-group.brand-gradient-surface .profile-card-meta .apple-chip:hover,
-.profile-drag-preview.brand-gradient-surface .profile-card-meta .apple-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+.profile-list > .apple-group.brand-gradient-surface .profile-card-meta .apple-chip:hover {
+  border-color: transparent;
+  background: var(--hover-bg);
 }
 
 .profile-list > .apple-group.brand-gradient-surface .profile-card-content__text .apple-icon-button,
-.profile-list > .apple-group.brand-gradient-surface .profile-card-actions > .apple-icon-button:not(.profile-card-delete),
-.profile-drag-preview.brand-gradient-surface .profile-card-content__text .apple-icon-button,
-.profile-drag-preview.brand-gradient-surface .profile-card-actions > .apple-icon-button:not(.profile-card-delete) {
+.profile-list > .apple-group.brand-gradient-surface .profile-card-action-buttons > .apple-icon-button:not(.app-button--primary) {
   color: var(--text-primary);
 }
 
@@ -1348,29 +1611,62 @@ body.drag-active * {
   color: var(--success-text);
 }
 
-.profile-list > .apple-group.brand-gradient-surface .profile-card-actions > .apple-icon-button.profile-card-delete {
-  color: var(--danger);
-}
-
-.profile-list > .apple-group.brand-gradient-surface .profile-card-actions > .app-button--primary:disabled {
+.profile-list > .apple-group.brand-gradient-surface .profile-card-action-buttons > .app-button--primary:disabled {
   opacity: 0.9;
 }
 
-.profile-list > .apple-group:not(.is-active):hover {
-  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+/* 不可交互的拖拽副本沿用卡片悬停描边。 */
+.profile-list > .apple-group:hover,
+.profile-drag-preview {
+  outline: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-.profile-drag-preview.is-active {
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+:root.dark .profile-list > .apple-group:hover,
+:root.dark .profile-drag-preview {
+  outline-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
-:root.dark .profile-list > .apple-group:not(.is-active):hover {
-  outline-color: color-mix(in srgb, var(--accent) 65%, transparent);
+/* 共享分段切换：复用卡片描边，保留滑块及颜色过渡，字体沿用调用方样式。 */
+.app-segmented-control {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--segment-count), minmax(0, 1fr));
+  padding: 3px;
+  background: var(--secondary-button-bg);
+  border-radius: 0.75rem;
 }
 
-.apple-segmented-control {
-  background: var(--input-bg);
+.app-segmented-control::before {
+  content: "";
+  position: absolute;
+  inset: 3px auto 3px 3px;
+  width: calc((100% - 6px) / var(--segment-count));
+  border-radius: 0.625rem;
+  background: var(--main-surface-bg);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  transform: translateX(calc(var(--segment-index) * 100%));
+  transition: transform var(--motion-segment-slide), background-color 210ms ease;
 }
+
+:root.dark .app-segmented-control::before { background: var(--secondary-button-hover-bg); }
+
+.app-segmented-control > button {
+  position: relative;
+  height: 100%;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--text-secondary);
+  user-select: none;
+  transition: color 210ms ease;
+}
+
+.app-segmented-control > button:hover { background: transparent; color: var(--text-primary); }
+.app-segmented-control > button:is([aria-pressed="true"], [aria-selected="true"]) { color: var(--text-primary); }
+.app-segmented-control > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 手动输入的供应商地址不冒充已选官方端点；保留分段按钮以便恢复预设。 */
+.provider-preset-controls[data-custom="true"] .app-segmented-control::before { opacity: 0; }
 
 .apple-action-button {
   align-items: center;
@@ -1420,15 +1716,26 @@ body.drag-active * {
   line-height: 1;
 }
 
-/* 侧栏导航行的宿主是 18px 图标（不是药丸按钮），角标按宿主等比缩小，
-   只覆盖尺寸相关项；角标本体仍用上面那一份定义，不另写一套 */
-.apple-sidebar-nav-button .apple-count-badge {
-  top: -4px;
-  right: -4px;
+/* MCP 差异数跟在客户端名称之后，保留小圆徽标且不覆盖 Logo。 */
+.mcp-target-switch .apple-count-badge {
+  position: static;
+  flex-shrink: 0;
   min-width: 0.875rem;
   height: 0.875rem;
-  border-width: 1.5px;
+  border-width: 0;
   font-size: 9px;
+}
+
+.apple-sidebar-update-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 0.5625rem;
+  height: 0.5625rem;
+  border: 1.5px solid var(--sidebar-bg);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .apple-action-button:disabled {
@@ -1487,8 +1794,12 @@ body.drag-active * {
   background: transparent;
   border-radius: 0;
   box-shadow: none;
-  padding: 1rem 0;
+  padding-inline: 0;
 }
+
+/* 列表行与 Skill 表格单元格共用纵向留白，保持同一行高规则。 */
+.apple-list-card .apple-list-row,
+.skills-table td { padding-block: 1rem; }
 
 /* MCP 卡片展开体（工具面板/差异详情共用）：去掉 body 顶部内边距，内容紧贴卡片头 */
 .mcp-tools-disclosure.apple-disclosure--open .apple-disclosure__body { padding-top: 0; }
@@ -1518,8 +1829,7 @@ body.drag-active * {
   background: color-mix(in srgb, var(--profile-chip-bg) 45%, transparent);
 }
 
-.apple-toolbar-group,
-.apple-segmented-control {
+.apple-toolbar-group {
   border-radius: 999px;
 }
 
@@ -1535,43 +1845,23 @@ body.drag-active * {
   background: var(--hover-bg);
 }
 
-/* MCP 类型切换只保留当前项高亮，按钮位置保持固定。 */
-.mcp-target-switch {
-  height: var(--toolbar-control-height);
-  box-sizing: border-box;
-}
-
-.mcp-target-switch > .apple-action-button {
-  flex: 1 1 0%;
-  min-width: 0;
-  background: transparent;
-  transition: none;
-}
-
-.mcp-target-switch > .apple-action-button:not([aria-selected="true"]) {
-  background: transparent;
-  color: var(--text-primary);
-}
-
-.mcp-target-switch > .apple-action-button:not([aria-selected="true"]):is(:hover, :focus-visible):not(:disabled) {
-  background: transparent;
-  color: var(--text-primary);
-}
-
-.mcp-target-switch > .apple-action-button[aria-selected="true"] {
-  background: var(--primary-button-bg);
-  color: var(--primary-button-text);
-}
-
-.mcp-target-switch > .apple-action-button[aria-selected="true"]:is(:hover, :focus-visible):not(:disabled) {
-  background: var(--primary-button-hover-bg);
-  color: var(--primary-button-text);
-}
+/* Skill 管理表格：表头计数与客户端开关共用列宽，沿用列表的行距、分割线和按钮尺寸。 */
+.skills-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.skills-table-client { width: calc(var(--icon-button-size) * 2); }
+.skills-table-action { width: calc(var(--icon-button-size) + 0.5rem); }
+.skills-table th { padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--panel-border); }
+.skills-table td { padding-inline: 0.25rem; }
+.skills-table th, .skills-table td { text-align: center; }
+.skills-table th:first-child, .skills-table td:first-child { text-align: left; }
+.skills-table tbody tr + tr td { border-top: 1px solid var(--panel-border); }
+.skills-table .apple-icon-button { margin-inline: auto; }
+/* 名称按钮使用块布局，去掉行内基线空隙，避免额外撑高表格行。 */
+.skills-table td:first-child > button { display: block; }
 
 /* MCP 差异页：行级 diff 的代码区域容器——背景/描边对齐编辑页输入框（.app-input），把变更代码块与卡片头部区分开 */
 .mcp-diff-block {
   display: grid;
-  gap: 2px;
+  gap: 0;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-control);
@@ -1579,22 +1869,33 @@ body.drag-active * {
 }
 
 /* 变更行——红/绿只做背景高亮，行内文字保持正文同色（VS Code 变更行语义）。
-   负外边距抵消水平内边距：高亮圈外扩 6px，文字仍与未变更行同列，不产生伪缩进 */
+   高亮向两侧外扩 6px；同色连续行合成色块，块间保留 1.5px 间距 */
 .mcp-diff-line--del,
 .mcp-diff-line--add {
-  width: fit-content;
-  max-width: 100%;
   margin-inline: -6px;
-  border-radius: var(--radius-control-sm);
+  border-radius: 0;
   padding: 2px 6px;
 }
 
-.mcp-diff-line--del { background: color-mix(in srgb, var(--danger) 20%, transparent); }
-.mcp-diff-line--add { background: color-mix(in srgb, var(--success) 20%, transparent); }
+/* 整块新增/删除的高亮自身使用小圆角，行级 diff 仍保持连续背景。 */
+pre.mcp-diff-line--del,
+pre.mcp-diff-line--add {
+  border-radius: var(--radius-control-sm);
+}
+
+.mcp-diff-block > div + div { margin-top: 1.5px; }
+
+.mcp-diff-block > .mcp-diff-line--del + .mcp-diff-line--del,
+.mcp-diff-block > .mcp-diff-line--add + .mcp-diff-line--add {
+  margin-top: 0;
+}
+
+.mcp-diff-line--del { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+.mcp-diff-line--add { background: color-mix(in srgb, var(--success) 18%, transparent); }
 
 /* 暗色底上 15% 混合会闷成暗块，单独提浓度保证红绿可辨 */
-:root.dark .mcp-diff-line--del { background: color-mix(in srgb, var(--danger) 32%, transparent); }
-:root.dark .mcp-diff-line--add { background: color-mix(in srgb, var(--success) 32%, transparent); }
+:root.dark .mcp-diff-line--del { background: color-mix(in srgb, var(--danger) 30%, transparent); }
+:root.dark .mcp-diff-line--add { background: color-mix(in srgb, var(--success) 30%, transparent); }
 
 .apple-editor-shell {
   min-width: 0;
@@ -1641,7 +1942,7 @@ body.drag-active * {
   background: rgb(255 255 255 / 0.06);
 }
 
-/* 附属条内 ghost 控件：无描边、hover 才显底、选中转 accent，保持比 tab 低一档的权重 */
+/* 附属条内 ghost 控件：无描边、hover 才显底，保持比 tab 低一档的权重 */
 .editor-ghost {
   display: inline-flex;
   align-items: center;
@@ -1707,10 +2008,6 @@ body.drag-active * {
 /* 组内子控件不单独刷底色，hover 只亮整组一层 */
 .editor-ghost-group > .editor-ghost:hover {
   background: transparent;
-}
-
-.editor-ghost.on {
-  color: var(--accent);
 }
 
 .editor-ghost:disabled,
@@ -1800,11 +2097,10 @@ button:focus-visible {
   outline: none;
 }
 
-/* 切主题期间冻结全部过渡：侧边栏按钮等 transition-colors 在主题翻转时
-   会产生 150ms 颜色渐变（文字/图标尾帧闪烁），冻结后整页同帧切换、无动画 */
-.theme-switching *,
-.theme-switching *::before,
-.theme-switching *::after {
+/* 切主题期间冻结页面过渡，防文字/图标尾帧闪烁；共享分段组件保留位移与颜色过渡。 */
+.theme-switching *:not(.app-segmented-control, .app-segmented-control *),
+.theme-switching *:not(.app-segmented-control, .app-segmented-control *)::before,
+.theme-switching *:not(.app-segmented-control, .app-segmented-control *)::after {
   transition: none !important;
 }
 
@@ -1814,6 +2110,11 @@ button:focus-visible {
   *::after {
     scroll-behavior: auto !important;
   transition-duration: 1ms !important;
+  }
+
+  .app-segmented-control::before,
+  .app-segmented-control > button {
+    transition: none;
   }
 
   /* 进场动画的 reduced-motion 豁免在 AppShell 的 animatePageEnter 内处理 */
@@ -1948,14 +2249,14 @@ button:focus-visible {
   justify-content: center;
   gap: 9px;
   /* 升级弹窗专用渐变：新 logo 图标底紫渐变的满铺放大（电紫深空），底部淡紫光晕托住 logo，
-     白色手绘涂鸦在深底上更清晰；深底白字，深浅主题保持同一配色。demo：归档/update-hero-gradient-demo.html 方案 B */
+     白色手绘涂鸦在深底上更清晰；深底白字，深浅主题保持同一配色。demo：work/update-hero-gradient-demo.html 方案 B */
   background:
     radial-gradient(85% 115% at 50% 120%, rgb(197 130 252 / 0.38), transparent 62%),
     linear-gradient(120deg, #1c0cba 0%, #4520e6 46%, #7a3cf4 80%, #a468fb 100%);
 }
 
 /* 头部装饰涂鸦平铺（关于页头部、升级弹窗头部）：白描边手绘图案铺满宿主，opacity 低速纹理，
-   单色白在深浅主题的渐变底上都作装饰；demo 源：归档/update-hero-doodle-demo.html */
+   单色白在深浅主题的渐变底上都作装饰；demo 源：work/update-hero-doodle-demo.html */
 .hero-doodles {
   position: absolute;
   inset: 0;
@@ -2023,7 +2324,7 @@ button:focus-visible {
   padding: 1rem var(--gap-card-inline) var(--dialog-pad-bottom);
 }
 
-/* ChatGPT 添加账号弹窗（卡片式 OAuth 登录，视觉源：归档/demo1.html 一比一复刻）。
+/* ChatGPT 添加账号弹窗（卡片式 OAuth 登录，视觉源：work/demo1.html 一比一复刻）。
    按钮与文字色直接复用全局 token（demo 与主题同源）；弹窗专属的表面/描边/阴影/图标色按浅深两套定义在自身作用域。 */
 .oauth-modal {
   --oauth-modal-surface: rgba(255, 255, 255, 0.82);
@@ -2344,7 +2645,7 @@ button:focus-visible {
   color: var(--primary-button-text);
 }
 
-.app-button--primary:hover {
+.app-button--primary:hover:not(:disabled) {
   background: var(--primary-button-hover-bg);
 }
 
@@ -2511,7 +2812,7 @@ button:focus-visible {
   min-width: 0;
 }
 
-/* 模型映射表的选择器只保留箭头；展开菜单固定为宽卡片，避免长模型 ID 被按钮截断。 */
+/* 方形触发器：模型映射表的选择器只保留箭头；复选菜单语义下显示 ⋯（更多操作），展开菜单固定为箭头卡片。 */
 .app-select-wrap--icon {
   width: 2.5rem;
   min-width: 2.5rem;
@@ -2574,7 +2875,49 @@ button:focus-visible {
 .app-select:disabled { cursor: not-allowed; opacity: 0.5; }
 .app-select__label { display: flex; min-width: 0; min-height: 1.6em; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-select-wrap[data-open="true"] { z-index: 30; }
-.app-select-wrap[data-open="true"] .app-select__icon { color: var(--accent); transform: rotate(180deg); }
+.app-select-wrap[data-open="true"] .app-select__icon { color: var(--accent); }
+/* 展开时只旋转下拉箭头，三点菜单图标保持原方向。 */
+.app-select-wrap:not(.app-select-wrap--icon)[data-open="true"] .app-select__icon { transform: rotate(180deg); }
+
+/* 浮层进场：等比 scale + 淡入。变换原点由 useFixedMenuPosition 通过
+   --app-popover-origin 注入（贴触发按钮那一侧的角），此处只给不注入时的兜底值。
+   卡片因此像从按钮所在的角"胀开"，而不是一律从左上角。 */
+.app-popover {
+  transform-origin: var(--app-popover-origin, 0 0);
+}
+
+.app-popover[data-popover-in] {
+  animation: app-popover-in var(--motion-popover) var(--motion-popover-in) both;
+}
+
+/* 缩放幅度取 0.8：与上游 antZoomBigIn 一致。曾试过收到 0.9（起点更贴近终态、
+   动画期间可点区域更大），但 10% 幅度叠加强透明度渐变后，视觉上退化成纯淡入，
+   丢掉了"从触发按钮所在角胀开"的空间感——那正是这套动效的辨识度所在。 */
+@keyframes app-popover-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* 浮层出场：反向播放。当前只供悬停提示卡（AppTooltip）使用——
+   它靠 exiting 状态让节点在关闭后多活一帧，动画播完才卸载。
+   点击触发的浮层（AppSelect / EndpointField / 行内 ⋯ 菜单）不挂这条：
+   关闭即收，用基础类的短淡出即可，不叠加缩放。 */
+.app-popover[data-popover-out] {
+  animation: app-popover-out var(--motion-popover) var(--motion-popover-out) both;
+}
+
+@keyframes app-popover-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.8); }
+}
+
+/* 尊重系统"减少动态效果"：浮层直接出现/消失，不做缩放。 */
+@media (prefers-reduced-motion: reduce) {
+  .app-popover[data-popover-in],
+  .app-popover[data-popover-out] {
+    animation: none;
+  }
+}
 
 .app-select-menu {
   position: fixed;
@@ -2595,14 +2938,28 @@ button:focus-visible {
   border-radius: var(--radius-control);
   background: var(--panel-bg);
   padding: 0.3rem;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 0 0 1px var(--panel-ring);
+  /* 菜单浮卡复用浅深主题的卡片描边，内描边叠在自身底色上。 */
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), inset var(--card-edge-shadow);
   opacity: 0;
   pointer-events: none;
+  /* 进场走 .app-popover 的 app-popover-in 关键帧（等比缩放 + 淡入）。
+     关闭没有出场关键帧——菜单点掉即收，节点虽常驻，但这一类浮层的出场
+     用基础类原有的短淡出即可，不额外引入缩放，避免与进场观感割裂。 */
   transition: opacity 150ms ease-out, visibility 180ms;
   visibility: hidden;
 }
 
 .app-select-menu[data-open="true"] { opacity: 1; pointer-events: auto; visibility: visible; }
+
+/* 搜索在下拉框顶部，只有下方选项列表滚动。 */
+.app-select-menu--searchable { display: flex; flex-direction: column; overflow: hidden; }
+.app-select-search { position: relative; height: var(--control-height); flex-shrink: 0; border-bottom: 1px solid var(--panel-divider); }
+.app-select-search:focus-within > svg { color: var(--accent); }
+.app-select-search input { width: 100%; height: 100%; border: 0; background: transparent; padding: 0 2.25rem; color: inherit; font: inherit; outline: none; }
+.app-select-search input::placeholder { color: var(--text-secondary); }
+.app-select-options { position: relative; display: grid; gap: 0.125rem; min-height: 0; overflow-y: auto; }
+/* 清空搜索复用项目图标按钮，隐藏浏览器自带的清空控件。 */
+.app-select-search input::-webkit-search-cancel-button { display: none; }
 
 .app-select-option {
   display: flex;
@@ -2786,19 +3143,12 @@ button:focus-visible {
 .apple-disclosure--open .apple-disclosure__body { margin-bottom: -3px; padding-top: var(--gap-section); padding-bottom: 3px; }
 .apple-disclosure--open .apple-disclosure__icon { color: var(--accent); transform: rotate(90deg); }
 
-/* MCP 高级选项：与设置页自动备份小卡一致，纯描边无背景，只靠边缘划分归属。 */
-.mcp-advanced-disclosure {
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-control);
-  padding: 0.375rem var(--gap-section);
-}
-
-/* 标题行收紧为贴近单行文字高度，去掉大卡片式留白。 */
-.mcp-advanced-disclosure .apple-disclosure__summary { min-height: 1.75rem; }
-
-.mcp-advanced-disclosure.apple-disclosure--open .apple-disclosure__body {
-  padding-top: 0.75rem;
-  padding-bottom: var(--gap-section);
+/* 代理地址区内部已有留白：纵向间距固定，展开收起只走共享的高度与透明度动画。 */
+.proxy-address-disclosure .apple-disclosure__content,
+.proxy-address-disclosure .apple-disclosure__body {
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .app-input {
@@ -2811,6 +3161,9 @@ button:focus-visible {
   color: inherit;
   font: inherit;
   outline: none;
+  /* 常驻与聚焦光环（:focus 的 0 0 0 3px）等大的透明外阴影：聚焦/失焦切换时阴影绘制区域不变，
+     规避 WebView2 150% 缩放下失焦重绘圆整漏掉光环最外一行 AA 像素、留下描边残留的问题。 */
+  box-shadow: 0 0 0 3px transparent;
 }
 
 /* 药丸形输入变体：搜索框等筛选入口用，高度对齐标题栏胶囊、预留左侧图标位，其余沿用 .app-input */
@@ -2820,6 +3173,9 @@ button:focus-visible {
   border-radius: 999px;
   padding-left: 2rem;
 }
+
+/* 搜索框灰色描边画在内部，避免缩放后边框外侧出现浅色细线。 */
+.app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border), 0 0 0 3px transparent; }
 
 /* 文本域沿用旧版 NInput：隐藏原生滚动条，保留滚轮滚动和右下角调整大小。 */
 textarea.app-input {
@@ -3080,11 +3436,4 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   .apple-disclosure__content,
   .apple-disclosure__body,
   .apple-disclosure__icon { animation: none !important; transition: none !important; }
-}
-
-/* 设置页标签栏下划线指示条动画 */
-.settings-tab-indicator {
-  transition:
-    left 160ms cubic-bezier(0.22, 1, 0.36, 1),
-    width 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }

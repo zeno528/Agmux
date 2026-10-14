@@ -1,30 +1,31 @@
-use super::profile_config::{is_builtin_placeholder, provider_api_key};
+use super::codex_profile_config::{is_builtin_placeholder, provider_api_key};
 use super::sync;
 use super::{
-    app_err, atomic_write, backup_file, builtin, codex_config, normalize_auth_override, now_ms,
-    parse_external_auth_json, read_optional_text, AppContext, AppResult, AuthSource, Path, PathBuf,
-    ProfileKind, ProfilePayload,
+    app_err, atomic_write, backup_file, codex_config, normalize_auth_override, now_ms,
+    parse_external_auth_json, read_optional_text, AppContext, AppResult, AuthSource,
+    CodexProfileKind, CodexProfilePayload, Path, PathBuf,
 };
 use crate::auth::codex_oauth::CodexOAuthManager;
+use crate::codex_builtin;
 
 impl AppContext {
-    pub fn apply_profile(&self, id: &str) -> AppResult<()> {
+    pub fn codex_apply_profile(&self, id: &str) -> AppResult<()> {
         let _guard = self
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.apply_profile_locked(id)
+        self.codex_apply_profile_locked(id)
     }
 
     /// 将配置切换和 OAuth 认证写入作为同一个串行事务，避免异步 token 刷新完成后覆盖较新的切换。
-    pub async fn apply_profile_with_auth(
+    pub async fn codex_apply_profile_with_auth(
         &self,
         id: &str,
         oauth: &CodexOAuthManager,
     ) -> AppResult<()> {
         let _activation = self.activation.lock().await;
         self.sync_live_oauth_auth(oauth).await?;
-        let profile = self.database.profile(id)?;
+        let profile = self.database.codex_profile(id)?;
         let oauth_auth = match profile
             .payload
             .effective_auth_source(profile.kind, profile.account_id.as_deref())
@@ -48,14 +49,14 @@ impl AppContext {
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.apply_profile_locked(id)?;
+        self.codex_apply_profile_locked(id)?;
         if let Some(content) = oauth_auth {
             self.write_auth_json(&content)?;
         }
         Ok(())
     }
 
-    fn apply_profile_locked(&self, id: &str) -> AppResult<()> {
+    fn codex_apply_profile_locked(&self, id: &str) -> AppResult<()> {
         let config_path = self.paths.codex_config();
         let original = std::fs::read_to_string(&config_path)
             .map_err(|error| app_err!("无法读取 {}: {error}", config_path.display()))?;
@@ -73,7 +74,7 @@ impl AppContext {
             },
         )?;
 
-        let profile = self.database.profile(id)?;
+        let profile = self.database.codex_profile(id)?;
         let profile_kind = profile.kind;
         let payload = profile.payload;
         if payload.effective_auth_source(profile_kind, profile.account_id.as_deref())
@@ -123,7 +124,7 @@ impl AppContext {
             )?;
         }
         // 显式记录当前激活供应商，避免依赖应用日志反推
-        self.database.set_active_profile(Some(id))?;
+        self.database.set_active_codex_profile(Some(id))?;
         // 操作审计在数据库 record_event 里；文件日志留一行，只发 logs 目录也能重建切换史
         let source_label =
             match payload.effective_auth_source(profile_kind, profile.account_id.as_deref()) {
@@ -143,17 +144,17 @@ impl AppContext {
     pub(super) fn apply_builtin_profile(
         &self,
         profile_id: &str,
-        payload: &ProfilePayload,
+        payload: &CodexProfilePayload,
         action: &str,
         live: &toml_edit::DocumentMut,
-        profile_kind: ProfileKind,
+        profile_kind: CodexProfileKind,
         account_id: Option<&str>,
     ) -> AppResult<()> {
         let kind = payload
             .builtin
             .as_deref()
             .ok_or_else(|| app_err!("供应商缺少内置类型"))?;
-        let template = builtin::template(kind)?;
+        let template = codex_builtin::template(kind)?;
         let api_key = payload.provider_body.as_deref().and_then(provider_api_key);
         // 带密钥占位符的内置供应商：应用前必须已配置真实密钥，避免把占位符写进 live 配置
         if template.placeholder.is_some()
@@ -162,7 +163,7 @@ impl AppContext {
                 .is_none_or(|key| key.trim().is_empty() || is_builtin_placeholder(payload, key))
         {
             return Err(app_err!(
-                "该供应商尚未配置 API Key，请先在编辑页填写 API Key 后再应用"
+                "该供应商尚未配置 API Key，请先在编辑页填写 API Key 后再使用"
             ));
         }
         let rendered = match &payload.raw_config {
@@ -204,7 +205,7 @@ impl AppContext {
     }
 
     /// 把供应商自己编辑保存的 models.json 原文写入 model_catalog_json 指向的位置。
-    pub(super) fn write_raw_catalog(&self, payload: &ProfilePayload) -> AppResult<()> {
+    pub(super) fn write_raw_catalog(&self, payload: &CodexProfilePayload) -> AppResult<()> {
         let Some(raw) = payload.raw_catalog.as_deref() else {
             return Ok(());
         };
@@ -228,11 +229,11 @@ impl AppContext {
     }
 
     /// 清除自定义目录后立即恢复：内置档回写模板自带的 models.json；普通档保留 live 文件、仅解除托管。
-    pub(super) fn restore_builtin_catalog(&self, payload: &ProfilePayload) -> AppResult<()> {
+    pub(super) fn restore_builtin_catalog(&self, payload: &CodexProfilePayload) -> AppResult<()> {
         let Some(kind) = payload.builtin.as_deref() else {
             return Ok(());
         };
-        let Some((target, bytes)) = crate::builtin::template(kind)?.catalog else {
+        let Some((target, bytes)) = crate::codex_builtin::template(kind)?.catalog else {
             return Ok(());
         };
         let destination = self.paths.codex_home.join(target);
@@ -247,7 +248,7 @@ impl AppContext {
 
     /// 应用第三方配置时，同一 ChatGPT 账号的 live 认证优先于旧快照，避免覆盖外部刷新令牌。
     /// "同一账号"按 (workspace, 用户 sub) 双重判定：同 workspace 多账号时不能只比 workspace。
-    pub(super) fn restore_profile_auth(&self, payload: &ProfilePayload) -> AppResult<()> {
+    pub(super) fn restore_profile_auth(&self, payload: &CodexProfilePayload) -> AppResult<()> {
         let Some(snapshot) = normalize_auth_override(payload.raw_auth.as_deref()) else {
             return Ok(());
         };
@@ -274,8 +275,8 @@ impl AppContext {
     /// 官方配置的认证归属由创建时固定的来源决定；OAuth 的 live 写入由命令层负责。
     pub(super) fn apply_profile_auth(
         &self,
-        payload: &ProfilePayload,
-        profile_kind: ProfileKind,
+        payload: &CodexProfilePayload,
+        profile_kind: CodexProfileKind,
         account_id: Option<&str>,
     ) -> AppResult<()> {
         match payload.effective_auth_source(profile_kind, account_id) {
@@ -325,7 +326,7 @@ impl AppContext {
     }
 
     /// 把 live 文档同步进当前激活供应商的快照：无激活供应商或内容无差异时不做任何写库。
-    /// 供 get_state（刷新/窗口激活）与 get_profile（打开编辑页）按需调用。
+    /// 供 get_state（刷新/窗口激活）与 codex_get_profile（打开编辑页）按需调用。
     pub(super) fn sync_active_profile_document(
         &self,
         document: &toml_edit::DocumentMut,
@@ -335,7 +336,7 @@ impl AppContext {
         };
         // 按 id 点查，不要全表拉出来再 find：每行 payload 都带着完整 config.toml 文本，
         // 供应商一多这就是同步路径上最贵的一步。读不到等同于"没有可同步的对象"。
-        let Ok(profile) = self.database.profile(&active_id) else {
+        let Ok(profile) = self.database.codex_profile(&active_id) else {
             return Ok(sync::SyncOutcome::bare(sync::SyncKind::NoActiveProfile));
         };
         let Ok(mut live) = codex_config::capture_from_document(document) else {
@@ -355,6 +356,8 @@ impl AppContext {
         live.admin_url = profile.payload.admin_url.clone();
         live.show_balance = profile.payload.show_balance;
         live.fetched_models = profile.payload.fetched_models.clone();
+        live.fetched_model_efforts = profile.payload.fetched_model_efforts.clone();
+        live.fetched_model_defaults = profile.payload.fetched_model_defaults.clone();
         // 使用中模型目录按 live 文件回写。
         live.raw_catalog = profile
             .payload
@@ -396,6 +399,9 @@ impl AppContext {
                 live.auth_auto_sync = profile.payload.auth_auto_sync;
             }
         }
+        if auth_source == Some(AuthSource::Desktop) {
+            live.invalidate_models_for_auth_change(profile.payload.raw_auth.as_deref());
+        }
         // 快照跟随当前 live 完整文本，保证供应商是完整状态（所见即所得，不掩码密钥）
         live.raw_config = Some(codex_config::without_managed_mcp_servers(
             &document.to_string(),
@@ -406,10 +412,12 @@ impl AppContext {
                 &profile.name,
             ));
         }
-        if let Err(error) =
-            self.database
-                .update_profile(&active_id, &profile.name, &live, &now_ms().to_string())
-        {
+        if let Err(error) = self.database.codex_update_profile(
+            &active_id,
+            &profile.name,
+            &live,
+            &now_ms().to_string(),
+        ) {
             let _ = self.database.record_event(
                 Some(&active_id),
                 "sync",

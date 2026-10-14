@@ -1,15 +1,17 @@
-import { ChevronRight, Clock, Database, Download, FileCog, FileText, FolderOpen, History, Languages, LoaderCircle, Moon, MoonStar, Monitor, MoreHorizontal, Palette, PanelBottomClose, Pencil, Power, RefreshCw, RotateCcw, Save, Sun, Trash2, Upload } from "lucide-react";
+import { AppWindowMac, Blocks, BookOpenText, Bot, ChevronRight, CircleUserRound, Clock, Database, Download, FileCog, FileText, FolderOpen, History, Languages, LayoutDashboard, LoaderCircle, Moon, MoonStar, Monitor, MoreHorizontal, Palette, PanelBottomClose, Pencil, Power, RefreshCw, RotateCcw, Save, Settings as SettingsIcon, Sun, Trash2, Upload } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { createPortal } from "react-dom";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { api, isTauri } from "../../api";
+import { api, isMacWindow, isTauri } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { getCachedDatabaseBackups, loadDatabaseBackups } from "../../app/managementDataCache";
 import { AppDialog } from "../../components/AppDialog";
 import { AppDisclosure } from "../../components/AppDisclosure";
 import { GithubMark } from "../../components/GithubMark";
+import { McpIcon } from "../../components/McpIcon";
 import { AppSelect } from "../../components/AppSelect";
+import { AppSegmentedControl } from "../../components/AppSegmentedControl";
 import { AppSwitch } from "../../components/AppSwitch";
 import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
 import { updateFailureMessage } from "../updates/updateText";
@@ -21,6 +23,17 @@ import version from "../../../VERSION?raw";
 // as const 必需：labelKey 若推断为 string，typed t() 会拒绝（键名无法在编译期校验）。
 const themeOptions = [{ labelKey: "theme.system", value: "system" }, { labelKey: "theme.light", value: "light" }, { labelKey: "theme.dark", value: "dark" }] as const;
 const languageOptions = [{ labelKey: "language.system", value: "system" }, { labelKey: "language.zh", value: "zh-CN" }, { labelKey: "language.en", value: "en-US" }] as const;
+// 启动页选项 = 侧栏全部页面平铺（与侧栏清单同序同文案 key，新增页面两处同步）
+const startupViewOptions = [
+  { labelKey: "nav.groupCodex", value: "codexProfiles", icon: <img src="/codex.svg" alt="" className="h-4 w-4 shrink-0" /> },
+  { labelKey: "nav.groupClaude", value: "claudeProfiles", icon: <img src="/claude-code.svg" alt="" className="h-4 w-4 shrink-0" /> },
+  { labelKey: "nav.plugins", value: "plugins", icon: <Blocks className="h-4 w-4 shrink-0" aria-hidden="true" /> },
+  { labelKey: "nav.accounts", value: "accounts", icon: <CircleUserRound className="h-4 w-4 shrink-0" aria-hidden="true" /> },
+  { labelKey: "nav.mcp", value: "mcp", icon: <McpIcon className="h-4 w-4 shrink-0" /> },
+  { labelKey: "nav.skills", value: "skills", icon: <BookOpenText className="h-4 w-4 shrink-0" aria-hidden="true" /> },
+  { labelKey: "nav.agentTools", value: "agentTools", icon: <Bot className="h-4 w-4 shrink-0" aria-hidden="true" /> },
+  { labelKey: "nav.settings", value: "settings", icon: <SettingsIcon className="h-4 w-4 shrink-0" aria-hidden="true" /> },
+] as const;
 // Rust 下发的 PathInfo.label（i18n key）数据值，用于比对而非展示
 const BACKUP_DIR_LABEL = "about.paths.backups"; // i18n-exempt: 数据标签比较值，不是界面文案
 
@@ -30,7 +43,7 @@ const pathLabel = (t: (key: "about.paths.appData") => string, label: string): st
   label.startsWith("about.paths.") ? t(label as "about.paths.appData") : label;
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
-export const backupTitle = (name: string) => name.replace(/^(?:cg-backup-|cgswitch-export-)/, "").replace(/\.db$/, "");
+export const backupTitle = (name: string) => name.replace(/^(?:agmux-(?:backup-)?|cg-backup-|budtty-export-)/, "").replace(/\.db$/, "");
 // 自动备份文件名剥前缀后是纯时间戳（20260822-120000-000），手动「立即备份」带 manual- 标记，
 // 重命名过的是自由文本；行标题的"自动/手动"前缀据此区分
 export const isAutoBackupName = (name: string) => /^\d{8}-\d{6}-\d{3}$/.test(backupTitle(name));
@@ -59,6 +72,8 @@ interface SettingsGeneralProps { form: Settings; onPatch: (patch: Partial<Settin
 
 export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
   const { t } = useTranslation("settings");
+  // 启动页选项文案住在 common/nav（与侧栏同一份），单挂 settings ns 取不到
+  const { t: tNav } = useTranslation("common");
   return (
     <div className="flex flex-col gap-[var(--gap-section)]">
       <SettingsPanelSection id="appearance-language" label={t("general.appearanceGroupTitle")}>
@@ -74,13 +89,16 @@ export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
                   <div className="setting-description mt-0.5">{t("appearance.description")}</div>
                 </div>
               </div>
-              <div className="apple-group apple-segmented-control inline-flex h-9 w-72 shrink-0 gap-0.5 p-0.5">
+              <AppSegmentedControl
+                className="h-9 w-72 shrink-0"
+                selectedIndex={themeOptions.findIndex((option) => option.value === form.theme)}
+                label={t("appearance.title")}
+              >
                 {themeOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
-                    className="app-selection-state inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-full text-sm font-normal"
-                    data-active={form.theme === option.value ? "true" : undefined}
+                    className="inline-flex h-full items-center justify-center gap-1.5 text-sm font-normal"
                     aria-pressed={form.theme === option.value}
                     onClick={() => onPatch({ theme: option.value })}
                   >
@@ -88,7 +106,7 @@ export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
                     {t(option.labelKey)}
                   </button>
                 ))}
-              </div>
+              </AppSegmentedControl>
             </div>
             <div className="flex items-center justify-between gap-4 py-4">
               <div className="flex min-w-0 items-start gap-3">
@@ -135,6 +153,50 @@ export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
                 />
               </div>
             ))}
+            <div className="flex items-center justify-between gap-4 py-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                  <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="setting-title">{t("startup.startupViewTitle")}</div>
+                  <div className="setting-description mt-0.5">{t("startup.startupViewDescription")}</div>
+                </div>
+              </div>
+              <div className="w-72 shrink-0">
+                <AppSelect
+                  value={form.startup_view}
+                  options={startupViewOptions.map((option) => ({ label: tNav(option.labelKey), value: option.value }))}
+                  renderLabel={(option) => (
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {startupViewOptions.find((item) => item.value === option.value)?.icon}
+                      <span className="truncate">{option.label}</span>
+                    </span>
+                  )}
+                  onChange={(value) => onPatch({ startup_view: value })}
+                />
+              </div>
+            </div>
+            {isMacWindow ? (
+              <div className="flex items-center justify-between gap-4 py-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                    <AppWindowMac className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="setting-title">{t("startup.terminalAppTitle")}</div>
+                    <div className="setting-description mt-0.5">{t("startup.terminalAppDescription")}</div>
+                  </div>
+                </div>
+                <div className="w-72 shrink-0">
+                  <AppSelect
+                    value={form.macos_terminal}
+                    options={[{ label: "Terminal.app", value: "terminal" }, { label: "Ghostty", value: "ghostty" }]}
+                    onChange={(value) => onPatch({ macos_terminal: value })}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </SettingsPanelSection>
@@ -142,9 +204,9 @@ export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
   );
 }
 
-interface SettingsAdvancedProps { form: Settings; onPatch: (patch: Partial<Settings>) => void; paths: PathInfo[]; backupsEpoch: number; onOpenPath: (item: PathInfo) => void; onRefresh: () => Promise<void>; }
+interface SettingsAdvancedProps { form: Settings; onPatch: (patch: Partial<Settings>) => void; paths: PathInfo[]; backupsEpoch: number; onOpenPath: (item: PathInfo) => void; openingPath: string | null; onRefresh: () => Promise<void>; }
 
-export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPath, onRefresh }: SettingsAdvancedProps) {
+export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPath, openingPath, onRefresh }: SettingsAdvancedProps) {
   const feedback = useFeedback();
   const { t } = useTranslation("settings");
   // 开关负责自动备份的启停（关 = interval 0），下拉只管间隔，不再提供"关闭"档
@@ -202,7 +264,7 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
     return () => { document.removeEventListener("pointerdown", close); window.removeEventListener("scroll", close, true); };
   }, [menuTarget]);
   const rowMenu = menuTarget ? createPortal(
-    <div ref={menuRef} className="app-select-menu" data-open="true" data-row-menu role="menu" aria-label={t("backup.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
+    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in data-row-menu role="menu" aria-label={t("backup.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
       <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { const target = menuTarget.backup; setMenuTarget(null); openRename(target); }}>
         <span className="flex items-center gap-2"><Pencil className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.renameAction")}</span>
       </button>
@@ -215,116 +277,139 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
   const recordsSummary = backups !== null && backups.length > 0 ? t("backup.recordSummary", { count: backups.length, size: formatSize(backups.reduce((total, backup) => total + backup.size_bytes, 0)) }) : "";
 
   return (
-    <div className="apple-group px-[var(--gap-card-inline)]">
-      <div className="flex flex-col divide-y divide-[var(--panel-divider)]">
-        {/* 数据备份：标题 + 整排操作按钮 */}
-        <div className="flex flex-col gap-4 py-4">
-          <div className="flex items-start gap-3">
-            <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
-              <Database className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <div className="setting-title">{t("backup.title")}</div>
-              <div className="setting-description mt-0.5">{t("backup.description")}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="apple-action-button app-button--primary flex-1" disabled={exporting} onClick={() => void createImmediateBackup()}>
-              <Save className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-              {t("backup.createNow")}
-            </button>
-            <button type="button" className="apple-action-button flex-1" disabled={importing} onClick={() => void importBackupFromFile()}>
-              <Download className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-              {t("backup.import")}
-            </button>
-            <button type="button" className="apple-action-button flex-1" disabled={exporting} onClick={() => void exportBackupToFile()}>
-              <Upload className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-              {t("backup.export")}
-            </button>
-            <button type="button" className="apple-action-button flex-1" onClick={() => { const item = paths.find((path) => path.label === BACKUP_DIR_LABEL); if (item) onOpenPath(item); else feedback.warning(t("backup.toastFolderMissing")); }}>
-              <FolderOpen className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-              {t("backup.folder")}
-            </button>
-          </div>
-        </div>
-        {/* 自动备份：开关在右侧控制启停，关掉时频率/保留两个下拉都不可用 */}
-        <div className="flex flex-col gap-4 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="setting-title">{t("backup.autoLabel")}</div>
-              <div className="setting-description mt-0.5">{t("backup.autoDescription")}</div>
-            </div>
-            <AppSwitch checked={form.auto_backup_interval_hours > 0} onCheckedChange={(on) => onPatch({ auto_backup_interval_hours: on ? 6 : 0 })} label={t("backup.autoLabel")} />
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-[var(--panel-border)] p-3">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" />
-                <span className="field-label muted">{t("backup.frequencyLabel")}</span>
+    <div className="flex flex-col gap-[var(--gap-section)]">
+      <SettingsPanelSection id="backup" label={t("backup.sectionTitle")}>
+        <div className="apple-group px-[var(--gap-card-inline)]">
+          <div className="flex flex-col divide-y divide-[var(--panel-divider)]">
+            {/* 数据备份：标题 + 整排操作按钮 */}
+            <div className="flex flex-col gap-4 py-4">
+              <div className="flex items-start gap-3">
+                <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                  <Database className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="setting-title">{t("backup.title")}</div>
+                  <div className="setting-description mt-0.5">{t("backup.description")}</div>
+                </div>
               </div>
-              {/* 关闭时展示即将启用的默认间隔（与开关打开写入的 6 一致），避免显示裸 0 */}
-              <AppSelect value={form.auto_backup_interval_hours || 6} options={autoBackupOptions} disabled={form.auto_backup_interval_hours === 0} onChange={(value) => onPatch({ auto_backup_interval_hours: value })} />
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-[var(--panel-border)] p-3">
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" />
-                <span className="field-label muted">{t("backup.keepLabel")}</span>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="apple-action-button app-button--primary flex-1" disabled={exporting} onClick={() => void createImmediateBackup()}>
+                  <Save className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  {t("backup.createNow")}
+                </button>
+                <button type="button" className="apple-action-button flex-1" disabled={importing} onClick={() => void importBackupFromFile()}>
+                  <Download className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  {t("backup.import")}
+                </button>
+                <button type="button" className="apple-action-button flex-1" disabled={exporting} onClick={() => void exportBackupToFile()}>
+                  <Upload className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  {t("backup.export")}
+                </button>
+                <button type="button" className="apple-action-button flex-1" onClick={() => { const item = paths.find((path) => path.label === BACKUP_DIR_LABEL); if (item) onOpenPath(item); else feedback.warning(t("backup.toastFolderMissing")); }}>
+                  <FolderOpen className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  {t("backup.folder")}
+                </button>
               </div>
-              <AppSelect value={form.database_backup_keep_count} options={keepOptions} disabled={form.auto_backup_interval_hours === 0} onChange={(value) => onPatch({ database_backup_keep_count: value })} />
             </div>
-          </div>
-        </div>
-        {/* 备份记录：摘要行可点折叠（复用 AppDisclosure）；行独立成卡，来源用高亮药丸标记 */}
-        <AppDisclosure
-          className="backup-records-disclosure py-4"
-          open={recordsOpen}
-          onOpenChange={(open) => { recordsOpenSession = open; setRecordsOpen(open); }}
-          summary={(
-            <>
-              <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
-                <History className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
-              </span>
-              <span className="min-w-0">
-                <span className="setting-title block">{t("backup.recordsTitle")}</span>
-                <span className="setting-description mt-0.5 block">{recordsSummary}</span>
-              </span>
-            </>
-          )}
-        >
-          {backups !== null && backups.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {backups.map((backup) => {
-                const menuOpen = menuTarget?.backup.name === backup.name;
-                const auto = isAutoBackupName(backup.name);
-                return (
-                  <div key={backup.name} className="apple-list-row">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className={`apple-chip apple-chip--roomy shrink-0 ${auto ? "apple-chip--accent" : "apple-chip--success"}`}>{auto ? t("backup.badgeAuto") : t("backup.badgeManual")}</span>
-                      <div className="min-w-0">
-                        <div className="field-label truncate">{auto || isManualBackupName(backup.name) ? formatShortTimestamp(backup.created_at) : backupTitle(backup.name)}</div>
-                        <div className="muted meta-xs mt-0.5 truncate">{formatTimestamp(backup.created_at)} · {formatSize(backup.size_bytes)}</div>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button type="button" className="apple-inline-btn apple-inline-btn--quiet" onClick={() => void restoreBackup(backup)}><RotateCcw className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.restore")}</button>
-                      <button type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" data-row-menu-trigger aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("backup.moreTooltip")} onClick={(event) => (menuOpen ? setMenuTarget(null) : openMenu(backup, event.currentTarget))} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
-                        <MoreHorizontal className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-                      </button>
-                    </div>
+            {/* 自动备份：开关在右侧控制启停，关掉时频率/保留两个下拉都不可用 */}
+            <div className="flex flex-col gap-4 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="setting-title">{t("backup.autoLabel")}</div>
+                  <div className="setting-description mt-0.5">{t("backup.autoDescription")}</div>
+                </div>
+                <AppSwitch checked={form.auto_backup_interval_hours > 0} onCheckedChange={(on) => onPatch({ auto_backup_interval_hours: on ? 6 : 0 })} label={t("backup.autoLabel")} />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-[var(--panel-border)] p-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" />
+                    <span className="field-label muted">{t("backup.frequencyLabel")}</span>
                   </div>
-                );
-              })}
+                  {/* 关闭时展示即将启用的默认间隔（与开关打开写入的 6 一致），避免显示裸 0 */}
+                  <AppSelect value={form.auto_backup_interval_hours || 6} options={autoBackupOptions} disabled={form.auto_backup_interval_hours === 0} onChange={(value) => onPatch({ auto_backup_interval_hours: value })} />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-[var(--panel-border)] p-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" />
+                    <span className="field-label muted">{t("backup.keepLabel")}</span>
+                  </div>
+                  <AppSelect value={form.database_backup_keep_count} options={keepOptions} disabled={form.auto_backup_interval_hours === 0} onChange={(value) => onPatch({ database_backup_keep_count: value })} />
+                </div>
+              </div>
             </div>
-          ) : backups !== null ? (
-            <div className="setting-description flex items-center gap-2">
-              <Database className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-              {t("backup.empty")}
-            </div>
-          ) : null}
-        </AppDisclosure>
-      </div>
-      {rowMenu}
-      <AppDialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }} title={t("backup.renameDialogTitle")} footer={<><button type="button" className="apple-action-button" onClick={() => setRenameTarget(null)}>{t("backup.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={renaming || !renameText.trim()} onClick={() => void submitRename()}>{t("backup.save")}</button></>}><input className="app-input" maxLength={80} placeholder={t("backup.renamePlaceholder")} value={renameText} onChange={(event) => setRenameText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) void submitRename(); }} /></AppDialog>
+            {/* 备份记录：摘要行可点折叠（复用 AppDisclosure）；行独立成卡，来源用高亮药丸标记 */}
+            <AppDisclosure
+              className="backup-records-disclosure py-4"
+              open={recordsOpen}
+              onOpenChange={(open) => { recordsOpenSession = open; setRecordsOpen(open); }}
+              summary={(
+                <>
+                  <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-xl">
+                    <History className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="setting-title block">{t("backup.recordsTitle")}</span>
+                    <span className="setting-description mt-0.5 block">{recordsSummary}</span>
+                  </span>
+                </>
+              )}
+            >
+              {backups !== null && backups.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {backups.map((backup) => {
+                    const menuOpen = menuTarget?.backup.name === backup.name;
+                    const auto = isAutoBackupName(backup.name);
+                    return (
+                      <div key={backup.name} className="apple-list-row">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className={`apple-chip apple-chip--roomy shrink-0 ${auto ? "apple-chip--accent" : "apple-chip--success"}`}>{auto ? t("backup.badgeAuto") : t("backup.badgeManual")}</span>
+                          <div className="min-w-0">
+                            <div className="field-label truncate">{auto || isManualBackupName(backup.name) ? formatShortTimestamp(backup.created_at) : backupTitle(backup.name)}</div>
+                            <div className="muted meta-xs mt-0.5 truncate">{formatTimestamp(backup.created_at)} · {formatSize(backup.size_bytes)}</div>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button type="button" className="apple-inline-btn apple-inline-btn--quiet" onClick={() => void restoreBackup(backup)}><RotateCcw className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.restore")}</button>
+                          <button type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" data-row-menu-trigger aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("backup.moreTooltip")} onClick={(event) => (menuOpen ? setMenuTarget(null) : openMenu(backup, event.currentTarget))} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
+                            <MoreHorizontal className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : backups !== null ? (
+                <div className="setting-description flex items-center gap-2">
+                  <Database className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  {t("backup.empty")}
+                </div>
+              ) : null}
+            </AppDisclosure>
+          </div>
+          {rowMenu}
+          <AppDialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }} title={t("backup.renameDialogTitle")} footer={<><button type="button" className="apple-action-button" onClick={() => setRenameTarget(null)}>{t("backup.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={renaming || !renameText.trim()} onClick={() => void submitRename()}>{t("backup.save")}</button></>}><input className="app-input" maxLength={80} placeholder={t("backup.renamePlaceholder")} value={renameText} onChange={(event) => setRenameText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) void submitRename(); }} /></AppDialog>
+        </div>
+      </SettingsPanelSection>
+      <SettingsPanelSection id="data-paths" label={t("about.dataAndPaths")}>
+        <div className="apple-group divide-y divide-[var(--panel-divider)] px-[var(--gap-card-inline)]">
+          {paths.filter((item) => item.label !== BACKUP_DIR_LABEL).map((item) => {
+            const Icon = item.label === "about.paths.codexConfig" ? FileCog : item.label === "about.paths.logs" ? FileText : Database;
+            const description = item.label === "about.paths.codexConfig" ? t("about.pathDescriptions.codexConfig") : item.label === "about.paths.logs" ? t("about.pathDescriptions.logs") : t("about.pathDescriptions.appData");
+            return (
+              <SettingsRowLink
+                key={item.label}
+                icon={<Icon className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}
+                title={pathLabel(t, item.label)} description={description}
+                tooltip={t("about.openPath", { label: pathLabel(t, item.label) })}
+                onClick={() => onOpenPath(item)}
+                disabled={Boolean(openingPath)}
+                trailing={openingPath === item.path ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" /> : undefined}
+              />
+            );
+          })}
+        </div>
+      </SettingsPanelSection>
     </div>
   );
 }
@@ -347,9 +432,7 @@ function SettingsRowLink({ icon, title, description, tooltip, onClick, disabled,
   );
 }
 
-interface SettingsAboutProps { paths: PathInfo[]; onOpenPath: (item: PathInfo) => void; openingPath: string | null; }
-
-export function SettingsAbout({ paths, onOpenPath, openingPath }: SettingsAboutProps) {
+export function SettingsAbout() {
   const feedback = useFeedback();
   const { t } = useTranslation("settings");
   // 更新失败提示的文案归 updates 命名空间，故另取一个对应的 t
@@ -357,7 +440,7 @@ export function SettingsAbout({ paths, onOpenPath, openingPath }: SettingsAboutP
   const { update, checking, installing, check } = useAppUpdate();
   // 与状态栏悬浮卡片一致：升级走确认式弹窗，先看更新日志再安装
   const [confirming, setConfirming] = useState(false);
-  const openRepository = () => void api.openUrl("https://github.com/zeno528/CGSwitch").catch((error) => feedback.error(String(error)));
+  const openRepository = () => void api.openUrl("https://github.com/zeno528/Agmux").catch((error) => feedback.error(String(error)));
   // 检查只负责发现并展示版本号，升级必须由用户点击「立即重启更新」触发
   const checkUpdate = async () => {
     try {
@@ -377,9 +460,9 @@ export function SettingsAbout({ paths, onOpenPath, openingPath }: SettingsAboutP
       <div className="apple-group divide-y divide-[var(--panel-divider)] px-[var(--gap-card-inline)]">
         <div className="relative flex flex-wrap items-center justify-between gap-4 py-4">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="CGswitch" className="app-logo h-12 w-12 shrink-0" />
+            <img src="/logo.svg" alt="Agmux" className="app-logo h-12 w-12 shrink-0" />
             <div className="flex flex-col items-start gap-1">
-              <span className="apple-wordmark">CGswitch</span>
+              <span className="apple-wordmark">Agmux</span>
               <span className="flex items-center gap-2">
                 <span className="app-version">v{version.trim()}</span>
                 {update ? <span className="apple-chip apple-chip--success" style={{ color: "var(--text-primary)" }}>{t("about.updateAvailable")}</span> : null}
@@ -390,7 +473,7 @@ export function SettingsAbout({ paths, onOpenPath, openingPath }: SettingsAboutP
             {update ? (
               <button type="button" className="apple-action-button app-button--primary" disabled={installing} onClick={() => setConfirming(true)}>
                 {installing ? <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2} aria-hidden="true" /> : <Download className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
-                {installing ? t("about.installing") : t("about.upgradeTo")} v{update.version}
+                {installing ? t("about.installing") : t("about.updateTo")} v{update.version}
               </button>
             ) : (
               <button type="button" className="apple-action-button app-button--primary" disabled={checking} onClick={() => void checkUpdate()}>
@@ -402,37 +485,17 @@ export function SettingsAbout({ paths, onOpenPath, openingPath }: SettingsAboutP
         </div>
         {/* 参考 Folo / AFFiNE：About 区拆成与「数据与路径」同语言的行列表 */}
         <SettingsRowLink
-          icon={<History className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}
-          title={t("about.changelog")} description={t("about.changelogDescription")}
-          tooltip={t("about.viewReleases")}
-          onClick={() => void api.openUrl(releaseNotesUrl(update?.version ?? version.trim())).catch((error) => feedback.error(String(error)))}
-        />
-        <SettingsRowLink
           icon={<GithubMark className="h-[18px] w-[18px]" />}
           title={t("about.repository")} description={t("about.repositoryDescription")}
           tooltip={t("about.openRepo")}
           onClick={openRepository}
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <h3 className="title-sm px-1">{t("about.dataAndPaths")}</h3>
-        <div className="apple-group divide-y divide-[var(--panel-divider)] px-[var(--gap-card-inline)]">
-          {paths.filter((item) => item.label !== BACKUP_DIR_LABEL).map((item) => {
-            const Icon = item.label === "about.paths.codexConfig" ? FileCog : item.label === "about.paths.logs" ? FileText : Database;
-            const description = item.label === "about.paths.codexConfig" ? t("about.pathDescriptions.codexConfig") : item.label === "about.paths.logs" ? t("about.pathDescriptions.logs") : t("about.pathDescriptions.appData");
-            return (
-              <SettingsRowLink
-                key={item.label}
-                icon={<Icon className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}
-                title={pathLabel(t, item.label)} description={description}
-                tooltip={t("about.openPath", { label: pathLabel(t, item.label) })}
-                onClick={() => onOpenPath(item)}
-                disabled={Boolean(openingPath)}
-                trailing={openingPath === item.path ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-[var(--text-secondary)]" strokeWidth={2} aria-hidden="true" /> : undefined}
-              />
-            );
-          })}
-        </div>
+        <SettingsRowLink
+          icon={<History className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}
+          title={t("about.changelog")} description={t("about.changelogDescription")}
+          tooltip={t("about.viewReleases")}
+          onClick={() => void api.openUrl(releaseNotesUrl(update?.version ?? version.trim())).catch((error) => feedback.error(String(error)))}
+        />
       </div>
       <UpdateNotesDialog open={confirming} onOpenChange={setConfirming} />
     </div>

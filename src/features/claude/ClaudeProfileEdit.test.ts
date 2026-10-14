@@ -37,7 +37,7 @@ describe("Claude 新建配置隔离", () => {
     expect(editSource).toContain("(!create && !initialDetail)");
   });
   it("新建从空 settings 开始，不读取当前 live 配置", () => {
-    expect(editSource).toMatch(/const initialEnvText = useMemo\(\s*\(\) => create \? "\{\}" : buildSettingsText/);
+    expect(editSource).toMatch(/const initialEnvText = useMemo\(\s*\(\) => create \? patchEnvFields\("\{\}"/);
     expect(editSource).not.toContain("initialSettingsText");
     expect(viewSource).not.toContain("claudeLiveSettings");
   });
@@ -45,11 +45,6 @@ describe("Claude 新建配置隔离", () => {
   it("一键设置批量填充模型并保留各行的 1M 声明", () => {
     expect(editSource).toContain("onApplyModel={applyModelToMappings}");
     expect(editSource).toContain("setOneMillionModelSuffix(selected, hasOneMillionModelSuffix(current[key]))");
-  });
-
-  it("选择 Claude Code 预设时清空模型映射", () => {
-    expect(editSource).toContain("const nextModelMappings = emptyModelMappings()");
-    expect(editSource).toContain("return patchModelMappings(next, nextModelMappings)");
   });
 
   it("官网地址沿用供应商页的全局文案和行内按钮", () => {

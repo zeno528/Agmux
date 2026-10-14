@@ -80,7 +80,9 @@ pub(super) fn scan_codex_plugin_cache(codex_home: &Path) -> Vec<PluginSummary> {
                 "codex",
                 &version_dir,
             );
-            summary.version = Some(version_dir_name).or(summary.version);
+            // 版本以 manifest 为准：目录名是安装时定死的兜底值，升级后僵死
+            // （实测 ponytail 目录名 1.0.0、manifest 4.10.3）；manifest 缺才回落。
+            summary.version = summary.version.or(Some(version_dir_name));
             summary.marketplace = Some(marketplace_name.clone());
             summary.enabled = true;
             summaries.push(summary);
@@ -199,29 +201,42 @@ mod tests {
         // 本机 PATH 装了真 codex CLI 会劫持 list_plugins 走 CLI 路径，与 cache fixture 无关；
         // 这里直调 scan_codex_plugin_cache，本机环境跟它零耦合。
         // fixture 用抽象名（sample-marketplace / sample-plugin / v1.0.0），不撞现实插件。
+        // 目录名是安装时定死的兜底值，升级后可能僵死：sample-plugin 的 manifest
+        // 缺 version 回落目录名，stale-plugin 的 manifest version 优先于目录名。
         let home = tempfile::tempdir().unwrap();
         let codex_home = home.path().join(".codex");
-        let cache_dir = codex_home
-            .join("plugins")
-            .join("cache")
-            .join("sample-marketplace")
-            .join("sample-plugin")
-            .join("v1.0.0")
-            .join(".codex-plugin");
-        std::fs::create_dir_all(&cache_dir).unwrap();
-        std::fs::write(
-            cache_dir.join("plugin.json"),
-            r#"{"name":"sample-plugin","description":"Fixture plugin"}"#,
-        )
-        .unwrap();
+        let write_plugin = |name: &str, dir_version: &str, manifest: &str| {
+            let dir = codex_home
+                .join("plugins")
+                .join("cache")
+                .join("sample-marketplace")
+                .join(name)
+                .join(dir_version)
+                .join(".codex-plugin");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("plugin.json"), manifest).unwrap();
+        };
+        write_plugin("sample-plugin", "v1.0.0", r#"{"name":"sample-plugin"}"#);
+        write_plugin(
+            "stale-plugin",
+            "0.9.0",
+            r#"{"name":"stale-plugin","version":"1.2.0"}"#,
+        );
 
         let plugins = scan_codex_plugin_cache(&codex_home);
-        assert_eq!(plugins.len(), 1);
-        let plugin = &plugins[0];
-        assert_eq!(plugin.name, "sample-plugin");
+        assert_eq!(plugins.len(), 2);
+        let plugin = plugins
+            .iter()
+            .find(|item| item.name == "sample-plugin")
+            .unwrap();
         assert_eq!(plugin.marketplace.as_deref(), Some("sample-marketplace"));
         assert_eq!(plugin.version.as_deref(), Some("v1.0.0"));
         assert_eq!(plugin.origin, "codex");
         assert!(plugin.enabled);
+        let stale = plugins
+            .iter()
+            .find(|item| item.name == "stale-plugin")
+            .unwrap();
+        assert_eq!(stale.version.as_deref(), Some("1.2.0"));
     }
 }

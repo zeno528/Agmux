@@ -54,7 +54,7 @@ pnpm check && pnpm build
 
 ## Troubleshooting
 
-**本地过、CI 红（或反过来的 fmt 差异）**：工具链不一致。确认 `rustc --version` 与 `src-tauri/rust-toolchain.toml` 钉的版本一致（1.96.0）；不一致时 `rustup update` 到钉定版本再看。
+**本地过、CI 红（或反过来的 fmt 差异）**：工具链不一致。确认 `rustc --version` 与仓库根目录 `rust-toolchain.toml` 固定的工具链一致；不一致时先检查 Rustup 是否正确读取项目配置。
 
 **CI 的 `pnpm install --frozen-lockfile` 失败但本地正常**：lockfile 与 package.json 不同步。本地 `pnpm install` 重新生成并提交 pnpm-lock.yaml。
 

@@ -1,6 +1,6 @@
-# CGswitch 架构与目录演进指导
+# Agmux 架构与目录演进指导
 
-> 本文用于后续开发决策。当前结论基于 CGswitch 现有 Tauri 2 + React 19/Vite + Rust + SQLite 实现，以及未来适配 Codex CLI / WSL2 的规划。
+> 本文用于后续开发决策。当前结论基于 Agmux 现有 Tauri 2 + React 19/Vite + Rust + SQLite 实现，以及未来适配 Codex CLI / WSL2 的规划。
 
 ## 当前结论
 
@@ -12,11 +12,11 @@
 ## 用户数据目录
 
 ```text
-~/.cgswitch/
+~/.agmux/
 ├── settings.json
-├── cgswitch.db
-├── cgswitch.db-wal
-├── cgswitch.db-shm
+├── agmux.db
+├── agmux.db-wal
+├── agmux.db-shm
 └── backups/
     ├── config/
     ├── codex-files/
@@ -26,8 +26,8 @@
 ### 目录职责
 
 - `settings.json`：应用级设置。
-- `cgswitch.db`：供应商配置数据、账号和切换事件。
-- `cgswitch.db-wal`、`cgswitch.db-shm`：SQLite WAL 运行文件，应用运行时不得手动删除。
+- `agmux.db`：供应商配置数据、账号和切换事件。
+- `agmux.db-wal`、`agmux.db-shm`：SQLite WAL 运行文件，应用运行时不得手动删除。
 - `backups/config/`：自动备份 `config.toml`。
 - `backups/codex-files/`：自动备份 `auth.json`、`models.json`、catalog 等 Codex 配套文件。
 - `backups/database/`：用户主动导出的数据库快照，用于列表、恢复、删除和重命名。
@@ -64,7 +64,7 @@
 
 未来接入 Codex CLI / WSL2 时：
 
-1. CGswitch 的 SQLite 数据库仍保存在 Windows 用户目录的 `~/.cgswitch/`。
+1. Agmux 的 SQLite 数据库仍保存在 Windows 用户目录的 `~/.agmux/`。
 2. 不要让 Windows 程序通过 `\\wsl$` 直接高频读写 SQLite 数据库。
 3. WSL2 下的 Codex 配置、认证文件和进程操作应通过 WSL 目标适配器执行。
 4. 只有在真正开始实现第二个目标时，才新增：

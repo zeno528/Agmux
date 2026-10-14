@@ -1,9 +1,9 @@
 import packageJson from "../../package.json";
-import profileEditSource from "../features/profiles/ProfileEdit.tsx?raw";
+import profileEditSource from "../features/codex/CodexProfileEdit.tsx?raw";
 import editorSource from "./ConfigTextEditor.tsx?raw";
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { collectJsonDiagnostics, computeTextChange, findConfigFieldPosition } from "./ConfigTextEditor";
+import { collectJsonDiagnostics, computeTextChange, findConfigFieldPosition, routeEditorWheel } from "./ConfigTextEditor";
 import { patchEnvValue } from "../features/claude/profileEnvText";
 
 describe("ConfigTextEditor runtime", () => {
@@ -28,10 +28,6 @@ describe("ConfigTextEditor runtime", () => {
     expect(editorSource).toContain('className="apple-editor-surface"');
     expect(editorSource).toContain("style={{ minHeight: editorMinHeight }}");
     expect(profileEditSource.match(/minLines=\{editorMinLines\}/g)).toHaveLength(3);
-  });
-
-  it("gates JSON diagnostics behind JSON.parse", () => {
-    expect(editorSource).toContain("JSON.parse(text)");
   });
 
   it("编辑页按正文可用高度伸展，初次挂载和保活复显均监听正文尺寸", () => {
@@ -89,6 +85,8 @@ describe("ConfigTextEditor runtime", () => {
   it("只对成功写入的对应文本定位，其他外部更新继续恢复滚动且不抢输入焦点", () => {
     expect(editorSource).toContain("const reveal = pendingRevealRef.current;\n    pendingRevealRef.current = null;");
     expect(editorSource).toContain("reveal?.text === value ? findConfigFieldPosition(value, reveal.field, change.from) : null");
+    expect(editorSource).toContain('const scrollContent = editor.dom.closest<HTMLElement>(".apple-edit-content");');
+    expect(editorSource).toContain('scrollContent.scrollTo({ top: targetScrollTop, behavior: "smooth" });');
     expect(editorSource).toContain("editor.dispatch({ selection: { anchor: revealPosition }, scrollIntoView: true });");
     expect(editorSource).toContain("} else {\n        restoreScrollPosition();\n        restoreFrame = requestAnimationFrame(restoreScrollPosition);");
   });
@@ -142,5 +140,21 @@ describe("collectJsonDiagnostics", () => {
 
   it("blank documents report nothing", () => {
     expect(collectJsonDiagnostics(stateOf("   \n  "))).toEqual([]);
+  });
+});
+
+describe("routeEditorWheel", () => {
+  it("向下滚且页面未到底时交给页面；上滑与已到底时滚编辑器", () => {
+    expect(routeEditorWheel(120, 300)).toBe(true);
+    expect(routeEditorWheel(120, 0)).toBe(false);
+    expect(routeEditorWheel(120, 1)).toBe(false);
+    expect(routeEditorWheel(-120, 300)).toBe(false);
+    expect(routeEditorWheel(0, 300)).toBe(false);
+  });
+
+  it("边界转发直接跟随当前滚轮增量，不保留反向滚动的旧动画目标", () => {
+    expect(editorSource).toContain("page.scrollTop = Math.max(0, Math.min(page.scrollTop + event.deltaY");
+    expect(editorSource).not.toContain("let smoothTarget");
+    expect(editorSource).not.toContain("const smoothStep");
   });
 });

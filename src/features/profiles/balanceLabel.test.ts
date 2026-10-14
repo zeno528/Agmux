@@ -15,7 +15,8 @@ describe("localizeBalanceLabel", () => {
     expect(localizeBalanceLabel("5小时", t)).toBe("5小时");
     expect(localizeBalanceLabel("7天", t)).toBe("7天");
     expect(localizeBalanceLabel("30天", t)).toBe("30天");
-    expect(localizeBalanceLabel("额度", t)).toBe("额度");
+    expect(localizeBalanceLabel("额度", t)).toBe("用量");
+    expect(localizeBalanceLabel("用量", t)).toBe("用量");
     expect(localizeBalanceLabel("周期", t)).toBe("周期");
   });
 
@@ -24,7 +25,8 @@ describe("localizeBalanceLabel", () => {
     expect(localizeBalanceLabel("5小时", t)).toBe("5h");
     expect(localizeBalanceLabel("7天", t)).toBe("Weekly");
     expect(localizeBalanceLabel("30天", t)).toBe("Monthly");
-    expect(localizeBalanceLabel("额度", t)).toBe("Quota");
+    expect(localizeBalanceLabel("额度", t)).toBe("Usage");
+    expect(localizeBalanceLabel("用量", t)).toBe("Usage");
     expect(localizeBalanceLabel("周期", t)).toBe("Period");
   });
 

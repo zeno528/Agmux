@@ -69,11 +69,10 @@ describe("图标选择页", () => {
     expect(code).toContain('className="apple-tile-grid"');
   });
 
-  it("复用 ProfileIconTile 承载图标与深色反色", () => {
+  it("复用 ProfileIconTile 承载图标", () => {
     expect(code).toContain('import { ProfileIconTile } from "../../components/ProfileIconTile";');
     expect(code).toContain("<ProfileIconTile");
-    // 图标地址与反色类由 ProfileIconTile 统一负责，页面不再自己拼一遍
-    expect(code).not.toContain("providerIconThemeClass");
+    // 图标地址由 ProfileIconTile 统一负责，页面不再自己拼一遍
     expect(code).not.toContain("item.url");
   });
 });

@@ -54,6 +54,18 @@ describe("OAuth account quota recovery", () => {
     expect(source).toContain("onAuthStatusChange?: (status: AuthStatus) => void");
     expect(source).toContain("onAuthStatusChange?.(next);");
   });
+
+  it("两种登录来源都在用量刷新成功后重新读取账号信息", () => {
+    const successPath = source.slice(source.indexOf("const refresh = async (manual"), source.indexOf("} catch (cause)"));
+    expect(successPath.indexOf("await onRefreshed();")).toBeGreaterThan(successPath.indexOf('setError("");'));
+    expect(source.match(/<AccountCard[^\n]*onRefreshed=\{refreshStatus\}/g)).toHaveLength(2);
+  });
+
+  it("切回账号页时即使已有错误也会静默重试用量", () => {
+    expect(source).toContain("active?: boolean");
+    expect(source).toContain("if (active) void refresh();");
+    expect(source).not.toContain("if (!knownError) void refresh();");
+  });
 });
 
 describe("Add account dialog wiring", () => {

@@ -1,6 +1,6 @@
 /** 完整 settings.json 编辑器 ↔ 表单托管键的双向同步。 */
 
-/** CGswitch 托管的 env 键：编辑器里可见、与表单双向绑定；应用时由后端写入 settings.json。 */
+/** Agmux 托管的 env 键：编辑器里可见、与表单双向绑定；使用时由后端写入 settings.json。 */
 export const CLAUDE_MANAGED_ENV_KEYS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"] as const;
 
 export interface ClaudeEnvFields {
@@ -63,6 +63,15 @@ export function hasOneMillionModelSuffix(value: string) {
 export function setOneMillionModelSuffix(value: string, enabled: boolean) {
   const base = value.trim().replace(oneMillionSuffix, "");
   return enabled && base ? `${base}[1M]` : base;
+}
+
+/** 卡片选主会话模型时按本配置的既有声明决定 1M 后缀：任一映射槽（含主模型自身）为同 base
+ * 模型声明过 [1M] 就带上；悬浮卡不展示该开关，声明是用户意图的唯一真源。 */
+export function resolveOneMillionByDeclaration(text: string, next: string) {
+  const base = setOneMillionModelSuffix(next, false);
+  const declared = Object.values(readModelMappings(text))
+    .some((value) => hasOneMillionModelSuffix(value) && setOneMillionModelSuffix(value, false) === base);
+  return setOneMillionModelSuffix(next, declared);
 }
 
 const MANAGED_KEY_SET = new Set<string>(CLAUDE_MANAGED_ENV_KEYS);
@@ -386,11 +395,11 @@ function fillMissingSettings(current: Record<string, unknown>, template: Record<
   ]);
 }
 
-/** 仅补缺失值，数组整体保留；再次过滤模板，避免旧模板覆盖新增加的表单字段。 */
+/** 通用字段以模板为准，数组整体替换；再次过滤模板，保留当前表单托管字段。 */
 export function fillClaudeCommonSettings(text: string, templateText: string): string | null {
   const settings = parseSettingsWithEnv(text);
   const common = extractClaudeCommonSettings(templateText);
   if (!settings || common === null) return null;
-  const merged = fillMissingSettings(settings, JSON.parse(common) as Record<string, unknown>);
+  const merged = fillMissingSettings(JSON.parse(common) as Record<string, unknown>, settings);
   return JSON.stringify(merged) === JSON.stringify(settings) ? text : JSON.stringify(merged, null, 2);
 }

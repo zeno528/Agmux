@@ -1,31 +1,63 @@
-import { Children, isValidElement, type ReactNode } from "react";
+import { Children, isValidElement, type ElementType, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { setupI18n } from "../i18n";
 import { patchModelMappings, readModelMappings, patchModelDisplayNames, readModelDisplayNames, hasOneMillionModelSuffix } from "../features/claude/profileEnvText";
 import { ProviderModelFields } from "./ProviderFields";
+import { AppSelect } from "./AppSelect";
 
 setupI18n("zh-CN");
 
-type ControlProps = { children?: ReactNode; "aria-label"?: string; disabled?: boolean; checked?: boolean; onClick?: () => void };
-function findControl(node: ReactNode, type: string, label: string): ControlProps | undefined {
+type ControlProps = { children?: ReactNode; "aria-label"?: string; disabled?: boolean; checked?: boolean; onClick?: () => void;
+  value?: string; options?: Array<{ value: string }> };
+function findControls(node: ReactNode, type: ElementType, label?: string): ControlProps[] {
+  const found: ControlProps[] = [];
   for (const child of Children.toArray(node)) {
     if (!isValidElement<ControlProps>(child)) continue;
-    if (child.type === type && child.props["aria-label"] === label) return child.props;
-    const found = findControl(child.props.children, type, label);
-    if (found) return found;
+    if (child.type === type && (label === undefined || child.props["aria-label"] === label)) found.push(child.props);
+    else found.push(...findControls(child.props.children, type, label));
   }
+  return found;
 }
+const findControl = (node: ReactNode, type: ElementType, label: string) => findControls(node, type, label)[0];
 
 function mappingFields(value: string, onChange: (value: string) => void, displayValue = "", onDisplayChange: (value: string) => void = () => {}) {
   return ProviderModelFields({
-    value, onChange, models: [], fetching: false, disabled: false, onFetch: () => {},
+    models: [], fetching: false, disabled: false, onFetch: () => {},
     mappingFields: [{ key: "ANTHROPIC_DEFAULT_OPUS_MODEL", label: "Opus", value, onChange, displayValue, onDisplayChange, oneMillion: hasOneMillionModelSuffix(value), onToggleOneMillion: () => {} }],
-    labels: { model: "模型", placeholder: "", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取", requestModel: "请求模型", displayName: "显示名", oneMillion: "1M", clear: "清空" },
+    labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取", requestModel: "请求模型", displayName: "显示名", oneMillion: "1M", clear: "清空" },
   });
 }
 
 describe("模型映射行操作", () => {
+  it("有缓存时手输模型进入候选，替换或清空后消失且不修改缓存", () => {
+    const models = ["fetched-model", "manual-model", "fetched-model"];
+    let value = "";
+    const onChange = (next: string) => { value = next; };
+    const render = () => ProviderModelFields({
+      models,
+      fetching: false, disabled: false, onFetch: vi.fn(),
+      mappingFields: [{ key: "opus", label: "Opus", value, onChange }],
+      labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取" },
+    });
+    for (const next of ["preview-model[1M]", "replacement", "manual-model", ""]) {
+      const input = findControl(render(), "input", "Opus 模型") as { onChange: (event: { target: { value: string } }) => void };
+      input.onChange({ target: { value: next } });
+      const select = findControls(render(), AppSelect)[0];
+      const expected = ["fetched-model", "manual-model"];
+      if (next && next !== "manual-model") expected.push(next.replace("[1M]", ""));
+      expect(select.options!.map((option) => option.value)).toEqual(expected);
+      expect(select.value).toBe(next.replace("[1M]", "") || null);
+    }
+    expect(models).toEqual(["fetched-model", "manual-model", "fetched-model"]);
+  });
+
+  it("未获取列表时不以手输模型填充下拉，选择器禁用", () => {
+    const tree = mappingFields("manual-model", vi.fn());
+    expect(findControls(tree, AppSelect)[0]).toMatchObject({ options: [], value: null, disabled: true });
+    expect(findControl(tree, "input", "Opus 请求模型").value).toBe("manual-model");
+  });
+
   it.each(["", "   ", "[1M]"])("请求模型为空（%j）时清空与 1M 都禁用且不选中", (value) => {
     const tree = mappingFields(value, vi.fn());
     expect(findControl(tree, "button", "清空 Opus")?.disabled).toBe(true);

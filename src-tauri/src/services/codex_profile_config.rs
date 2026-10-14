@@ -1,7 +1,8 @@
 use super::{
-    app_err, atomic_write, backup_file, builtin, codex_config, now_ms, AppContext, AppResult,
-    ProfilePayload,
+    app_err, atomic_write, backup_file, codex_config, now_ms, AppContext, AppResult,
+    CodexProfilePayload,
 };
+use crate::codex_builtin;
 
 pub(crate) struct ProviderDetail {
     pub(crate) base_url: Option<String>,
@@ -39,7 +40,7 @@ pub(crate) fn provider_api_key(body: &str) -> Option<String> {
 }
 
 /// 供应商已保存的真实 API 密钥（占位符视为未配置）。
-pub(crate) fn stored_provider_api_key(payload: &ProfilePayload) -> Option<String> {
+pub(crate) fn stored_provider_api_key(payload: &CodexProfilePayload) -> Option<String> {
     payload
         .provider_body
         .as_deref()
@@ -47,15 +48,15 @@ pub(crate) fn stored_provider_api_key(payload: &ProfilePayload) -> Option<String
         .filter(|key| !key.trim().is_empty() && !is_builtin_placeholder(payload, key))
 }
 
-pub(crate) fn is_builtin_placeholder(payload: &ProfilePayload, key: &str) -> bool {
+pub(crate) fn is_builtin_placeholder(payload: &CodexProfilePayload, key: &str) -> bool {
     payload
         .builtin
         .as_deref()
-        .and_then(|kind| builtin::template(kind).ok())
+        .and_then(|kind| codex_builtin::template(kind).ok())
         .is_some_and(|template| template.is_placeholder(key.as_bytes()))
 }
 
-pub(crate) fn profile_config_fragment(payload: &ProfilePayload) -> String {
+pub(crate) fn profile_config_fragment(payload: &CodexProfilePayload) -> String {
     let mut fragment = String::new();
     for (key, raw) in &payload.model_values {
         fragment.push_str(&format!("{key} = {raw}\n"));

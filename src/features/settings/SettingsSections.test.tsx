@@ -15,12 +15,14 @@ const settingsViewSource = readFileSync(new URL("./SettingsView.tsx", import.met
 const accountsViewSource = readFileSync(new URL("../accounts/AccountsView.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../style.css", import.meta.url), "utf8");
 // 各用例只读不写，共用同一份通用设置表单，新增字段只改这一行。
-const form: Settings = { theme: "system", language: "system", auto_restart: false, autostart_enabled: false, silent_start: false, minimize_to_tray: false, tray_click_action: "show_window", auto_check_update: true, auto_backup_interval_hours: 0, database_backup_keep_count: 5 };
+const form: Settings = { theme: "system", language: "system", auto_restart: false, autostart_enabled: false, silent_start: false, minimize_to_tray: false, tray_click_action: "show_window", startup_view: "codexProfiles", macos_terminal: "terminal", auto_check_update: true, auto_backup_interval_hours: 0, database_backup_keep_count: 5, proxy_mode: "auto", proxy_url: "", claude_terminal_dirs: [] };
 
 describe("SettingsSections", () => {
   it("formats backup titles", () => {
+    expect(backupTitle("agmux-20260822-120000-000.db")).toBe("20260822-120000-000");
+    expect(backupTitle("agmux-backup-20260822-120000-000.db")).toBe("20260822-120000-000");
     expect(backupTitle("cg-backup-20260822-120000-000.db")).toBe("20260822-120000-000");
-    expect(backupTitle("cgswitch-export-demo.db")).toBe("demo");
+    expect(backupTitle("budtty-export-demo.db")).toBe("demo");
   });
 
   it("formats backup sizes", () => {
@@ -34,8 +36,12 @@ describe("SettingsSections", () => {
   });
 
   it("识别自动备份的时间戳文件名", () => {
+    expect(isAutoBackupName("agmux-20260822-120000-000.db")).toBe(true);
+    expect(isManualBackupName("agmux-manual-20260923-120000-000.db")).toBe(true);
+    expect(isAutoBackupName("agmux-backup-20260822-120000-000.db")).toBe(true);
+    expect(isManualBackupName("agmux-backup-manual-20260923-120000-000.db")).toBe(true);
     expect(isAutoBackupName("cg-backup-20260822-120000-000.db")).toBe(true);
-    expect(isAutoBackupName("cgswitch-export-demo.db")).toBe(false);
+    expect(isAutoBackupName("budtty-export-demo.db")).toBe(false);
     // 手动「立即备份」带 manual- 标记，自动备份没有
     expect(isManualBackupName("cg-backup-manual-20260923-120000-000.db")).toBe(true);
     expect(isManualBackupName("cg-backup-20260822-120000-000.db")).toBe(false);
@@ -48,12 +54,12 @@ describe("SettingsSections", () => {
   it("备份管理为外围大卡嵌三张小卡：操作、自动备份、备份记录", () => {
     setupI18n("zh-CN");
     const html = renderToStaticMarkup(
-      <FeedbackProvider><SettingsAdvanced form={form} onPatch={() => undefined} paths={[]} backupsEpoch={0} onOpenPath={() => undefined} onRefresh={() => Promise.resolve()} /></FeedbackProvider>,
+      <FeedbackProvider><SettingsAdvanced form={form} onPatch={() => undefined} paths={[]} backupsEpoch={0} onOpenPath={() => undefined} openingPath={null} onRefresh={() => Promise.resolve()} /></FeedbackProvider>,
     );
     expect(html).toContain("数据备份");
     expect(html).toContain("备份记录");
     // 首帧无缓存时不渲染空态文案：切分页重挂载靠缓存直出，不闪"还没有备份记录"
-    expect(html).not.toContain("还没有备份记录。");
+    expect(html).not.toContain("还没有备份记录");
     // 外围一张大卡分节，内嵌卡片只给备份频率/最多保留选项与每条备份记录，备份记录不再折叠
     expect(html.match(/role="switch"/g)).toHaveLength(1);
     expect(settingsSectionsSource).toContain("onCheckedChange={(on) => onPatch({ auto_backup_interval_hours: on ? 6 : 0 })}");
@@ -95,22 +101,10 @@ describe("SettingsSections", () => {
     expect(settingsSectionsSource).toContain('role="menuitem"');
   });
 
-  it("keeps the active theme option at normal weight", () => {
-    const html = renderToStaticMarkup(
-      <FeedbackProvider><SettingsGeneral form={form} onPatch={() => undefined} /></FeedbackProvider>,
-    );
-    const activeButton = html.match(/<button[^>]*aria-pressed="true"[^>]*>/)?.[0];
-    expect(activeButton).toContain("font-normal");
-    expect(activeButton).toContain("app-selection-state");
-    expect(activeButton).toContain('data-active="true"');
-    expect(activeButton).not.toContain("bg-(--selection-bg)");
-    expect(activeButton).not.toContain("font-semibold");
-  });
-
   it("provides a manual app update check in the about section", () => {
     setupI18n("zh-CN");
     const html = renderToStaticMarkup(
-      <FeedbackProvider><AppUpdateProvider enabled={false}><SettingsAbout paths={[]} onOpenPath={() => undefined} openingPath={null} /></AppUpdateProvider></FeedbackProvider>,
+      <FeedbackProvider><AppUpdateProvider enabled={false}><SettingsAbout /></AppUpdateProvider></FeedbackProvider>,
     );
     expect(html).toContain("检查更新");
     expect(html).not.toContain("检查 GitHub 正式发布版本");
@@ -118,14 +112,15 @@ describe("SettingsSections", () => {
     expect(styles).toContain(".settings-about__actions > .apple-action-button");
   });
 
-  it("应用信息和数据路径分别成卡，版本号位于应用名下方", () => {
+  it("关于仅展示应用信息，版本号位于应用名下方", () => {
     setupI18n("zh-CN");
     const html = renderToStaticMarkup(
-      <FeedbackProvider><AppUpdateProvider enabled={false}><SettingsAbout paths={[]} onOpenPath={() => undefined} openingPath={null} /></AppUpdateProvider></FeedbackProvider>,
+      <FeedbackProvider><AppUpdateProvider enabled={false}><SettingsAbout /></AppUpdateProvider></FeedbackProvider>,
     );
-    expect(html.match(/class="apple-group /g)).toHaveLength(2);
+    expect(html.match(/class="apple-group /g)).toHaveLength(1);
+    expect(html).not.toContain("数据与路径");
     expect(html).toContain("app-version");
-    expect(html).toContain('class="apple-wordmark">CGswitch</span><span class="flex items-center gap-2"><span class="app-version">v');
+    expect(html).toContain('class="apple-wordmark">Agmux</span><span class="flex items-center gap-2"><span class="app-version">v');
     expect(html.indexOf("app-version")).toBeLessThan(html.indexOf("更新日志"));
     expect(html).not.toContain("当前版本");
     expect(html).not.toContain("版本更新");
@@ -140,48 +135,52 @@ describe("SettingsSections", () => {
     expect(html).toContain("点个 Star");
   });
 
-  it("does not show the backup directory in the about paths", () => {
+  it("数据管理同时展示备份与数据路径，路径列表不重复展示备份目录", () => {
     setupI18n("zh-CN");
     const html = renderToStaticMarkup(
       <FeedbackProvider>
-        <AppUpdateProvider enabled={false}>
-          <SettingsAbout
-            paths={[
-              { label: "about.paths.appData", path: "C:\\Users\\<user>\\.cgswitch" },
-              { label: "about.paths.backups", path: "C:\\Users\\<user>\\.cgswitch\\backups\\database" },
-              { label: "about.paths.logs", path: "C:\\Users\\<user>\\.cgswitch\\logs" },
-              { label: "about.paths.codexConfig", path: "C:\\Users\\<user>\\.codex\\config.toml" },
-            ]}
-            onOpenPath={() => undefined}
-            openingPath={null}
-          />
-        </AppUpdateProvider>
+        <SettingsAdvanced
+          form={form}
+          onPatch={() => undefined}
+          backupsEpoch={0}
+          onRefresh={() => Promise.resolve()}
+          paths={[
+            { label: "about.paths.appData", path: "C:\\Users\\<user>\\.agmux" },
+            { label: "about.paths.backups", path: "C:\\Users\\<user>\\.agmux\\backups\\database" },
+            { label: "about.paths.logs", path: "C:\\Users\\<user>\\.agmux\\logs" },
+            { label: "about.paths.codexConfig", path: "C:\\Users\\<user>\\.codex\\config.toml" },
+          ]}
+          onOpenPath={() => undefined}
+          openingPath={null}
+        />
       </FeedbackProvider>,
     );
+    expect(html).toContain("备份与恢复");
+    expect(html).toContain("数据与路径");
     expect(html).toContain("应用数据目录");
     expect(html).toContain("日志目录");
-    expect(html).toContain("存放 CGswitch 的应用数据");
-    expect(html).toContain("查看 CGswitch 的运行日志");
+    expect(html).toContain("存放 Agmux 的应用数据");
+    expect(html).toContain("查看 Agmux 的运行日志");
     expect(html).toContain("查看 Codex 的配置文件");
-    expect(html).not.toContain(".cgswitch");
+    expect(html).not.toContain(".agmux");
     expect(html).not.toContain("config.toml");
-    expect(html).not.toContain("备份目录");
-    // 路径行与 About 行统一为「整行可点 + 箭头」（共用 SettingsRowLink）：无「打开」按钮
+    expect(html.match(/备份目录/g)).toHaveLength(1);
+    // 三条路径统一为整行可点的链接。
     expect(html).not.toContain("打开</button>");
-    expect(html.match(/lucide-chevron-right/g)).toHaveLength(5);
+    expect(html.slice(html.indexOf("数据与路径")).match(/lucide-chevron-right/g)).toHaveLength(3);
   });
 
   it("检测到更新后将动作和版本号合并到同一个升级药丸", () => {
     expect(settingsSectionsSource).toContain('<span className="apple-chip apple-chip--success" style={{ color: "var(--text-primary)" }}>{t("about.updateAvailable")}</span>');
     expect(settingsSectionsSource).not.toContain("settings-about__update-description");
-    expect(settingsSectionsSource).toContain('t("about.upgradeTo")');
+    expect(settingsSectionsSource).toContain('t("about.updateTo")');
     expect(settingsSectionsSource).not.toContain('t("about.updateNow")');
     expect(settingsSectionsSource).toContain('t("about.changelog")');
     expect(settingsSectionsSource).toContain("releaseNotesUrl(update?.version ?? version.trim())");
     expect(settingsSectionsSource).toContain("if (found) {");
     expect(settingsSectionsSource).toContain("setConfirming(true);");
     expect(settingsSectionsSource).toContain('feedback.success(t("about.upToDate"))');
-    expect(settingsSectionsSource).toMatch(/t\("about\.upgradeTo"\)\}\s+v\{update\.version\}/);
+    expect(settingsSectionsSource).toMatch(/t\("about\.updateTo"\)\}\s+v\{update\.version\}/);
     expect(settingsSectionsSource).not.toContain('className="app-version" title={t("about.updateAvailable"');
     expect(settingsSectionsSource).not.toContain("update-available-card");
     expect(settingsSectionsSource).not.toContain("update-available-reveal");
@@ -196,10 +195,15 @@ describe("SettingsSections", () => {
   });
 
   it("设置顶部标签栏底线复用全局分割线", () => {
-    expect(settingsViewSource).toContain("settings-tab-bar");
+    expect(settingsViewSource).toContain("<AppTabBar<Section>");
     expect(styles).toContain(".settings-tab-bar {");
     expect(settingsViewSource).not.toContain("border-b border-[var(--panel-divider)]");
     expect(settingsViewSource).not.toContain("border-b border-[var(--panel-border)]");
+  });
+
+  it("设置页复用全局标题栏并显示设置标题", () => {
+    expect(settingsViewSource).toContain('<header className="apple-page-bar">');
+    expect(settingsViewSource).toContain('<h1 className="apple-title">{t("view.title")}</h1>');
   });
 
   it("更新检查支持启动自动检查（可开关）与关于页手动触发并存", () => {
@@ -259,10 +263,25 @@ describe("SettingsSections", () => {
 
   it("外观与语言设置共享统一的右侧控制列宽度", () => {
     expect(settingsSectionsSource).toContain('<div className="w-72 shrink-0">');
-    expect(settingsSectionsSource).toContain('className="apple-group apple-segmented-control inline-flex h-9 w-72 shrink-0 gap-0.5 p-0.5"');
-    expect(settingsSectionsSource).toContain('className="app-selection-state inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-full text-sm font-normal"');
+    expect(settingsSectionsSource).toContain('<AppSegmentedControl\n                className="h-9 w-72 shrink-0"');
     expect(settingsSectionsSource).not.toContain('<div className="w-44 shrink-0">');
-    expect(settingsSectionsSource).not.toContain('className="app-selection-state inline-flex h-9 w-28 items-center justify-center gap-1.5 rounded-full text-sm font-normal"');
+  });
+
+  it("主题切换复用共享胶囊，按已保存选项定位并保留原有字体", () => {
+    setupI18n("zh-CN");
+    const labels = ["跟随系统", "浅色", "深色"];
+    for (const [index, theme] of (["system", "light", "dark"] as const).entries()) {
+      const html = renderToStaticMarkup(<SettingsGeneral form={{ ...form, theme }} onPatch={() => undefined} />);
+      expect(html).toContain('class="app-segmented-control h-9 w-72 shrink-0"');
+      expect(html).toContain(`style="--segment-count:3;--segment-index:${index}"`);
+      const buttons = [...html.matchAll(/<button[^>]*font-normal[^>]*aria-pressed="(true|false)"[^>]*>(.*?)<\/button>/g)];
+      expect(buttons).toHaveLength(3);
+      buttons.forEach((button, buttonIndex) => {
+        expect(button[1]).toBe(buttonIndex === index ? "true" : "false");
+        expect(button[2]).toContain(labels[buttonIndex]);
+      });
+    }
+    expect(settingsSectionsSource).not.toContain("theme-segmented-control");
   });
 
   it("通用设置卡片的分割线位于选项间距中央", () => {
@@ -294,9 +313,9 @@ describe("SettingsSections", () => {
     const html = renderToStaticMarkup(
       <FeedbackProvider><SettingsGeneral form={form} onPatch={() => undefined} /></FeedbackProvider>,
     );
-    expect(html.match(/flex items-center justify-between gap-4/g)).toHaveLength(5);
+    expect(html.match(/flex items-center justify-between gap-4/g)).toHaveLength(6);
     expect(html.match(/role="switch"/g)).toHaveLength(3);
-    expect(html.match(/settings-icon-tile/g)).toHaveLength(5);
+    expect(html.match(/settings-icon-tile/g)).toHaveLength(6);
   });
 
   it("通用设置按语义拆分为外观语言和启动行为分组", () => {
@@ -312,7 +331,6 @@ describe("SettingsSections", () => {
     expect(settingsViewSource).not.toContain('tab("account"');
     expect(settingsViewSource).not.toContain('account.sectionTitle');
     expect(settingsViewSource).toContain('label={t("codex.sectionTitle")}');
-    expect(settingsViewSource).toContain('label={t("backup.sectionTitle")}');
     expect(settingsViewSource).toContain('<SettingsPanelSection id="about" label={t("about.sectionTitle")}>');
   });
 
@@ -329,7 +347,7 @@ describe("SettingsSections", () => {
     };
     const balance: ProfileBalanceInfo = {
       currency: "", total_balance: "",
-      usage_percent: 18, usage_reset: "3h12m", usage_reset_at: Date.now() + 3 * 3_600_000, weekly_usage_percent: null, weekly_reset: null,
+      usage_percent: 18, usage_reset: "3h12m", usage_reset_at: Date.now() + 3 * 3_600_000, usage_label: "5小时", weekly_usage_percent: 42, weekly_reset: "4d8h", weekly_reset_at: Date.now() + 4 * 86_400_000, weekly_label: "7天",
       reset_credits_available: 2,
       reset_credits: [
         { id: "credit-1", reset_type: "codex_rate_limits", expires_at: Date.now() + 16 * 86_400_000 },
@@ -350,7 +368,11 @@ describe("SettingsSections", () => {
     expect(html).toContain("2 次");
     expect(html).toContain("完全重置");
     expect(html).toContain("到期：");
-    expect(html).toContain("3h12m 后");
+    expect(html).toContain("5小时限额");
+    expect(html).toContain("每周限额");
+    expect(html).toContain("3小时12分钟后重置");
+    expect(html).toContain("4天8小时后重置");
+    expect(html).not.toContain("重置时间：");
     expect(accountsViewSource).toContain('month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit"');
     expect(html).not.toContain("恢复 5 小时和每周使用限额");
     const zeroCreditHtml = renderToStaticMarkup(<FeedbackProvider><AccountsView initialStatus={status} balanceCache={{ "auth:desktop:desktop": { ...balance, reset_credits_available: 0, reset_credits: [] } }} /></FeedbackProvider>);

@@ -2,19 +2,19 @@
 //!
 //! 运行：cargo bench --bench config_bench --manifest-path src-tauri/Cargo.toml
 //! CI 解析需要 bencher 输出：加 `-- --output-format bencher`（github-action-benchmark 的 cargo 解析器只认该格式）
-//! 全部使用临时目录（tempfile），不触碰真实 ~/.cgswitch 与 ~/.codex 数据。
+//! 全部使用临时目录（tempfile），不触碰真实 ~/.agmux 与 ~/.codex 数据。
 
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use cgswitch_lib::codex::config::{
+use agmux_lib::codex::config::{
     apply_to_document, capture_from_document, format_document, parse_document, validate_document,
 };
-use cgswitch_lib::database::Database;
-use cgswitch_lib::models::{ProfilePayload, Settings};
-use cgswitch_lib::paths::from_home;
-use cgswitch_lib::services::AppContext;
+use agmux_lib::database::Database;
+use agmux_lib::models::{CodexProfilePayload, Settings};
+use agmux_lib::paths::from_home;
+use agmux_lib::services::AppContext;
 
 /// 与真实 ~/.codex/config.toml 结构一致的最小样本（含注释与无关配置，验证保真逻辑）。
 const SAMPLE_CONFIG_TOML: &str = r#"
@@ -100,16 +100,16 @@ fn bench_db_profiles_query(c: &mut Criterion) {
     let paths = from_home(dir.path()).unwrap();
     let db = Database::open(&paths).unwrap();
     for index in 0..20 {
-        db.insert_profile(
+        db.codex_insert_profile(
             &format!("供应商 {index}"),
-            &ProfilePayload::default(),
+            &CodexProfilePayload::default(),
             &index.to_string(),
         )
         .unwrap();
     }
 
     c.bench_function("db_profiles_query_20", |b| {
-        b.iter(|| black_box(db.profiles().unwrap().len()));
+        b.iter(|| black_box(db.codex_profiles().unwrap().len()));
     });
 }
 

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { api, isTauri } from "../api";
-import type { AppState, AuthStatus, CodexAppStatus, Settings } from "../types";
+import type { AppView, AppState, AuthStatus, CodexAppStatus, Settings } from "../types";
 
-export type AppView = "profiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "claude";
+export type { AppView };
+
+/** 设置里的 startup_view 是透传字符串，手改坏值在此回落默认页。 */
+export function asAppView(value: string | null | undefined): AppView {
+  const appViews: AppView[] = ["codexProfiles", "claudeProfiles", "plugins", "accounts", "mcp", "skills", "agentTools", "settings"];
+  return appViews.includes(value as AppView) ? value as AppView : "codexProfiles";
+}
 
 // 启动期预发 get_state：IPC 与脚本求值、React 挂载并行，首个 refresh 直接吃这份在途结果，
 // 省掉"挂载完 effect 才发请求"的一轮串行等待。只消费一次；激活/聚焦后的 refresh 照常发新请求。
@@ -163,14 +169,14 @@ export function useActivationRefresh() {
 
 export function useSidebar() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem("cgswitch.sidebar-collapsed") !== "0",
+    () => localStorage.getItem("agmux.sidebar-collapsed") !== "0",
   );
   const [sidebarFlyoutArmed, setSidebarFlyoutArmed] = useState(true);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((collapsed) => {
       const next = !collapsed;
-      localStorage.setItem("cgswitch.sidebar-collapsed", next ? "1" : "0");
+      localStorage.setItem("agmux.sidebar-collapsed", next ? "1" : "0");
       if (next) setSidebarFlyoutArmed(false);
       return next;
     });

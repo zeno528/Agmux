@@ -5,7 +5,8 @@ import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { getCachedPlugins, loadPlugins } from "../../app/managementDataCache";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import { LoadingSpinner } from "../../components/LoadingSpinner";
+import { ManagementPageTitle } from "../../components/ManagementPageTitle";
+import { PlanBadge } from "../../components/PlanBadge";
 import { TrashIcon } from "../../components/TrashIcon";
 import PluginDetailView from "./PluginDetailView";
 import PluginMarketplaceView from "./PluginMarketplaceView";
@@ -15,7 +16,7 @@ import SourceLink from "./components/SourceLink";
 import { comparePlugins, matchesQuery, originLabels, removableOrigins } from "./pluginMeta";
 import type { AppState, PluginSummary } from "../../types";
 
-export default function PluginsView({ state }: { state: AppState }) {
+export default function PluginsView({ state, popEpoch }: { state: AppState; popEpoch: number }) {
   const feedback = useFeedback();
   const { t } = useTranslation("plugins");
   // 缓存命中即首帧直出，不等微任务回填；未命中时保持加载态走正常请求
@@ -26,7 +27,7 @@ export default function PluginsView({ state }: { state: AppState }) {
   const [addingMarketplace, setAddingMarketplace] = useState(false);
   const [query, setQuery] = useState("");
   const thirdPartyProfile =
-    state.profiles.find((profile) => profile.id === state.active_profile_id)?.kind === "third_party";
+    state.codex_profiles.find((profile) => profile.id === state.active_codex_profile_id)?.kind === "third_party";
 
   const refresh = async (force = false) => {
     try {
@@ -45,6 +46,14 @@ export default function PluginsView({ state }: { state: AppState }) {
     void refresh();
     void refresh(true);
   }, []);
+
+  // 侧栏重复点击本视图 = 弹回一级；只清子页状态，不刷新（安装/卸载流程自带刷新）。
+  // addingMarketplace 关闭即卸载市场页，其内部的添加子页随挂载消失。
+  useEffect(() => {
+    if (!popEpoch) return;
+    setSelectedPlugin(null);
+    setAddingMarketplace(false);
+  }, [popEpoch]);
 
   const remove = async (plugin: PluginSummary) => {
     const confirmed = await feedback.confirm({
@@ -86,16 +95,15 @@ export default function PluginsView({ state }: { state: AppState }) {
   return (
     <section className="apple-scroll-page mx-auto w-full max-w-none">
       <header className="apple-page-bar flex-wrap justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-accent">
-            <Blocks className="h-[18px] w-[18px]" strokeWidth={2} />
-          </span>
-          <div className="flex items-center gap-2">
-            <div className="apple-title">{t("title")}</div>
-            {loaded ? (
-              <span className="apple-chip" aria-label={t("marketDetail.installedCountAria", { count: visiblePlugins.length })}>{t("marketDetail.installedCount", { count: visiblePlugins.length })}</span>
-            ) : <span className="text-accent" role="status" aria-label={t("marketDetail.loadingAria")}><LoadingSpinner size="md" /></span>}
-          </div>
+        <div className="flex items-center gap-3">
+          <ManagementPageTitle
+            icon={<span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-accent"><Blocks className="h-[18px] w-[18px]" strokeWidth={2} /></span>}
+            title={t("title")}
+            count={loaded ? plugins.length : undefined}
+            countLabel={loaded ? t("marketDetail.installedCountAria", { count: plugins.length }) : undefined}
+            loadingLabel={t("marketDetail.loadingAria")}
+          />
+          <PlanBadge plan="Codex" />
         </div>
         <div className="flex items-center gap-2">
           <PluginSearchInput value={query} onChange={setQuery} />

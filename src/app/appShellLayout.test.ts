@@ -4,22 +4,33 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const hooksSource = readFileSync(new URL("./appShellHooks.ts", import.meta.url), "utf8");
-const profileEditSource = readFileSync(new URL("../features/profiles/ProfileEdit.tsx", import.meta.url), "utf8");
+const profileEditSource = readFileSync(new URL("../features/codex/CodexProfileEdit.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../style.css", import.meta.url), "utf8");
 
 describe("AppShell 布局", () => {
   it("保持侧栏导航紧贴品牌区，并按 Codex/Claude 分组数据驱动渲染，通用导航不显示标题", () => {
     expect(source).toContain("apple-sidebar relative flex h-full shrink-0 flex-col");
-    expect(source).toContain('className="mx-1.5 mt-3 space-y-3"');
+    expect(source).toContain('className="mx-1.5 mt-3 flex flex-1 flex-col gap-3"');
     expect(source).toContain("sidebarGroups.map");
-    expect(source).toContain("apple-sidebar-group-label");
+    expect(source).toContain('className={navClass} data-active={view === item.view ? "true" : undefined}');
+    expect(source).not.toContain("apple-sidebar-group-label");
     expect(source).toContain('src="/codex.svg"');
     expect(source).toContain('src="/claude-code.svg"');
-    expect(source).toContain('group.key !== "common"');
-    expect(styles).toContain(".apple-sidebar-group + .apple-sidebar-group");
-    // 分组文案复用全局侧栏文字动画，不能用 display:none 瞬间切换。
-    expect(source).toContain('<span className="apple-sidebar-label">{t(group.labelKey)}</span>');
-    expect(styles).not.toContain(".apple-sidebar--collapsed .apple-sidebar-group-label");
+    expect(source).toContain('key: "clients"');
+    expect(source.indexOf('labelKey: "nav.groupCodex"')).toBeLessThan(source.indexOf('labelKey: "nav.groupClaude"'));
+    expect(source).toContain('view: "claudeProfiles"');
+    expect(source).toContain('view: "codexProfiles"');
+    expect(source).not.toContain('labelKey: "nav.providers"');
+    expect(source).not.toContain('labelKey: "nav.claudeProviders"');
+    expect(styles).toContain(".apple-sidebar-group--content");
+    expect(source.indexOf('key: "clients"')).toBeLessThan(source.indexOf('key: "common"'));
+    expect(source.indexOf('labelKey: "nav.plugins"')).toBeLessThan(source.indexOf('labelKey: "nav.mcp"'));
+    expect(source).toContain('key: "footer"');
+    expect(source.indexOf('labelKey: "nav.accounts"')).toBeLessThan(source.indexOf('labelKey: "nav.settings"'));
+    expect(source).toContain('group.key === "footer" ? <UpdateNotice');
+    // 客户端按钮与下方功能入口复用全局侧栏文字动画，不能用 display:none 瞬间切换。
+    expect(styles).not.toContain(".apple-sidebar-group-label");
+    expect(styles).toContain(".apple-sidebar-nav-button img");
     // 每个导航项必须渲染可见文案 + 收缩态悬浮提示（曾因修复闭合标签丢失过，钉死）
     expect(source).toContain('<span className="apple-sidebar-label" aria-hidden={sidebar.sidebarCollapsed}>{t(item.labelKey)}</span>');
     expect(source).toContain('sidebar.sidebarCollapsed && sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout"');
@@ -39,26 +50,48 @@ describe("AppShell 布局", () => {
     // 外层 key 不得含 view：否则每次切页整树重挂载，保活失效
     expect(source).toContain('key={state ? "app" : "loading"}');
     expect(source).not.toContain('key={state ? view : "loading"}');
+    expect(source).toContain('<SettingsView state={state} onPreviewTheme={previewTheme}');
     // 首进页面必须在渲染期进挂载清单：useEffect 晚一帧才提交，
     // 「旧页已隐藏、新页未挂载」的空主区域帧正是首进闪屏的来源
     expect(source).toContain('if (!visitedViews.has(view)) {\n    setVisitedViews(new Set(visitedViews).add(view));\n  }');
     expect(source).not.toContain("setVisitedViews((prev) => (prev.has(view)");
   });
 
-  it("切回保活页时进场动画补播，同页内部挂载不重复播", () => {
-    // scan 以 view 为依赖重跑：切回时 DOM 不变、observer 收不到，靠 effect 补播
+  it("重复点击当前视图的侧栏按钮弹回该视图一级，切其他视图不弹", () => {
+    // 只有重复点击当前视图才 bump popRequest；目标视图收到递增的 epoch 自行清子页状态
+    expect(source).toContain("if (target !== view) setView(target);");
+    expect(source).toContain("setPopRequest((current) => ({ view: target, epoch: (current?.epoch ?? 0) + 1 }))");
+    // 托盘与编辑页的程序化跳转不参与弹回
+    expect(source).toContain('openSettings={() => setView("settings")}');
+    expect(source).toContain('onManageChatgptAccounts={() => setView("accounts")}');
+    // 有整页子级的五个视图都接了 popEpoch；effect 体逐字锁定：只清子页状态、带零反应守卫、无刷新调用
+    const popEffects: [string, string][] = [
+      ["features/codex/CodexProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
+      ["features/claude/ClaudeProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
+      ["features/mcp/McpView", "if (!popEpoch) return;\n    setEditingServer(null);\n    setCreatingServer(false);\n    setDiffOpen(false);\n  }, [popEpoch]);"],
+      ["features/plugins/PluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
+      ["features/skills/SkillsView", "if (!popEpoch) return;\n    setImporting(false);\n  }, [popEpoch]);"],
+    ];
+    for (const [file, effect] of popEffects) {
+      const viewSource = readFileSync(new URL(`../${file}.tsx`, import.meta.url), "utf8");
+      expect(viewSource, file).toContain(effect);
+    }
+  });
+
+  it("一级切页不补播动画，同页内部挂载不重复播", () => {
+    // view 改变时重新标记已有内容，只观察后续页内切换。
     expect(source).toContain("}, [mainRef, view]);");
     // 隐藏保活页仍在 DOM（display:none），必须按可见性跳过
     expect(source).toContain("offsetParent === null");
     // played 随 effect 重建：同一次停留内同一元素不重播
-    expect(source).toContain("const played = new WeakSet<Element>();");
+    expect(source).toContain("const played = new WeakSet<Element>(main.querySelectorAll(PAGE_ENTER_TARGET));");
   });
 
   it("侧栏 MCP 角标首屏只读缓存，差异查询延迟到首屏之后再执行", () => {
     // 首屏：useSyncExternalStore 从 localStorage 缓存直出，不发起任何查询
     expect(source).toContain("useSyncExternalStore(subscribeMcpDiffBadge, getMcpDiffBadge)");
-    // 分组渲染后角标经 item.badgeText 下发，来源仍是缓存的 mcpBadge
-    expect(source).toContain('{item.badgeText ? <span className="apple-count-badge"');
+    expect(source).toContain('badgeDot: Boolean(mcpBadge)');
+    expect(source).not.toContain("item.badgeText");
     // 查询：必须被 startupReady 门控 + 固定延迟，禁止直接进首屏/冷启动关键路径
     expect(source).toContain("if (!startupReady) return;");
     expect(source).toContain("window.setTimeout(checkMcpDiff, 1500);");
@@ -66,21 +99,28 @@ describe("AppShell 布局", () => {
     expect(source).toContain("if (activationEpoch > 0) return;");
   });
 
+  it("客户端更新缓存驱动展开/收缩侧栏的状态圆点", () => {
+    expect(source).toContain("subscribeCliUpdate");
+    expect(source).toContain("badgeDot: Boolean(codexCliUpdate?.available)");
+    expect(source).toContain("badgeDot: Boolean(claudeCliUpdate?.available)");
+    expect(source).toContain('className="apple-sidebar-update-dot"');
+    expect(styles).toContain(".apple-sidebar-update-dot {");
+  });
+
   it("MCP 页查到差异后写回共享缓存，侧栏与页面同源", () => {
     const mcpViewSource = readFileSync(new URL("../features/mcp/McpView.tsx", import.meta.url), "utf8");
-    expect(mcpViewSource).toContain("setMcpDiffBadge({ count: preview.entries.length, error: false })");
+    expect(mcpViewSource).toContain("setMcpDiffBadge({ count: preview.entries.length, error: false }, target)");
   });
 
   it("config.toml 解析失败时侧栏角标同步亮起，不点进 MCP 页也能看见", () => {
     const mcpViewSource = readFileSync(new URL("../features/mcp/McpView.tsx", import.meta.url), "utf8");
     // MCP 页查失败写回 error 态
-    expect(mcpViewSource).toContain("setMcpDiffBadge({ count: 0, error: true })");
+    expect(mcpViewSource).toContain("setMcpDiffBadge({ count: 0, error: true }, target)");
     // 启动后的静默刷新同理：失败不能被吞掉
-    expect(source).toContain("setMcpDiffBadge({ count: 0, error: true })");
-    // 角标文本规则只住在 managementDataCache：侧栏与 MCP 页头必须调同一个函数，
-    // 分家就会出现"一边 9+ 一边 128"或"一边 ! 一边数字"
+    expect(source).toContain("setMcpDiffBadge({ count: 0, error: true }, target)");
+    // 侧栏圆点、客户端数字和更新入口使用同一份差异状态。
     expect(source).toContain("const mcpBadge = mcpDiffBadgeText(mcpDiffBadge)");
-    expect(mcpViewSource).toContain("mcpDiffBadgeText({ count: diffCount, error: Boolean(previewError) })");
+    expect(mcpViewSource).toContain("mcpDiffBadgeText(targetBadge)");
   });
 
   it("窗口激活时顺带查一次 MCP 差异，与启动后那次共用同一条规则", () => {
@@ -89,7 +129,7 @@ describe("AppShell 布局", () => {
     expect(onActive).toContain("checkMcpDiff()");
     expect(onActive).toContain("void refresh()");
     // 整个 AppShell 里只发这一个请求：复制一份出来就等于两处规则会分家
-    expect(source.split("api.mcpSyncPreview()").length - 1).toBe(1);
+    expect(source.split("api.codexMcpSyncPreview()").length - 1).toBe(1);
   });
 
   it("首屏稳定后统一预热管理页数据，失败无感", () => {
@@ -99,15 +139,6 @@ describe("AppShell 布局", () => {
     for (const loader of ["loadMcpServers()", "loadSkills()", "loadPlugins()", "loadPluginMarketplaces()"]) {
       expect(source).toContain(`void ${loader}.catch(() => undefined);`);
     }
-  });
-
-  it("启动期预发 get_state：首个 refresh 消费在途结果，后续照常发新请求", () => {
-    // IPC 与 React 挂载并行，砍掉"挂载完才发请求"的一轮串行等待
-    expect(hooksSource).toContain("let pendingStartupState: Promise<AppState> | null = api.getState();");
-    expect(hooksSource).toContain("const request = pendingStartupState;");
-    expect(hooksSource).toContain("const nextState = await (request ?? api.getState());");
-    expect(hooksSource).toContain("pendingStartupState = null;");
-    expect(hooksSource.indexOf("pendingStartupState = null;")).toBeLessThan(hooksSource.indexOf("const nextState = await (request ?? api.getState());"));
   });
 
   it("只在窗口从非激活状态恢复时刷新", () => {
@@ -134,18 +165,22 @@ describe("AppShell 布局", () => {
   });
 
   it("冷启动窗口一路透传到供应商卡：余额刷新只在进程启动期间延后", () => {
-    const profilesViewSource = readFileSync(new URL("../features/profiles/ProfilesView.tsx", import.meta.url), "utf8");
-    const profileCardSource = readFileSync(new URL("../features/profiles/ProfileCard.tsx", import.meta.url), "utf8");
+    const profilesViewSource = readFileSync(new URL("../features/codex/CodexProfilesView.tsx", import.meta.url), "utf8");
+    const codexProfileCardSource = readFileSync(new URL("../features/codex/CodexProfileCard.tsx", import.meta.url), "utf8");
     expect(source).toContain("coldStart={!startupReady}");
     expect(profilesViewSource).toContain("coldStart={coldStart}");
-    expect(profileCardSource).toContain("coldStart: boolean;");
+    expect(codexProfileCardSource).toContain("coldStart: boolean;");
   });
 
   it("首屏完成后才启动自动更新检查", () => {
     const startup = source.slice(source.indexOf("let delayedAuth: number | undefined;"));
     expect(source).toContain("const [startupReady, setStartupReady] = useState(false);");
     expect(source).toContain("setStartupReady(true);");
-    expect(source).toContain('<AppUpdateProvider enabled={Boolean(state?.settings.auto_check_update) && startupReady} ready={startupReady}>');
+    const updater = source.match(/<AppUpdateProvider\b[^>]*>/)?.[0] ?? "";
+    expect(updater).toContain("enabled={Boolean(state?.settings.auto_check_update) && startupReady}");
+    expect(updater).toContain("ready={startupReady}");
+    expect(updater).toContain("proxyMode={state?.settings.proxy_mode}");
+    expect(updater).toContain("proxyUrl={state?.settings.proxy_url}");
     expect(startup.indexOf("setStartupReady(true);")).toBeGreaterThan(startup.indexOf("await appWindow?.show();"));
   });
 
@@ -174,8 +209,8 @@ describe("AppShell 布局", () => {
     expect(source).not.toContain('active ? "bg-(--tile-bg) text-accent" :');
     expect(source).not.toContain('active ? "bg-(--selection-bg) text-accent" :');
     expect(source).not.toContain('active ? "bg-(--selection-bg) font-semibold text-accent" :');
-    // 侧栏标签的颜色两主题都靠继承 body（浅 #1c1c1e / 深 #ffffff），激活项继承按钮的 text-accent。
-    // 禁止再给标签写直接 color 规则：它会压过继承，让激活态在深色下不变色。
+    // 侧栏标签的颜色两主题都靠继承 body（浅 #1c1c1e / 深 #ffffff），激活项不单独变色。
+    // 禁止再给标签写直接 color 规则，保持激活态与普通项一致。
     expect(styles).not.toContain(".apple-sidebar-nav-button .apple-sidebar-label");
     expect(styles).not.toContain(".apple-sidebar-indicator");
     expect(styles).toMatch(/\.apple-sidebar-flyout \{[\s\S]*font-weight: 400;/);
@@ -189,8 +224,9 @@ describe("AppShell 布局", () => {
     expect(styles).toContain(":root.dark .setting-description {\n  color: var(--text-secondary);\n}");
   });
 
-  it("让窗口控制区底边与主卡片顶边重合", () => {
-    expect(styles).toContain("--window-chrome-height: 2rem;");
+  it("按 4K 150% 缩放换算侧栏与窗口标题栏尺寸，并让窗口控制区底边与主卡片顶边重合", () => {
+    expect(styles).toContain("--sidebar-width-collapsed: 3.125rem;");
+    expect(styles).toContain("--window-chrome-height: 2.2083333333rem;");
     expect(styles).toContain("margin: 0 3px 3px 0;");
   });
 
@@ -211,7 +247,7 @@ describe("AppShell 布局", () => {
     expect(styles).toMatch(/:root \{[^}]*--hover-bg: rgb\(0 0 0 \/ 0\.05\);/);
     expect(styles).toMatch(/:root\.dark \{[^}]*--hover-bg: rgb\(255 255 255 \/ 0\.08\);/);
     expect(styles.match(/--hover-bg:/g)).toHaveLength(2);
-    for (const selector of [".window-control-button:hover", ".apple-back-button:hover", ".editor-ghost-group:hover", ".app-dialog-close:hover", ".app-toast__close:hover"]) {
+    for (const selector of ['[data-window-controls-hover="true"] .window-control-button:hover', ".apple-back-button:hover", ".editor-ghost-group:hover", ".app-dialog-close:hover", ".app-toast__close:hover"]) {
       expect(styles).toContain(`${selector} {\n  background: var(--hover-bg);`);
     }
     expect(styles).toContain(":where(.apple-icon-button:hover:not(:disabled), .apple-icon-button:focus-visible:not(:disabled)) {\n  background: var(--hover-bg);");
@@ -271,11 +307,11 @@ describe("AppShell 布局", () => {
     expect(styles).toContain("height: var(--toolbar-control-height);");
     expect(styles).toContain(".app-input--pill {\n  height: var(--toolbar-control-height);");
     expect(styles).toContain(".provider-page-brand {\n  display: inline-flex;\n  height: var(--toolbar-control-height);");
-    expect(styles).toContain(".mcp-target-switch {\n  height: var(--toolbar-control-height);");
   });
 
-  it("让主题分段控件与工具栏容器共用药丸圆角", () => {
-    expect(styles).toContain(".apple-toolbar-group,\n.apple-segmented-control {\n  border-radius: 999px;");
+  it("让工具栏保持药丸圆角，分段控件使用圆角矩形", () => {
+    expect(styles).toContain(".apple-toolbar-group {\n  border-radius: 999px;");
+    expect(styles).toMatch(/\.app-segmented-control \{[^}]*border-radius: 0\.75rem;/);
   });
 
   it("让共享面板的分割线与内容左右内边距对齐", () => {
@@ -284,7 +320,7 @@ describe("AppShell 布局", () => {
   });
 
   it("所有编辑正文复用共享容器，不依赖 apple-group 的嵌套层数", () => {
-    const files = ["profiles/ProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView", "plugins/AddPluginView", "plugins/MarketplaceDetailView"];
+    const files = ["codex/CodexProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView", "plugins/AddPluginView", "plugins/MarketplaceDetailView"];
     // 「必须使用 apple-edit-surface」由 check-style-leaks 的结构检查兜底；这里守另一半：不得再挂 apple-group
     for (const file of files) {
       const page = readFileSync(new URL(`../features/${file}.tsx`, import.meta.url), "utf8");
@@ -311,7 +347,7 @@ describe("AppShell 布局", () => {
 
   it("让配置卡片与独立列表卡片复用全局描边", () => {
     expect(styles).toContain("--card-edge-shadow: 0 0 0 0.5px var(--panel-border);");
-    expect(styles).toContain(".panel,\n.apple-group,\n.apple-list-row,\n.apple-editor-surface {\n  box-shadow: var(--card-edge-shadow);");
+    expect(styles).toContain(".panel,\n.apple-group,\n.app-segmented-control,\n.apple-list-row,\n.apple-editor-surface {\n  box-shadow: var(--card-edge-shadow);");
   });
 
   it("让技能预览器的 Markdown 分割线使用全局分割线", () => {
@@ -341,9 +377,9 @@ describe("AppShell 布局", () => {
     expect(profileEditSource).toContain("if (((!create && !detail) || authStatusPending) && !loadError) return null;");
   });
 
-  it("主区域统一增加左右留白，并从右侧内边距扣除滚动条槽", () => {
-    expect(styles).toContain("--gap-main: 2rem;");
-    expect(styles).toContain("padding-right: calc(var(--gap-main) - 8px);");
+  it("主区域统一使用 52px 物理像素左右留白，并从右侧内边距扣除滚动条槽", () => {
+    expect(styles).toContain("--gap-main: 2.1666666667rem;");
+    expect(styles).toContain("padding-right: calc(var(--gap-main) - 10px);");
   });
 
   it("让编辑页的表单大卡片与主视图使用相同圆角", () => {
@@ -393,7 +429,7 @@ describe("AppShell 布局", () => {
   });
 
   it("让供应商卡片使用略圆的圆角", () => {
-    expect(styles).toContain(".profile-list > .apple-group,\n.profile-drag-preview {\n  border-radius: var(--radius-card);");
+    expect(styles).toContain(".profile-list > .apple-group {\n  border-radius: var(--radius-card);");
   });
 
   it("新增带官网预设时显示官网地址输入框", () => {

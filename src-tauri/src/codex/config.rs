@@ -5,14 +5,14 @@ use serde::Serialize;
 use toml_edit::{Array, Decor, DocumentMut, Item, Table, Value};
 
 use crate::error::{app_err, AppResult};
-use crate::models::{McpServerSpec, ProfilePayload};
+use crate::models::{CodexProfilePayload, McpServerSpec};
 
 pub fn parse_document(text: &str) -> AppResult<DocumentMut> {
     text.parse::<DocumentMut>()
         .map_err(|error| app_err!("Codex 配置不是有效 TOML: {error}"))
 }
 
-/// 从 CGswitch 快照中移除 Codex 自己管理的 MCP，避免重启时把插件状态写回 live。
+/// 从 Agmux 快照中移除 Codex 自己管理的 MCP，避免重启时把插件状态写回 live。
 pub fn without_managed_mcp_servers(text: &str) -> AppResult<String> {
     let mut document = parse_document(text)?;
     remove_managed_mcp_servers(&mut document);
@@ -148,13 +148,13 @@ pub fn patch_context_management(text: &str, enabled: bool) -> AppResult<String> 
     Ok(document.to_string())
 }
 
-pub fn read_profile(path: &Path) -> AppResult<ProfilePayload> {
+pub fn read_profile(path: &Path) -> AppResult<CodexProfilePayload> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| app_err!("无法读取 {}: {error}", path.display()))?;
     capture_from_document(&parse_document(&text)?)
 }
 
-pub fn capture_from_document(document: &DocumentMut) -> AppResult<ProfilePayload> {
+pub fn capture_from_document(document: &DocumentMut) -> AppResult<CodexProfilePayload> {
     let mut model_values = BTreeMap::new();
     for (key, item) in document.as_table().iter() {
         if is_model_key(key) && item.is_value() {
@@ -181,7 +181,7 @@ pub fn capture_from_document(document: &DocumentMut) -> AppResult<ProfilePayload
             .map(Table::to_string)
     });
 
-    Ok(ProfilePayload {
+    Ok(CodexProfilePayload {
         model_values,
         provider_id,
         provider_body,
@@ -190,7 +190,10 @@ pub fn capture_from_document(document: &DocumentMut) -> AppResult<ProfilePayload
     })
 }
 
-pub fn apply_to_document(document: &mut DocumentMut, payload: &ProfilePayload) -> AppResult<()> {
+pub fn apply_to_document(
+    document: &mut DocumentMut,
+    payload: &CodexProfilePayload,
+) -> AppResult<()> {
     let stale_keys: Vec<String> = document
         .as_table()
         .iter()
@@ -231,7 +234,9 @@ pub fn apply_to_document(document: &mut DocumentMut, payload: &ProfilePayload) -
 }
 
 fn is_model_key(key: &str) -> bool {
-    key == "model" || (key.starts_with("model_") && key != "model_providers")
+    key == "model"
+        || key == "service_tier"
+        || (key.starts_with("model_") && key != "model_providers")
 }
 
 fn parse_value(raw: &str) -> AppResult<Value> {
@@ -501,7 +506,7 @@ pub fn merge_mcp_section(raw: &str, live: &DocumentMut) -> String {
     }
 }
 
-/// 统一收拢 config.toml 中的全局运行时段，供所有 CGswitch 写入路径复用。
+/// 统一收拢 config.toml 中的全局运行时段，供所有 Agmux 写入路径复用。
 pub fn normalize_global_section_order(text: &str) -> String {
     consolidate_plugin_blocks(&consolidate_mcp_blocks(text))
 }

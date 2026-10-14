@@ -1,11 +1,12 @@
 pub mod auth;
-pub mod builtin;
 pub mod codex;
+pub mod codex_builtin;
 pub mod commands;
 pub mod database;
 pub mod error;
 pub mod fsutil;
 pub mod models;
+mod network;
 pub mod paths;
 pub mod services;
 
@@ -166,14 +167,14 @@ pub fn run() {
         let thread = std::thread::current();
         let thread = thread.name().unwrap_or("<unnamed>").to_string();
         log::error!(
-            "[panic.crash] thread={thread:?} outcome=failure failure_kind=internal error={:?} msg=\"CGswitch 崩溃\"",
+            "[panic.crash] thread={thread:?} outcome=failure failure_kind=internal error={:?} msg=\"Agmux 崩溃\"",
             format!("{message} @{location}")
         );
         default_hook(info);
     }));
 
     let paths = paths::app_paths().expect("无法定位用户数据目录");
-    let database = Arc::new(database::Database::open(&paths).expect("无法初始化 CGswitch 数据库"));
+    let database = Arc::new(database::Database::open(&paths).expect("无法初始化 Agmux 数据库"));
     let context = AppContext::new_with_database(paths.clone(), database.clone());
     let oauth_state = auth::CodexOAuthState(Arc::new(auth::codex_oauth::CodexOAuthManager::new(
         database,
@@ -186,7 +187,7 @@ pub fn run() {
         .on_page_load(move |_webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
                 log::info!(
-                    "[app.startup] stage=page_load_finished elapsed_ms={} msg=\"WebView 文档加载完成\"",
+                    "[app.startup] stage=page_load_finished since_start_ms={} msg=\"WebView 文档加载完成\"",
                     startup_started.elapsed().as_millis()
                 );
             }
@@ -195,8 +196,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 // 磁盘封顶：单文件攒到 1MB 才轮转出备份，最多留 10 个旧文件。
-                // 实测单会话日志仅几 KB~几十 KB，平时只会看到一个 cgswitch.log，
-                // 会话边界靠每次启动的「CGswitch v 启动」横幅行分隔
+                // 实测单会话日志仅几 KB~几十 KB，平时只会看到一个 agmux.log，
+                // 会话边界靠每次启动的「Agmux v 启动」横幅行分隔
                 .rotation_strategy(RotationStrategy::KeepSome(10))
                 .max_file_size(1_000_000)
                 // 单文件追加（插件默认行为）：不做按启动分文件，避免日志目录文件堆积
@@ -215,11 +216,24 @@ pub fn run() {
                 .level_for("reqwest", log::LevelFilter::Info)
                 // tao（窗口库）在 Windows 上偶发成对 event_loop DEBUG，与业务无关
                 .level_for("tao", log::LevelFilter::Info)
+                // 行格式自定义：时间 + 级别 + 消息。默认格式会注入模块路径
+                // （agmux_lib::services::…），与消息里的域前缀双重定位纯属冗余，
+                // 去掉后每行短 40 字符；导航只认域前缀。
+                .format(|out, message, record| {
+                    let now = chrono::Local::now();
+                    out.finish(format_args!(
+                        "[{}][{}] [{}] {}",
+                        now.format("%Y-%m-%d"),
+                        now.format("%H:%M:%S"),
+                        record.level(),
+                        message
+                    ))
+                })
                 .targets([
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::Folder {
                         path: paths.logs.clone(),
-                        file_name: Some("cgswitch".into()),
+                        file_name: Some("agmux".into()),
                     }),
                 ])
                 .build(),
@@ -239,16 +253,17 @@ pub fn run() {
             commands::get_state,
             commands::report_startup_mark,
             commands::get_codex_status,
-            commands::capture_profile,
-            commands::add_builtin_profile,
-            commands::add_custom_profile,
-            commands::get_builtin_catalog,
-            commands::get_builtin_config,
-            commands::test_profile_connection,
-            commands::test_provider_connection,
-            commands::fetch_provider_models,
-            commands::get_profile_balance,
-            commands::get_claude_profile_balance,
+            commands::codex_capture_profile,
+            commands::codex_add_builtin_profile,
+            commands::codex_add_custom_profile,
+            commands::codex_get_builtin_catalog,
+            commands::codex_get_builtin_config,
+            commands::codex_test_profile_connection,
+            commands::codex_test_provider_connection,
+            commands::codex_fetch_provider_models,
+            commands::codex_fetch_chatgpt_models,
+            commands::codex_get_profile_balance,
+            commands::claude_get_profile_balance,
             commands::export_database,
             commands::export_database_to,
             commands::import_database,
@@ -257,40 +272,43 @@ pub fn run() {
             commands::delete_database_backup,
             commands::rename_database_backup,
             commands::rename_profile,
-            commands::reorder_profiles,
-            commands::set_profile_icon,
-            commands::set_profile_show_balance,
-            commands::set_profile_fetched_models,
+            commands::codex_reorder_profiles,
+            commands::codex_set_profile_icon,
+            commands::codex_set_profile_show_balance,
+            commands::codex_set_profile_fetched_models,
             commands::set_profile_balance,
-            commands::set_profile_account,
-            commands::duplicate_profile,
-            commands::get_profile,
-            commands::update_profile,
-            commands::update_profile_config,
-            commands::patch_chatgpt_context_config,
-            commands::patch_system_proxy_config,
-            commands::patch_context_management_config,
+            commands::codex_set_profile_account,
+            commands::codex_duplicate_profile,
+            commands::codex_get_profile,
+            commands::codex_update_profile,
+            commands::codex_update_profile_config,
+            commands::codex_set_profile_model,
+            commands::codex_patch_chatgpt_context_config,
+            commands::codex_patch_system_proxy_config,
+            commands::codex_patch_context_management_config,
             commands::validate_toml,
             commands::format_toml,
-            commands::delete_profile,
-            commands::apply_profile,
-            commands::list_mcp_servers,
-            commands::list_claude_mcp_servers,
-            commands::get_claude_mcp_server_json,
-            commands::save_claude_mcp_server,
-            commands::delete_claude_mcp_server,
+            commands::codex_delete_profile,
+            commands::codex_apply_profile,
+            commands::codex_list_mcp_servers,
+            commands::claude_list_mcp_servers,
+            commands::claude_get_mcp_server_json,
+            commands::claude_save_mcp_server,
+            commands::claude_delete_mcp_server,
             commands::probe_mcp_server,
-            commands::save_mcp_server,
-            commands::delete_mcp_server,
+            commands::codex_save_mcp_server,
+            commands::codex_delete_mcp_server,
             commands::set_mcp_server_enabled,
             commands::set_mcp_mirror,
             commands::revert_mcp_live,
             commands::set_mcp_mirror_entries,
             commands::revert_mcp_live_entries,
-            commands::get_mcp_section_toml,
+            commands::codex_get_mcp_section_toml,
             commands::restore_mcp_from_database,
-            commands::mcp_sync_preview,
-            commands::get_mcp_server_toml,
+            commands::codex_mcp_sync_preview,
+            commands::claude_mcp_sync_preview,
+            commands::claude_resolve_mcp_entries,
+            commands::codex_get_mcp_server_toml,
             commands::patch_mcp_fragment,
             commands::parse_mcp_fragment,
             commands::restart_codex,
@@ -301,12 +319,16 @@ pub fn run() {
             commands::auth_cancel_browser_login,
             commands::auth_get_status,
             commands::auth_get_quota,
+            commands::auth_warmup,
             commands::auth_preview,
             commands::auth_remove_account,
             commands::open_url,
             commands::get_settings,
+            commands::get_proxy_status,
             commands::save_settings,
             commands::log_update_event,
+            commands::report_cli_update_tick,
+            commands::check_app_update,
             commands::set_update_marker,
             commands::take_update_marker,
             commands::list_plugins,
@@ -320,6 +342,7 @@ pub fn run() {
             commands::claude_list_profiles,
             commands::claude_get_common_settings,
             commands::claude_save_common_settings,
+            commands::claude_open_terminal,
             commands::claude_get_profile,
             commands::claude_capture_profile,
             commands::claude_save_profile,
@@ -332,6 +355,14 @@ pub fn run() {
             commands::claude_test_profile,
             commands::claude_test_connection,
             commands::claude_fetch_models,
+            commands::claude_get_cli_status,
+            commands::claude_check_cli_update,
+            commands::claude_install_cli,
+            commands::claude_update_cli,
+            commands::codex_get_cli_status,
+            commands::codex_check_cli_update,
+            commands::codex_install_cli,
+            commands::codex_update_cli,
             commands::delete_skill,
             commands::list_plugin_skills,
             commands::list_plugin_marketplaces,
@@ -348,26 +379,13 @@ pub fn run() {
         ])
         .setup(move |app| {
             log::info!(
-                "[app.startup] stage=native_ready elapsed_ms={} msg=\"进入 Tauri setup\"",
+                "[app.startup] stage=native_ready since_start_ms={} msg=\"进入 Tauri setup\"",
                 startup_started.elapsed().as_millis()
             );
             log::info!(
-                "[app.start] version=\"{}\" outcome=success msg=\"CGswitch 启动\"",
+                "[app.start] version=\"{}\" outcome=success msg=\"Agmux 启动\"",
                 env!("CARGO_PKG_VERSION")
             );
-            // reqwest 的「proxy(...) intercepts」建连日志已随 DEBUG 噪音压掉，
-            // 代理走向改由自己记：一场一行，排障时对照请求是否走代理。
-            // reg.exe / scutil 是阻塞子进程调用且此处只喂启动日志，
-            // spawn_blocking 移出 setup 同步路径；各网络请求路径本来就按需现查
-            tauri::async_runtime::spawn_blocking(|| {
-                match services::detect_system_proxy() {
-                    Some(proxy) => {
-                        log::info!("[net.proxy] outcome=success proxy={proxy} msg=\"检测到系统代理\"")
-                    }
-                    None => log::debug!("[net.proxy] outcome=success proxy=None msg=\"未检测到系统代理\""),
-                }
-            });
-
             // macOS 上窗口配置 visible:false 不生效（创建后实际处于可见状态），
             // 统一先隐藏一次；非静默启动时由前端在 settings 加载后 show()。
             if let Some(window) = app.get_webview_window("main") {
@@ -392,6 +410,17 @@ pub fn run() {
                     Default::default()
                 }
             };
+            network::set_proxy(settings.proxy_mode.clone(), settings.proxy_url.clone());
+            // reg.exe / scutil 属于阻塞平台调用，只在后台记录一次实际网络走向。
+            tauri::async_runtime::spawn_blocking(|| {
+                match network::Network::detect() {
+                    Ok(network) if network.proxy.is_some() => {
+                        log::info!("[net.proxy] outcome=success proxy={} msg=\"应用请求经代理连接\"", network.display.as_deref().unwrap_or("-"))
+                    }
+                    Ok(_) => log::debug!("[net.proxy] outcome=success msg=\"应用请求直连\""),
+                    Err(error) => log::warn!("[net.proxy] outcome=failure failure_kind={} msg={:?}", error.kind, error.message),
+                }
+            });
             let show_tray_menu_on_left_click = settings.tray_click_action == TrayClickAction::ShowMenu;
             app.manage(TrayClickMode(AtomicBool::new(show_tray_menu_on_left_click)));
             // dev 构建与安装版共用 identifier，自启注册表值名同为 productName，
@@ -475,7 +504,7 @@ pub fn run() {
             }
 
             log::info!(
-                "[app.startup] stage=setup_end elapsed_ms={} msg=\"Tauri setup 完成\"",
+                "[app.startup] stage=setup_end since_start_ms={} msg=\"Tauri setup 完成\"",
                 startup_started.elapsed().as_millis()
             );
             Ok(())
@@ -495,7 +524,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building CGswitch")
+        .expect("error while building Agmux")
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             {
@@ -543,8 +572,8 @@ mod tests {
         let paths = paths::from_home(dir.path())?;
         let context = AppContext::new(paths)?;
         let state = context.get_state()?;
-        assert!(state.profiles.is_empty());
-        assert!(state.active_profile_id.is_none());
+        assert!(state.codex_profiles.is_empty());
+        assert!(state.active_codex_profile_id.is_none());
         Ok(())
     }
 }

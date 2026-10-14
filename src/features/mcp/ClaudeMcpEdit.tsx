@@ -1,11 +1,11 @@
-import { ArrowLeft, CodeXml, Save } from "lucide-react";
+import { ChevronLeft, CodeXml, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import { DiagnosticsChip } from "../../components/DiagnosticsChip";
-import { TrashIcon } from "../../components/TrashIcon";
+import { SkillTargetLogo } from "../../components/SkillTargetLogo";
 import type { EditorDiagnosticSummary, McpServerSpec } from "../../types";
 import McpConnectionForm, { TimeoutInput } from "./McpConnectionForm";
 import { McpSourceLabel } from "./McpSourceLabel";
@@ -16,10 +16,9 @@ interface ClaudeMcpEditProps {
   create?: boolean;
   onBack: () => void;
   onSaved: (name: string) => void;
-  onDelete?: () => Promise<void>;
 }
 
-export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved, onDelete }: ClaudeMcpEditProps) {
+export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved }: ClaudeMcpEditProps) {
   const feedback = useFeedback();
   const { t } = useTranslation("mcp");
   const [name, setName] = useState(server?.name ?? "");
@@ -27,7 +26,6 @@ export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved,
   const [initialJson, setInitialJson] = useState(jsonText);
   const [form, setForm] = useState(() => readClaudeMcpForm(jsonText));
   const [formValid, setFormValid] = useState(true);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [initialized, setInitialized] = useState(create);
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
@@ -54,7 +52,7 @@ export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved,
   useEffect(() => {
     if (create || !server) return;
     let cancelled = false;
-    void api.getClaudeMcpServerJson(server.name).then((value) => {
+    void api.claudeGetMcpServerJson(server.name).then((value) => {
       if (cancelled) return;
       if (value) { setInitialJson(value); editJson(value); }
       setInitialized(true);
@@ -103,7 +101,7 @@ export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved,
     }
     setSaving(true);
     try {
-      await api.saveClaudeMcpServer(server?.name ?? null, trimmedName, jsonText);
+      await api.claudeSaveMcpServer(server?.name ?? null, trimmedName, jsonText);
       feedback.success(t("feedback.saved"));
       onSaved(trimmedName);
     } catch (error) {
@@ -122,21 +120,21 @@ export default function ClaudeMcpEdit({ server, create = false, onBack, onSaved,
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header justify-between">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
-          <span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle")}</span>
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+          <SkillTargetLogo target="claude" variant="title" />
+          <span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle", { name })}</span>
         </button>
-        {!create && onDelete ? <button type="button" className="apple-action-button app-button--danger" disabled={saving} onClick={() => void onDelete()}><TrashIcon />{t("edit.uninstall")}</button> : null}
       </div>
       <div className="apple-edit-content">
         <div className="apple-edit-surface">
           <McpConnectionForm
+            nameReadOnly={!create}
             name={name} setName={setName} transport={form.transport} setTransport={(value) => editField("transport", value)}
             command={form.command} setCommand={(value) => editField("command", value)}
             argsText={form.argsText} setArgsText={(value) => editField("argsText", value)}
             url={form.url} setUrl={(value) => editField("url", value)}
             envPairs={form.envPairs} setEnvPairs={(value) => editField("envPairs", value)}
             headerPairs={form.headerPairs} setHeaderPairs={(value) => editField("headerPairs", value)}
-            advancedOpen={advancedOpen} setAdvancedOpen={setAdvancedOpen}
             disabled={!initialized || !formValid || saving}
             extraTransports={[
               { label: t("edit.transportSse"), value: "sse" },

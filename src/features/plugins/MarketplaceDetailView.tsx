@@ -1,10 +1,11 @@
-import { ArrowLeft, Download } from "lucide-react";
+import { ChevronLeft, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { getCachedMarketplacePlugins, refreshMarketplacePlugins, setCachedMarketplacePlugins } from "../../app/managementDataCache";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
+import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { TrashIcon } from "../../components/TrashIcon";
 import ContainsChips from "./components/ContainsChips";
 import PluginSearchInput from "./components/PluginSearchInput";
@@ -117,9 +118,14 @@ export default function MarketplaceDetailView({
     <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("nav.backToMarketplace")} onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
-          <span className="apple-title">{marketplace.display_name ?? marketplace.name}</span>
-          {loaded ? <span className="apple-chip" aria-label={t("marketDetail.installedCountAria", { count: installedPluginCount })}>{t("marketDetail.installedCount", { count: installedPluginCount })}</span> : null}
+          <ManagementPageTitle
+            className="management-page-title--compact"
+            icon={<ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
+            title={marketplace.display_name ?? marketplace.name}
+            count={loaded ? installedPluginCount : undefined}
+            countLabel={loaded ? t("marketDetail.installedCountAria", { count: installedPluginCount }) : undefined}
+            loadingLabel={t("marketDetail.loadingAria")}
+          />
         </button>
         <div className="ml-auto flex items-center gap-2">
           <PluginSearchInput value={query} onChange={setQuery} />

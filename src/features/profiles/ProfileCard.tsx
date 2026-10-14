@@ -1,40 +1,20 @@
-import { Check, Copy, Gauge, Globe, GripVertical, Wifi } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Check, Copy, Gauge, Globe, MoreHorizontal, Wifi } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
-import { api } from "../../api";
-import { authQuotaErrorKind, profileAuthQuotaCacheKey } from "../../app/authQuotaCache";
 import { balanceChipClass, balanceQueryProviders, usageQueryProviders } from "../../presets";
-import type { ProfileBalanceInfo, ProfileSummary } from "../../types";
-import { useFeedback } from "../../app/Feedback";
+import type { ProfileBalanceInfo, CodexProfileSummary } from "../../types";
 import { PlanBadge } from "../../components/PlanBadge";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ProfileIconTile } from "../../components/ProfileIconTile";
-import SortableCard from "../../components/SortableCard";
 import { TrashIcon } from "../../components/TrashIcon";
+import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
+import { useMenuDismiss } from "../../components/useMenuDismiss";
 import { localizeBalanceLabel } from "./balanceLabel";
-import { useProfileBalance } from "./useProfileBalance";
-
-export { getCachedProfileBalance, getCachedProfileBalanceError } from "./useProfileBalance";
-
-interface ProfileCardProps {
-  profile: ProfileSummary;
-  active: boolean;
-  dragHover?: boolean;
-  busy: boolean;
-  activationEpoch: number;
-  /// 本次进程启动还没走完（首屏尚未出窗）——只有这时才值得把余额刷新往后放
-  coldStart: boolean;
-  balanceCache?: Record<string, ProfileBalanceInfo>;
-  onApply: () => void;
-  onRename: () => void;
-  onEdit: () => void;
-  onRemove: () => void;
-  onDuplicate: () => void;
-}
+import ProfileTerminalMenu from "./ProfileTerminalMenu";
 
 interface ProfileCardContentProps {
-  profile: Pick<ProfileSummary, "name" | "icon" | "kind" | "provider" | "model" | "reasoning_effort" | "plan_type" | "admin_url" | "show_balance">;
+  profile: Pick<CodexProfileSummary, "name" | "icon" | "kind" | "provider" | "model" | "reasoning_effort" | "plan_type" | "admin_url" | "show_balance">;
   balanceInfos: ProfileBalanceInfo[];
   balanceError: string;
   balanceRefreshing: boolean;
@@ -60,9 +40,9 @@ export function ProfileCardContent({
   const supportsBalance = isSubscriptionProfile || balanceQueryProviders.has(profile.provider ?? "");
   const isUsageProvider = usageQueryProviders.has(profile.provider ?? "");
   // 后端回传的窗口标签按当前语言换词；后端没给时才用本语言兜底（映射见 balanceLabel.ts）
-  const primaryLabel = localizeBalanceLabel(balanceInfo?.usage_label, t) ?? (isUsageProvider ? t("balance.window5h") : t("card.quota"));
+  const primaryLabel = localizeBalanceLabel(balanceInfo?.usage_label, t) ?? (isUsageProvider ? t("balance.window5h") : t("card.usage"));
   const weeklyLabel = localizeBalanceLabel(balanceInfo?.weekly_label, t) ?? (isUsageProvider ? t("balance.window7d") : t("balance.period"));
-  const balanceLabel = isSubscriptionProfile ? t("card.quota") : isUsageProvider ? t("card.usage") : t("card.balance");
+  const balanceLabel = isSubscriptionProfile || isUsageProvider ? t("card.usage") : t("card.balance");
   const primaryUsagePercent = balanceInfo?.usage_percent != null ? (isSubscriptionProfile ? 100 - balanceInfo.usage_percent : balanceInfo.usage_percent) : null;
   const weeklyUsagePercent = balanceInfo?.weekly_usage_percent != null ? (isSubscriptionProfile ? 100 - balanceInfo.weekly_usage_percent : balanceInfo.weekly_usage_percent) : null;
   const primaryUsageText = isSubscriptionProfile ? t("card.usageRemaining", { label: primaryLabel }) : isUsageProvider ? `${primaryLabel}:` : `${primaryLabel} `;
@@ -70,12 +50,21 @@ export function ProfileCardContent({
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <ProfileIconTile name={profile.name} icon={profile.icon} />
+      <ProfileIconTile name={profile.name} icon={profile.icon} overlay={
+        profile.admin_url ? (
+          <button
+            type="button"
+            className="absolute inset-0 grid cursor-pointer place-items-center rounded-xl bg-(--provider-icon-bg) text-accent opacity-0 outline-none transition-opacity duration-150 group-hover/tile:opacity-100 focus-visible:opacity-100"
+            title={t("card.openWebsite")}
+            aria-label={t("card.openWebsite")}
+            onClick={(event) => { event.stopPropagation(); onOpenAdmin?.(); }}
+          ><Globe className="h-4.5 w-4.5" strokeWidth={2} aria-hidden="true" /></button>
+        ) : null
+      } />
       <div className="profile-card-content__text min-w-0 flex-1">
         <div className="flex min-h-7 items-center gap-2">
           <h3 className="title-md cursor-pointer truncate leading-normal transition-colors hover:text-accent" title={t("card.clickToRename")} onClick={(event) => { event.stopPropagation(); onRename?.(); }}>{profile.name}</h3>
           {isSubscriptionProfile ? <PlanBadge plan={profile.plan_type} /> : null}
-          {profile.admin_url ? <button type="button" className="apple-icon-button !h-6 !w-7 shrink-0 text-accent" title={t("card.openWebsite")} aria-label={t("card.openWebsite")} onClick={(event) => { event.stopPropagation(); onOpenAdmin?.(); }}><Globe className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" /></button> : null}
         </div>
         {!hideModel || (supportsBalance && profile.show_balance) ? <div className="profile-card-meta muted mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
           {!hideModel ? <><span className="min-w-0 truncate">{profile.model ?? t("card.notSet")}</span>{profile.reasoning_effort ? <><span aria-hidden="true">·</span><span>{profile.reasoning_effort}</span></> : null}</> : null}
@@ -90,7 +79,7 @@ export function ProfileCardContent({
 }
 
 /** 卡片测试连通按钮的通用门控与悬停文案：缺什么报什么，其余一律 ready 文案。
- *  Codex 卡片、拖拽预览与 Claude 卡片共用同一判定，避免按钮行各写一套。 */
+ *  Codex 与 Claude 卡片共用同一判定，避免按钮行各写一套。 */
 export function connectionGate(hasBaseUrl: boolean, hasKey: boolean, titles: { ready: string; missingEndpoint: string; missingKey: string }) {
   const disabled = !hasBaseUrl || !hasKey;
   return {
@@ -99,131 +88,57 @@ export function connectionGate(hasBaseUrl: boolean, hasKey: boolean, titles: { r
   };
 }
 
-/** Codex 侧壳：官方订阅（无第三方 provider）不做门控；第三方供应商映射到通用判定。 */
-export function profileConnectionGate(profile: ProfileSummary, t: TFunction<"profiles">) {
-  if (!profile.provider) return { disabled: false, title: t("connection.test") };
-  return connectionGate(profile.has_base_url, profile.has_key, {
-    ready: t("connection.test"),
-    missingEndpoint: t("connection.missingApiEndpointWarning"),
-    missingKey: t("connection.missingApiKeyWarning"),
-  });
-}
-
 interface ProfileCardActionsProps {
   active: boolean;
   busy: boolean;
   testing: boolean;
-  dragging?: boolean;
+  allowInactiveDeleteWhileBusy?: boolean;
+  modelControl?: ReactNode;
   /** 测试连通按钮是否禁用（调用方按各自领域判定：缺地址/缺密钥）。 */
   connectionDisabled: boolean;
   connectionTitle: string;
+  /** 传入供应商 id 才渲染终端入口：目前只有 Claude Code 卡片要，Codex 不传即不出现。 */
+  terminalProfileId?: string;
   onApply?: () => void;
   onDuplicate?: () => void;
   onTest?: () => void;
   onRemove?: () => void;
 }
 
-export function ProfileCardActions({ active, busy, testing, dragging = false, connectionDisabled, connectionTitle, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
+export function ProfileCardActions({ active, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
   const { t } = useTranslation("profiles");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useFixedMenuPosition(menuOpen, menuTriggerRef.current, menuRef, "end");
+  useMenuDismiss(menuOpen, menuTriggerRef, menuRef, setMenuOpen);
+  const busyForDelete = busy && !allowInactiveDeleteWhileBusy;
+  const menu = menuOpen ? createPortal(
+    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("actions.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={connectionDisabled || testing} title={connectionTitle} onClick={() => { setMenuOpen(false); onTest?.(); }}>
+        <span className="flex items-center gap-2">{testing ? <LoadingSpinner size="sm" /> : <Wifi className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}{t("connection.test")}</span>
+      </button>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { setMenuOpen(false); onDuplicate?.(); }}>
+        <span className="flex items-center gap-2"><Copy className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("actions.duplicate")}</span>
+      </button>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state app-select-option--danger disabled:cursor-not-allowed disabled:opacity-40" disabled={busyForDelete || active} onClick={() => { setMenuOpen(false); onRemove?.(); }}>
+        <span className="flex items-center gap-2"><TrashIcon />{t("actions.delete")}</span>
+      </button>
+    </div>,
+    document.body,
+  ) : null;
   return (
-    <div className={dragging ? "profile-card-actions profile-card-actions--dragging flex shrink-0 items-center gap-2" : "profile-card-actions pointer-events-none flex shrink-0 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"} onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.preventDefault()}>
-      <button type="button" className="apple-action-button app-button--primary" disabled={busy || active} title={active ? t("actions.inUse") : t("actions.switch")} onClick={onApply}>{active ? <><Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />{t("actions.inUse")}</> : t("actions.switch")}</button>
-      <button type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" title={t("actions.duplicate")} aria-label={t("actions.duplicate")} onClick={onDuplicate}><Copy className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" /></button>
-      <button type="button" className="apple-icon-button text-[var(--text-secondary)] enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40" disabled={connectionDisabled || busy || testing} title={connectionTitle} aria-label={t("connection.test")} onClick={onTest}>{testing ? <LoadingSpinner size="md" /> : <Wifi className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}</button>
-      <button type="button" className="profile-card-delete apple-icon-button text-[var(--danger)]/60 enabled:hover:bg-(--danger)/10 enabled:hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || active} title={t("actions.delete")} aria-label={t("actions.delete")} onClick={onRemove}><TrashIcon /></button>
+    <div className="profile-card-actions flex shrink-0 items-center gap-2" title="" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.preventDefault()}>
+      {modelControl}
+      <div className="profile-card-action-buttons flex shrink-0 items-center gap-2">
+        <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary ${active ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={busy || active} aria-pressed={active} aria-label={active ? t("actions.inUse") : t("actions.switch")} title={active ? t("actions.inUse") : t("actions.switch")} onClick={onApply}>
+          <span className={active ? "invisible" : ""} aria-hidden="true">{t("actions.switch")}</span>
+          {active ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
+        </button>
+        {terminalProfileId ? <ProfileTerminalMenu profileId={terminalProfileId} /> : null}
+        <button ref={menuTriggerRef} type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("actions.more")} title={t("actions.more")} aria-busy={testing} onClick={() => setMenuOpen((open) => !open)}>{testing ? <LoadingSpinner size="md" /> : <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}</button>
+        {menu}
+      </div>
     </div>
-  );
-}
-
-/** 拖拽浮层共享外壳：源卡片几何 + 拖拽把手，内容行与操作行由调用方经 children 给。 */
-export function ProfileDragPreviewShell({ width, height, active, children }: { width: number | null; height: number | null; active: boolean; children: ReactNode }) {
-  const stateClass = active ? "is-active brand-gradient-surface is-drag-hover" : "is-drag-hover";
-  return (
-    <div className={`drag-dragging apple-group profile-drag-preview group flex cursor-pointer select-none flex-col gap-4 px-5 py-4.5 sm:flex-row sm:items-center sm:justify-between ${stateClass}`} style={{ width: width ? `${width}px` : undefined, height: height ? `${height}px` : undefined }}>
-      <span className="drag-handle -ml-5 -mr-4 grid shrink-0 cursor-grabbing place-items-center self-center rounded-md py-1 pl-3 pr-3 muted sm:self-stretch" aria-hidden="true">
-        <GripVertical className="h-4 w-4" strokeWidth={2} />
-      </span>
-      {children}
-    </div>
-  );
-}
-
-export default function ProfileCard({
-  profile,
-  active,
-  dragHover = false,
-  busy,
-  activationEpoch,
-  coldStart,
-  balanceCache,
-  onApply,
-  onRename,
-  onEdit,
-  onRemove,
-  onDuplicate,
-}: ProfileCardProps) {
-  const feedback = useFeedback();
-  const { t } = useTranslation("profiles");
-  const authQuotaKey = profileAuthQuotaCacheKey(profile);
-  const [testing, setTesting] = useState(false);
-  const supportsBalance = profile.kind === "official" || balanceQueryProviders.has(profile.provider ?? "");
-  const { balanceInfos, balanceError, balanceRefreshing, refreshBalance } = useProfileBalance({
-    profileId: profile.id,
-    showBalance: profile.show_balance,
-    supportsBalance,
-    hasCredential: profile.kind === "official" || profile.has_key,
-    active,
-    activationEpoch,
-    coldStart,
-    cachedBalance: balanceCache?.[profile.id],
-    authQuotaKey,
-    source: "codex",
-  });
-
-  // 测连通失败文案：凭证失效的结局走本地化可行动文案，其余保留后端原文
-  const connectionFailureToast = (error: string) =>
-    authQuotaErrorKind(error) === "auth_expired"
-      ? t("connection.testFailed", { error: t("balance.authInvalidToast") })
-      : t("connection.failed", { error });
-
-  const testConnection = async () => {
-    if (testing) return;
-    if (profile.provider && !profile.has_base_url) {
-      feedback.warning(t("edit.baseUrlRequired"));
-      return;
-    }
-    if (profile.provider && !profile.has_key) {
-      feedback.warning(t("connection.missingApiKeyWarning"));
-      return;
-    }
-    setTesting(true);
-    try {
-      const result = await api.testProfileConnection(profile.id);
-      if (result.ok) {
-        feedback.success(t("connection.ok", { latency: result.latency_ms != null ? ` · ${result.latency_ms}ms` : "" }));
-      } else {
-        feedback.error(connectionFailureToast(result.error ?? t("connection.unknownError")));
-      }
-    } catch (error) {
-      feedback.error(connectionFailureToast(String(error)));
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const connection = profileConnectionGate(profile, t);
-  return (
-    <SortableCard id={profile.id} active={active} dragHover={dragHover} onClick={onEdit} title={t("card.clickToEdit")} handleTitle={t("card.dragToReorder")}>
-      <ProfileCardContent
-        profile={profile}
-        balanceInfos={balanceInfos}
-        balanceError={balanceError}
-        balanceRefreshing={balanceRefreshing}
-        onRefreshBalance={refreshBalance}
-        onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))}
-        onRename={onRename}
-      />
-      <ProfileCardActions active={active} busy={busy} testing={testing} connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={() => void testConnection()} onRemove={onRemove} />
-    </SortableCard>
   );
 }

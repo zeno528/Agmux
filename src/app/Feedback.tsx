@@ -169,8 +169,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               (document.activeElement as HTMLElement | null)?.blur();
             }}
           >
-            <AlertDialog.Title className="app-dialog-title">
-              {confirmation?.destructive ? <Trash2 className="mr-1.5 inline-block text-[var(--danger)]" size={18} strokeWidth={2} aria-hidden="true" /> : null}
+            <AlertDialog.Title className="app-dialog-title flex items-center gap-1.5">
+              {confirmation?.destructive ? <Trash2 className="relative top-px shrink-0 text-[var(--danger)]" size={18} strokeWidth={2} aria-hidden="true" /> : null}
               {confirmation?.title}
             </AlertDialog.Title>
             <AlertDialog.Description className="app-dialog-description">

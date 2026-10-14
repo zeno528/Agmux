@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { AppSearchInput } from "../../../components/AppSearchInput";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -17,18 +17,5 @@ export default function PluginSearchInput({ value, onChange }: { value: string; 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-  return (
-    <div className="relative w-44 shrink-0">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--text-secondary)" strokeWidth={2} />
-      <input
-        ref={inputRef}
-        type="search"
-        className="app-input app-input--pill"
-        placeholder={t("list.searchPlaceholder")}
-        aria-label={t("list.searchPlaceholder")}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
+  return <AppSearchInput inputRef={inputRef} value={value} onChange={onChange} placeholder={t("list.searchPlaceholder")} />;
 }

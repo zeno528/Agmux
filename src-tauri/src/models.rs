@@ -6,12 +6,12 @@ use crate::auth::codex_oauth::AuthStatus;
 /// 供应商类型：官方订阅（ChatGPT）或第三方供应商（Codex 协议）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ProfileKind {
+pub enum CodexProfileKind {
     Official,
     ThirdParty,
 }
 
-impl ProfileKind {
+impl CodexProfileKind {
     pub fn from_db(raw: &str) -> Option<Self> {
         match raw {
             "official" => Some(Self::Official),
@@ -37,8 +37,8 @@ pub enum AuthSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct ProfilePayload {
-    /// 仅供 CGswitch 卡片展示，不写入 Codex 配置。
+pub struct CodexProfilePayload {
+    /// 仅供 Agmux 卡片展示，不写入 Codex 配置。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
@@ -74,15 +74,33 @@ pub struct ProfilePayload {
     /// 最近一次从供应商接口获取的模型 ID，供编辑页离线复用。
     #[serde(default)]
     pub fetched_models: Vec<String>,
+    /// 最近获取的模型推理档位；与模型 ID 一起缓存，不写入实时配置。
+    #[serde(default)]
+    pub fetched_model_efforts: std::collections::BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub fetched_model_defaults: std::collections::BTreeMap<String, String>,
 }
 
-impl ProfilePayload {
+impl CodexProfilePayload {
+    /// 同账号刷新 token 不影响目录；换 workspace 或用户后不能复用旧目录。
+    pub(crate) fn invalidate_models_for_auth_change(&mut self, previous_auth: Option<&str>) {
+        let identity = |text: Option<&str>| {
+            text.and_then(crate::auth::codex_oauth::parse_external_auth_json)
+                .map(|auth| (auth.account_id, auth.user_identity))
+        };
+        if identity(previous_auth) != identity(self.raw_auth.as_deref()) {
+            self.fetched_models.clear();
+            self.fetched_model_efforts.clear();
+            self.fetched_model_defaults.clear();
+        }
+    }
+
     pub fn effective_auth_source(
         &self,
-        kind: ProfileKind,
+        kind: CodexProfileKind,
         account_id: Option<&str>,
     ) -> Option<AuthSource> {
-        if kind != ProfileKind::Official {
+        if kind != CodexProfileKind::Official {
             return None;
         }
         Some(self.auth_source.unwrap_or(if account_id.is_some() {
@@ -192,10 +210,10 @@ pub struct McpSyncPreview {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ProfileSummary {
+pub struct CodexProfileSummary {
     pub id: String,
     pub name: String,
-    pub kind: ProfileKind,
+    pub kind: CodexProfileKind,
     /// 官方配置绑定的订阅账号；第三方恒为 None。
     pub account_id: Option<String>,
     pub auth_source: Option<AuthSource>,
@@ -206,6 +224,7 @@ pub struct ProfileSummary {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub reasoning_effort: Option<String>,
+    pub fast_mode: bool,
     /// 供应商是否已配置非空 API 端点
     pub has_base_url: bool,
     /// 供应商是否已配置有效 API 密钥（占位符视为未配置）
@@ -265,7 +284,7 @@ pub struct ProfileBalanceInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ProfileDetail {
+pub struct CodexProfileDetail {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
@@ -288,6 +307,8 @@ pub struct ProfileDetail {
     pub show_balance: bool,
     pub fetched_models: Vec<String>,
     pub updated_at: String,
+    pub fetched_model_efforts: std::collections::BTreeMap<String, Vec<String>>,
+    pub fetched_model_defaults: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -296,6 +317,24 @@ pub enum TrayClickAction {
     #[default]
     ShowWindow,
     ShowMenu,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyMode {
+    #[default]
+    Auto,
+    Off,
+    Custom,
+}
+
+/// macOS 供应商终端的宿主终端：Terminal.app 系统必带；Ghostty 走官方 CLI。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MacosTerminal {
+    #[default]
+    Terminal,
+    Ghostty,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -314,12 +353,26 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     #[serde(default)]
     pub tray_click_action: TrayClickAction,
+    /// 冷启动落页：前端 AppView 标识原样透传，不解析；非法值由前端回落默认页。
+    #[serde(default = "default_startup_view")]
+    pub startup_view: String,
+    /// macOS 供应商终端的宿主终端；Windows 分支不读取此字段。
+    #[serde(default)]
+    pub macos_terminal: MacosTerminal,
     #[serde(default = "default_auto_check_update")]
     pub auto_check_update: bool,
     #[serde(default)]
     pub auto_backup_interval_hours: u64,
     #[serde(default = "default_database_backup_keep_count")]
     pub database_backup_keep_count: u32,
+    #[serde(default)]
+    pub proxy_mode: ProxyMode,
+    #[serde(default)]
+    pub proxy_url: String,
+    /// 供应商终端的最近工作目录（最近使用在前）。卡片下拉框的新建/删除直接改这里，
+    /// 与 ~/.claude 无关，不参与应用与回写。
+    #[serde(default)]
+    pub claude_terminal_dirs: Vec<String>,
 }
 
 fn default_theme() -> String {
@@ -333,6 +386,11 @@ fn default_language() -> String {
 
 fn default_database_backup_keep_count() -> u32 {
     5
+}
+
+/// 冷启动落页：前端 AppView 标识原样透传，不解析；非法值由前端回落默认页。
+fn default_startup_view() -> String {
+    "codexProfiles".into()
 }
 
 fn default_auto_check_update() -> bool {
@@ -349,16 +407,38 @@ impl Default for Settings {
             silent_start: false,
             minimize_to_tray: false,
             tray_click_action: TrayClickAction::ShowWindow,
+            startup_view: default_startup_view(),
+            macos_terminal: MacosTerminal::Terminal,
             auto_check_update: default_auto_check_update(),
             auto_backup_interval_hours: 0,
             database_backup_keep_count: default_database_backup_keep_count(),
+            proxy_mode: ProxyMode::Auto,
+            proxy_url: String::new(),
+            claude_terminal_dirs: Vec::new(),
         }
     }
 }
 
 #[cfg(test)]
 mod settings_tests {
-    use super::{Settings, TrayClickAction};
+    use super::{ProxyMode, Settings, TrayClickAction};
+
+    #[test]
+    fn proxy_settings_default_to_auto_and_round_trip_custom_address() {
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(legacy.proxy_mode, ProxyMode::Auto);
+        assert_eq!(legacy.startup_view, "codexProfiles");
+        assert!(legacy.proxy_url.is_empty());
+        let custom = Settings {
+            proxy_mode: ProxyMode::Custom,
+            proxy_url: "https://proxy.invalid:8443".into(),
+            ..legacy
+        };
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&custom).unwrap()).unwrap();
+        assert_eq!(custom, restored);
+        assert!(serde_json::from_str::<Settings>(r#"{"proxy_mode":"invalid"}"#).is_err());
+    }
 
     #[test]
     fn tray_click_action_defaults_for_existing_settings_and_accepts_only_two_modes() {
@@ -386,8 +466,8 @@ pub struct CodexAppStatus {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppState {
-    pub profiles: Vec<ProfileSummary>,
-    pub active_profile_id: Option<String>,
+    pub codex_profiles: Vec<CodexProfileSummary>,
+    pub active_codex_profile_id: Option<String>,
     /// Claude Code 侧当前激活的供应商（claude_profiles 表）。
     pub active_claude_profile_id: Option<String>,
     pub codex: CodexAppStatus,
@@ -407,6 +487,7 @@ pub struct ClaudeProfileSummary {
     /// token 是否已设置；明文只在详情里回显（卡片测试连通按钮的门控）。
     pub has_token: bool,
     pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub description: Option<String>,
     pub icon: Option<String>,
     pub admin_url: Option<String>,
@@ -416,7 +497,7 @@ pub struct ClaudeProfileSummary {
     pub updated_at: String,
 }
 
-/// Claude Code 供应商详情：编辑回显含 token 明文（与 Codex ProfileDetail.api_key 同语义）。
+/// Claude Code 供应商详情：编辑回显含 token 明文（与 Codex CodexProfileDetail.api_key 同语义）。
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ClaudeProfileDetail {
     pub id: String,

@@ -1,0 +1,9 @@
+model_provider = "opencode-zen"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[model_providers.opencode-zen]
+name = "OpenCode Zen"
+base_url = "https://opencode.ai/zen/v1"
+wire_api = "responses"
+experimental_bearer_token = "<YOUR_API_KEY>"

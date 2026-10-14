@@ -1,9 +1,9 @@
 ---
 name: performance-baseline
-description: Measure and retain CGswitch performance baselines, centred on what a user can actually perceive — cold start, tray restore, resident memory and idle CPU, install size — plus Criterion Rust hot paths and production frontend builds. Use for recurring performance tests, regressions, baseline comparisons, and preserving measured results; do not use for implementing optimizations or general code review.
+description: Measure and retain Agmux performance baselines, centred on what a user can actually perceive — cold start, tray restore, resident memory and idle CPU, install size — plus Criterion Rust hot paths and production frontend builds. Use for recurring performance tests, regressions, baseline comparisons, and preserving measured results; do not use for implementing optimizations or general code review.
 ---
 
-# CGswitch 性能基线
+# Agmux 性能基线
 
 用本 Skill 做可重复的测量与对比；不在此过程中修改业务代码。
 
@@ -42,7 +42,7 @@ description: Measure and retain CGswitch performance baselines, centred on what 
    没有统计意义；20 轮还能看出离群轮（本轮实测首轮因 Defender 扫描新二进制而明显偏慢）。
 
 ```powershell
-pwsh -File scripts/perf-probe.ps1 -Exe "<安装目录>\cgswitch.exe" -Runs 20 -SoakSeconds 600
+pwsh -File scripts/perf-probe.ps1 -Exe "<安装目录>\agmux.exe" -Runs 20 -SoakSeconds 600
 ```
 
 4. 若本轮涉及 Rust 或前端改动，追加支撑层测量：
@@ -67,7 +67,7 @@ pnpm build
 ## 可测产物（关键）
 
 判据只有一条：**必须由 `tauri build` 产出，且前端资源已嵌入**。安装目录里的 exe、或同一次
-`pnpm tauri build`（含 `--no-bundle`）产出的 `src-tauri/target/release/cgswitch.exe` 都算数。
+`pnpm tauri build`（含 `--no-bundle`）产出的 `src-tauri/target/release/agmux.exe` 都算数。
 
 **不要拿 `cargo build` / `cargo bench` 直接编出的 `target/release/*.exe` 测**：它们不走 tauri 打包流程、
 前端资源未嵌入，实测**主窗口永不显示** —— 会被误读成「窗口显示回归」。探针会在开跑前扫 exe 里有没有
@@ -78,7 +78,7 @@ pnpm build
 - ❌ 看 `bundle/` 存不存在 —— `cargo bench` 和 `tauri build --no-bundle` **都不产生** `bundle/`，区分不了。
 - ❌ 在二进制里找 `custom-protocol` 字面量 —— 那是 Cargo feature 名不是嵌入字符串，永远查不到。
 
-执行顺序也有讲究：`cargo bench` 会刷新 `target/release/cgswitch.exe`，**必须排在 `tauri build` 之前**，
+执行顺序也有讲究：`cargo bench` 会刷新 `target/release/agmux.exe`，**必须排在 `tauri build` 之前**，
 否则被测产物会被换成没嵌前端的那个。
 
 ## 边界

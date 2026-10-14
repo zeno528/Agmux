@@ -1,10 +1,10 @@
 // @ts-expect-error 测试运行于 Node，但应用的浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { codexActionFor } from "./ProfilesView";
+import { codexActionFor } from "./CodexProfilesView";
 
-const source = readFileSync(new URL("./ProfilesView.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-const cardSource = readFileSync(new URL("./ProfileCard.tsx", import.meta.url), "utf8");
+const source = readFileSync(new URL("./CodexProfilesView.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const cardSource = readFileSync(new URL("../profiles/ProfileCard.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../style.css", import.meta.url), "utf8");
 
 describe("ProfilesView 拖拽预览", () => {
@@ -36,8 +36,8 @@ describe("ProfilesView 拖拽预览", () => {
   });
 
   it("进入编辑页先预载详情再切换，首帧不空窗", () => {
-    expect(source).toContain("const openEdit = async (profile: ProfileSummary) => {");
-    expect(source).toContain("detail = await api.getProfile(profile.id);");
+    expect(source).toContain("const openEdit = async (profile: CodexProfileSummary) => {");
+    expect(source).toContain("detail = await api.codexGetProfile(profile.id);");
     expect(source).toContain("onEdit={() => void openEdit(profile)}");
     expect(source).toContain("initialDetail={editDetail}");
   });
@@ -53,46 +53,37 @@ describe("ProfilesView 拖拽预览", () => {
   });
 
   it("排序保存成功后同步父级状态，切页回来仍保留新顺序", () => {
-    expect(source).toContain("await api.reorderProfiles(next.map((item) => item.id));\n      await onRefresh();");
+    expect(source).toContain("await api.codexReorderProfiles(next.map((item) => item.id));\n      await onRefresh();");
   });
 
   it("切换后先更新激活高亮，再按需重启并合并成功通知", () => {
-    const applyStart = source.indexOf("const applyProfile = async");
+    const applyStart = source.indexOf("const codexApplyProfile = async");
     const applyEnd = source.indexOf("const removeProfile = async", applyStart);
     const applySource = source.slice(applyStart, applyEnd);
     const refreshIndex = applySource.indexOf("await onRefresh();");
-    const restartIndex = applySource.indexOf("if (state.settings.auto_restart)");
+    const restartIndex = applySource.indexOf("await restart(true, false)");
 
     expect(refreshIndex).toBeGreaterThan(-1);
     expect(restartIndex).toBeGreaterThan(refreshIndex);
-    expect(applySource).toContain('feedback.success(t("feedback.switchSuccess"))');
-    expect(applySource).toContain('t(action === "restart" ? "feedback.switchRestarted" : "feedback.switchStarted")');
-    expect(applySource).not.toContain('feedback.success(t("feedback.switchSuccess"));\n      if (state.settings.auto_restart)');
+    expect(applySource).toContain('feedback.success(t("feedback.applySuccess", { ns: "common" }))');
+    expect(applySource.match(/feedback.success/g)).toHaveLength(1);
   });
 
   it("激活卡的拖拽预览复用品牌渐变且不再覆盖旧底色", () => {
-    // 预览外壳（含激活渐变 stateClass）抽到 ProfileCard 的 ProfileDragPreviewShell，两列表页共用
-    expect(cardSource).toContain('active ? "is-active brand-gradient-surface is-drag-hover" : "is-drag-hover"');
-    expect(cardSource).not.toContain('active ? "is-active is-drag-hover" : "is-drag-hover"');
-    expect(source).toContain("<ProfileDragPreviewShell");
     expect(styles).not.toContain(".profile-drag-preview.is-active {\n  background-image: linear-gradient(");
     expect(styles).not.toContain("--profile-active-bg:");
-
-    const activePreviewRuleStart = styles.indexOf(".profile-drag-preview.is-active {");
-    const activePreviewRuleEnd = styles.indexOf("}", activePreviewRuleStart);
-    expect(styles.slice(activePreviewRuleStart, activePreviewRuleEnd)).not.toContain("outline:");
     expect(styles).not.toContain(":root.dark .profile-drag-preview.is-active {");
   });
 
   it("激活卡拖拽预览的官网按钮沿用主题文字层级", () => {
     // 选择器用稳定类名而非中文 title/aria-label：文案会随界面语言变化
-    expect(styles).toContain(".profile-list > .apple-group.brand-gradient-surface .profile-card-content__text .apple-icon-button,\n.profile-list > .apple-group.brand-gradient-surface .profile-card-actions > .apple-icon-button:not(.profile-card-delete),\n.profile-drag-preview.brand-gradient-surface .profile-card-content__text .apple-icon-button,\n.profile-drag-preview.brand-gradient-surface .profile-card-actions > .apple-icon-button:not(.profile-card-delete) {\n  color: var(--text-primary);");
+    expect(styles).toContain(".profile-list > .apple-group.brand-gradient-surface .profile-card-content__text .apple-icon-button,\n.profile-list > .apple-group.brand-gradient-surface .profile-card-action-buttons > .apple-icon-button:not(.app-button--primary) {\n  color: var(--text-primary);");
   });
 });
 
 describe("ProfilesView 编辑器加载策略", () => {
   it("ProfileEdit 静态加载：进编辑页零延迟，不出现懒加载骨架", () => {
-    expect(source).toContain('import ProfileEdit from "./ProfileEdit";');
+    expect(source).toContain('import CodexProfileEdit from "./CodexProfileEdit";');
     expect(source).not.toContain("lazy(");
     expect(source).not.toContain("Suspense");
   });

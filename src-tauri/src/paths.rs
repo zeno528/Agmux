@@ -2,6 +2,10 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{app_err, AppResult};
 
+/// 数据目录名。改名发布时旧数据由用户从设置页「导出备份 / 恢复」自行搬过来，
+/// 应用不做目录迁移。
+const ROOT_DIR: &str = ".agmux";
+
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     pub root: PathBuf,
@@ -19,6 +23,9 @@ pub struct AppPaths {
     pub codex_home: PathBuf,
     /// Claude Code 的家目录（~/.claude）：供应商配置写入其下 settings.json。
     pub claude_home: PathBuf,
+    /// 供应商终端的 per-session settings 覆盖文件目录：只放 `claude --settings`
+    /// 的临时覆盖，不进 ~/.claude，不参与 apply 与回写。
+    pub terminal: PathBuf,
 }
 
 impl AppPaths {
@@ -34,6 +41,11 @@ impl AppPaths {
             .join(".claude.json")
     }
 
+    /// 某个 Claude 供应商的终端覆盖文件：固定命名、每次覆写，不随进程删除。
+    pub fn terminal_settings(&self, profile_id: &str) -> PathBuf {
+        self.terminal.join(format!("claude_{profile_id}.json"))
+    }
+
     pub fn ensure(&self) -> AppResult<()> {
         for dir in [
             &self.root,
@@ -41,6 +53,7 @@ impl AppPaths {
             &self.database_backup,
             &self.codex_files_backup,
             &self.logs,
+            &self.terminal,
         ] {
             std::fs::create_dir_all(dir)
                 .map_err(|error| app_err!("无法创建目录 {}: {error}", dir.display()))?;
@@ -54,15 +67,16 @@ pub fn app_paths() -> AppResult<AppPaths> {
 }
 
 pub fn from_home(home: &Path) -> AppResult<AppPaths> {
-    let root = home.join(".cgswitch");
+    let root = home.join(ROOT_DIR);
     Ok(AppPaths {
-        database: root.join("cgswitch.db"),
+        database: root.join("agmux.db"),
         settings: root.join("settings.json"),
         update_marker: root.join("update-marker"),
         config_backup: root.join("backups").join("config"),
         database_backup: root.join("backups").join("database"),
         codex_files_backup: root.join("backups").join("codex-files"),
         logs: root.join("logs"),
+        terminal: root.join("terminal"),
         codex_home: home.join(".codex"),
         claude_home: home.join(".claude"),
         root,
@@ -95,17 +109,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn paths_use_cgswitch_and_codex_directories() {
+    fn paths_use_agmux_and_codex_directories() {
         let home = Path::new("/home/user");
         let paths = from_home(home).unwrap();
-        assert_eq!(paths.root, home.join(".cgswitch"));
-        assert_eq!(paths.database, home.join(".cgswitch").join("cgswitch.db"));
-        assert_eq!(paths.logs, home.join(".cgswitch").join("logs"));
+        assert_eq!(paths.root, home.join(".agmux"));
+        assert_eq!(paths.database, home.join(".agmux").join("agmux.db"));
+        assert_eq!(paths.logs, home.join(".agmux").join("logs"));
         assert_eq!(
             paths.codex_config(),
             home.join(".codex").join("config.toml")
         );
         assert_eq!(paths.claude_home, home.join(".claude"));
         assert_eq!(paths.claude_mcp_config(), home.join(".claude.json"));
+        assert_eq!(paths.terminal, home.join(".agmux").join("terminal"));
+        assert_eq!(
+            paths.terminal_settings("p-1"),
+            home.join(".agmux").join("terminal").join("claude_p-1.json")
+        );
     }
 }

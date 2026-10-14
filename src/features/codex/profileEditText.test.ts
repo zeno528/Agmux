@@ -1,7 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { patchModelValue, patchProviderFields, readModelValue, readProviderFields, resolveAuthSource, withMcpSection } from "./profileEditText";
+import { chatgptModelOptions, patchModelValue, patchProviderFields, readCatalogOptions, readModelValue, readProviderFields, resolveAuthSource, withMcpSection } from "./profileEditText";
+
+it("远程模型和账号缓存保留顺序、空档位以及默认档位兜底", () => {
+  expect(chatgptModelOptions([
+    { slug: "second", display_name: "Second", supported_reasoning_levels: [], default_reasoning_level: null },
+    { slug: "first", display_name: "First", supported_reasoning_levels: [{ effort: "low" }], default_reasoning_level: "low" },
+  ])).toEqual({ models: ["second", "first"], efforts: { second: [], first: ["low"] }, defaults: { second: "none", first: "low" } });
+  expect(chatgptModelOptions([])).toEqual({ models: [], efforts: {}, defaults: {} });
+});
 
 describe("model value read/patch", () => {
+  it("reads and patches effort only at the top level, including configs without a provider", () => {
+    const source = '[profiles.fixture]\nmodel = "nested"\nmodel_reasoning_effort = "high"\n';
+    expect(readModelValue(source)).toBeNull();
+    expect(readModelValue(source, "model_reasoning_effort")).toBeNull();
+    const patched = patchModelValue(source, "low", "model_reasoning_effort");
+    expect(patched).toBe('model_reasoning_effort = "low"\n' + source);
+    expect(readModelValue(patched, "model_reasoning_effort")).toBe("low");
+    expect(patchModelValue(patched, "", "model_reasoning_effort")).toBe(source);
+  });
+
+  it("uses advertised catalog efforts, preserving models with empty or unknown capabilities", () => {
+    const catalog = JSON.stringify({ models: [
+      { slug: "fixture", supported_reasoning_levels: [{ effort: "low" }, { effort: "max" }, { effort: "max" }] },
+      { slug: "no-reasoning", supported_reasoning_levels: [] },
+      { slug: "unknown" }, { slug: "__proto__", supported_reasoning_levels: [{ effort: "high" }] },
+    ] });
+    const { efforts } = readCatalogOptions(catalog);
+    expect(efforts.fixture).toEqual(["low", "max"]);
+    expect(efforts["no-reasoning"]).toEqual([]);
+    expect(Object.keys(efforts)).toContain("unknown");
+    expect(efforts.unknown).toBeUndefined();
+    expect(efforts.__proto__).toEqual(["high"]);
+    expect(readCatalogOptions(null).efforts.toString).toBeUndefined();
+    expect(() => readCatalogOptions("{")).toThrow();
+  });
+  it("自定义目录按优先级提供可见模型和默认档位，保留隐藏模型的显式档位", () => {
+    const options = readCatalogOptions(JSON.stringify({ models: [
+      { slug: "second", priority: 2, default_reasoning_level: "high" },
+      { slug: "hidden", priority: 0, visibility: "hide", supported_reasoning_levels: [{ effort: "low" }] },
+      { slug: "first", priority: 1, visibility: "list", default_reasoning_level: "low" },
+    ] }));
+    expect(options.models).toEqual(["first", "second"]);
+    expect(options.defaults.first).toBe("low");
+    expect(options.efforts.hidden).toEqual(["low"]);
+  });
   const source = [
     'model = "glm-5.2"',
     'model_provider = "ZAI"',

@@ -25,9 +25,11 @@ export function AppDialog({ open, onOpenChange, title, hero, description, childr
         <Dialog.Content
           className={`app-dialog-content ${hero ? "app-dialog-content--hero" : ""} ${className}`}
           onOpenAutoFocus={(event) => {
-            if (!initialFocusRef?.current) return;
+            const focusTarget = initialFocusRef?.current;
+            if (!focusTarget) return;
             event.preventDefault();
-            initialFocusRef.current.focus({ preventScroll: true });
+            focusTarget.focus({ preventScroll: true });
+            if (focusTarget instanceof HTMLInputElement) focusTarget.select();
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();

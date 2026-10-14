@@ -31,8 +31,6 @@ const LABELS: Record<string, string> = {
   claude: "Claude",
 };
 
-const THEME_INVERTED_IDS = new Set(["openai-chatgpt", "opencode", "xiaomi-mimo", "openrouter", "custom", "xai", "anthropic"]);
-
 export interface ProviderIcon {
   id: string;
   label: string;
@@ -59,7 +57,3 @@ export function providerIconUrl(id: string | null | undefined): string | null {
 
 /** ChatGPT 品牌 logo，账号页头与添加账号弹窗共用。 */
 export const chatgptLogo = providerIconUrl("openai-chatgpt");
-
-export function providerIconThemeClass(id: string | null | undefined): string {
-  return id && THEME_INVERTED_IDS.has(id) ? "dark:invert" : "";
-}

@@ -87,7 +87,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # 必须在 src-tauri 下执行：rust-toolchain.toml 固定了工具链，目标要装到该工具链
+      # 仓库根目录的 rust-toolchain.toml 统一固定检查与构建工具链。
       - run: rustup target add ${{ matrix.rust-target }}
         shell: bash
         working-directory: src-tauri
@@ -153,12 +153,27 @@ jobs:
 
           ---
 
-          ## 下载安装指引（测试构建）
+          ## 下载与安装（测试构建）
 
-          | 系统 | 下载 | 安装 |
+          | 系统 | 架构 | 文件 |
           | --- | --- | --- |
-          | Windows | `CGswitch-__TAG__-Windows-setup.exe` | 双击安装；批量部署、静默安装可选 `CGswitch-__TAG__-Windows.msi` |
-          | macOS | Apple 芯片：`CGswitch-__TAG__-macOS-arm64.dmg`<br>Intel：`CGswitch-__TAG__-macOS-x64.dmg` | 打开后拖入「应用程序」 |
+          | Windows | — | `Agmux-__TAG__-Windows-setup.exe` |
+          | Windows | — | `Agmux-__TAG__-Windows.msi`（静默安装 `/quiet`） |
+          | macOS | Apple 芯片 | `Agmux-__TAG__-macOS-arm64.dmg` |
+          | macOS | Intel | `Agmux-__TAG__-macOS-x64.dmg` |
+
+          安装包未做代码签名。
+
+          **Windows**：双击 `.exe` 即可；MSI 用于批量部署或静默安装（`msiexec /i <文件> /quiet`）。
+          若弹出「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」。
+
+          **macOS**：打开 DMG，把 Agmux 拖入「应用程序」。需要 macOS 12 以上。
+          若提示「无法验证开发者」，在「系统设置 → 隐私与安全性」点「仍要打开」，
+          或在终端执行：
+
+          ```bash
+          xattr -cr /Applications/Agmux.app
+          ```
           EOF
           sed -i "s/__TAG__/$TAG/g" "$GUIDE"
           # 变更列表基准 = 上次本分支测试构建的 tag：按 tag 创建时间倒序取最新一个，
@@ -224,15 +239,15 @@ jobs:
           mkdir -p release-assets
           copy_asset() { cp "$(find "$1" -type f -name "$2" -print -quit)" "$3"; }
           # 资产名带 tag（含分支名与构建号），与正式版安装包名明确区分
-          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/CGswitch-$TAG-Windows-setup.exe"
-          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/CGswitch-$TAG-Windows.msi"
-          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/CGswitch-$TAG-Windows-setup.exe.sig"
-          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/CGswitch-$TAG-macOS-x64.dmg"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/CGswitch-$TAG-macOS-x64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/CGswitch-$TAG-macOS-x64.app.tar.gz.sig"
-          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/CGswitch-$TAG-macOS-arm64.dmg"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/CGswitch-$TAG-macOS-arm64.app.tar.gz"
-          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/CGswitch-$TAG-macOS-arm64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-windows-x64 '*.exe' "release-assets/Agmux-$TAG-Windows-setup.exe"
+          copy_asset artifacts/bundle-windows-x64 '*.msi' "release-assets/Agmux-$TAG-Windows.msi"
+          copy_asset artifacts/bundle-windows-x64 '*.exe.sig' "release-assets/Agmux-$TAG-Windows-setup.exe.sig"
+          copy_asset artifacts/bundle-macos-x64 '*.dmg' "release-assets/Agmux-$TAG-macOS-x64.dmg"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz' "release-assets/Agmux-$TAG-macOS-x64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-x64 '*.app.tar.gz.sig' "release-assets/Agmux-$TAG-macOS-x64.app.tar.gz.sig"
+          copy_asset artifacts/bundle-macos-arm64 '*.dmg' "release-assets/Agmux-$TAG-macOS-arm64.dmg"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz' "release-assets/Agmux-$TAG-macOS-arm64.app.tar.gz"
+          copy_asset artifacts/bundle-macos-arm64 '*.app.tar.gz.sig' "release-assets/Agmux-$TAG-macOS-arm64.app.tar.gz.sig"
           # 不生成 latest.json：测试构建不进入正式升级源
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
       - name: 上传产物

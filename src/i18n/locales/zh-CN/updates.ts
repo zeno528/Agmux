@@ -1,8 +1,8 @@
 /** 应用更新相关文案（状态栏提示、升级流程）。 */
 export default {
   notice: {
-    title: "发现新版本：v{{version}}",
-    available: "更新",
+    title: "有可用更新",
+    available: "有可用更新",
     updateNow: "立即重启更新",
     later: "稍后",
     installing: "下载安装中…",
@@ -12,7 +12,7 @@ export default {
     updated: "已更新到 v{{version}}",
   },
   error: {
-    proxyHint: "无法连接 GitHub，请检查系统代理后重试",
+    proxyHint: "无法连接 GitHub，请检查网络代理后重试",
     checkFailed: "检查更新失败",
   },
   webMock: {

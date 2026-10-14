@@ -28,6 +28,18 @@ describe("一级列表共用定义", () => {
     expect(styles).not.toContain("skill-list-row");
   });
 
+  it("插件、MCP、Skill 一级页头复用统一标题计数组件", () => {
+    for (const page of pages) expect(page).toContain("ManagementPageTitle");
+    expect(styles).toContain(".management-page-title {");
+    expect(styles).toContain(".management-page-title__count {");
+  });
+
+  it("插件市场详情页也复用统一标题计数样式", () => {
+    const marketplaceDetailSource = readFileSync(new URL("./MarketplaceDetailView.tsx", import.meta.url), "utf8");
+    expect(marketplaceDetailSource).toContain("ManagementPageTitle");
+    expect(marketplaceDetailSource).toContain('count={loaded ? installedPluginCount : undefined}');
+  });
+
   it("插件市场两卡与一级列表同构：行直接进 apple-group apple-list-card，不再套面板外壳", () => {
     // 官方/第三方两卡都由 renderMarketplaceCard 渲染，容器类只剩一处定义；
     // 不再用 apple-panel-section 包一层（面板内边距叠上行内边距，首尾留白不等）

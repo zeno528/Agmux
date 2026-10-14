@@ -26,6 +26,17 @@ vi.mock("react", () => ({
   },
 }));
 
+describe("asAppView 坏值回落", () => {
+  it("合法 AppView 原样通过，非法值与空值回落默认页", async () => {
+    // 模块顶层消费预发 get_state：先给 mock 一个实现再加载
+    mocks.getState.mockResolvedValue({ settings: {} });
+    const { asAppView } = await import("./appShellHooks");
+    expect(asAppView("claudeProfiles")).toBe("claudeProfiles");
+    expect(asAppView("bogus")).toBe("codexProfiles");
+    expect(asAppView(null)).toBe("codexProfiles");
+  });
+});
+
 describe("useAppState 启动状态读取", () => {
   beforeEach(() => {
     vi.resetModules();

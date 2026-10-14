@@ -182,7 +182,7 @@ impl AppContext {
         )?;
         match &result {
             // 只断言验证过的事实：进程拉起来了。start/restart 的区分已经在 action= 字段里，
-            // 而"应用是否真的可用"CGswitch 无从验证——配置坏掉时进程照样会起来并弹错误框，
+            // 而"应用是否真的可用"Agmux 无从验证——配置坏掉时进程照样会起来并弹错误框，
             // 那时候记"已启动"就是撒谎（19:40 那次就是这么记的）。
             Ok(()) => tauri_plugin_log::log::info!(
                 "[settings.restart] action={action} outcome=success msg=\"Codex 进程已拉起\""
@@ -231,9 +231,16 @@ impl AppContext {
             "system" => "system".into(),
             _ => return Err(app_err!("不支持的界面语言设置")),
         };
+        settings.proxy_url = settings.proxy_url.trim().to_owned();
+        if settings.proxy_mode == crate::models::ProxyMode::Custom {
+            crate::network::Network::new(Some(settings.proxy_url.clone()))
+                .map_err(|error| app_err!("{error}"))?;
+        }
         let text =
             serde_json::to_string_pretty(&settings).map_err(|_| app_err!("设置序列化失败"))?;
         atomic_write(&self.paths.settings, text.as_bytes())?;
+        // 与落盘共用操作锁，保证并发保存时运行中的选择与最后一份文件一致。
+        crate::network::set_proxy(settings.proxy_mode.clone(), settings.proxy_url.clone());
         prune_backups(
             &self.paths.database_backup,
             DATABASE_BACKUP_PREFIX,
@@ -329,6 +336,30 @@ impl AppContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_custom_proxy_never_overwrites_last_saved_settings() {
+        let home = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(home.path()).unwrap();
+        paths.ensure().unwrap();
+        let context = AppContext::new(paths).unwrap();
+        let before = context.settings().unwrap();
+        let original = std::fs::read(&context.paths.settings).unwrap();
+        for address in [
+            "",
+            "not-a-url",
+            "socks5://127.0.0.1:1",
+            "http://user:fixture-secret@",
+        ] {
+            let mut invalid = before.clone();
+            invalid.proxy_mode = crate::models::ProxyMode::Custom;
+            invalid.proxy_url = address.into();
+            let error = context.save_settings(&invalid).unwrap_err().to_string();
+            assert!(!error.contains("fixture-secret"));
+            assert_eq!(context.settings().unwrap(), before);
+            assert_eq!(std::fs::read(&context.paths.settings).unwrap(), original);
+        }
+    }
 
     #[test]
     fn settings_log_lists_changed_fields_without_values() {

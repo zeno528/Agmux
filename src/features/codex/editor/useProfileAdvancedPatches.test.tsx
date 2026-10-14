@@ -25,9 +25,9 @@ function captureControls() {
 
 describe("工具栏配置写入后的定位请求", () => {
   it.each([
-    ["toggleLongContext", "patchChatgptContextConfig", "model_context_window"],
-    ["toggleSystemProxy", "patchSystemProxyConfig", "respect_system_proxy"],
-    ["toggleContextManagement", "patchContextManagementConfig", "experimental_mode"],
+    ["toggleLongContext", "codexPatchChatgptContextConfig", "model_context_window"],
+    ["toggleSystemProxy", "codexPatchSystemProxyConfig", "respect_system_proxy"],
+    ["toggleContextManagement", "codexPatchContextManagementConfig", "experimental_mode"],
   ] as const)("%s 成功后才传递返回文本和目标字段，取消时不定位", async (action, method, field) => {
     const next = `${field} = true\n`;
     vi.spyOn(api, method).mockResolvedValue(next);
@@ -41,7 +41,7 @@ describe("工具栏配置写入后的定位请求", () => {
   });
 
   it("补丁失败时不修改文本，也不请求定位", async () => {
-    vi.spyOn(api, "patchSystemProxyConfig").mockRejectedValue(new Error("patch failed"));
+    vi.spyOn(api, "codexPatchSystemProxyConfig").mockRejectedValue(new Error("patch failed"));
     const { controls, onPatched, setConfigText } = captureControls();
     await controls.toggleSystemProxy(true);
     expect(setConfigText).not.toHaveBeenCalled();

@@ -1,45 +1,44 @@
 import { Activity, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Layers2, Minus, Blocks, Puzzle, CircleUserRound, Settings as SettingsIcon, Square, X } from "lucide-react";
+import { Minus, Blocks, BookOpenText, Bot, CircleUserRound, PanelLeft, Settings as SettingsIcon, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { api, isTauri } from "../api";
+import { api, isMacWindow, isTauri } from "../api";
 import { McpIcon } from "../components/McpIcon";
 import { FeedbackProvider, useFeedback } from "./Feedback";
 import { authQuotaErrorKind } from "./authQuotaCache";
-import { getMcpDiffBadge, loadClaudeMcpServers, loadClaudeProfiles, loadMcpServers, loadPluginMarketplaces, loadPlugins, loadSkills, mcpDiffBadgeText, setMcpDiffBadge, subscribeMcpDiffBadge } from "./managementDataCache";
-import { useActivationRefresh, useAppState, useCodexPolling, useSidebar, useThemeMode, type AppView } from "./appShellHooks";
-import ProfilesView from "../features/profiles/ProfilesView";
+import { armCliUpdateTicker, getCachedCliUpdate, getMcpDiffBadge, loadClaudeMcpServers, loadClaudeProfiles, loadMcpServers, loadPluginMarketplaces, loadPlugins, loadSkills, mcpDiffBadgeText, setMcpDiffBadge, subscribeCliUpdate, subscribeMcpDiffBadge } from "./managementDataCache";
+import { asAppView, useActivationRefresh, useAppState, useCodexPolling, useSidebar, useThemeMode, type AppView } from "./appShellHooks";
+import CodexProfilesView from "../features/codex/CodexProfilesView";
 import McpView from "../features/mcp/McpView";
 import PluginsView from "../features/plugins/PluginsView";
 import SkillsView from "../features/skills/SkillsView";
 import ClaudeProfilesView from "../features/claude/ClaudeProfilesView";
 import AccountsView from "../features/accounts/AccountsView";
 import SettingsView from "../features/settings/SettingsView";
+import AgentToolsView from "../features/settings/AgentToolsView";
 import { AppUpdateProvider, UpdateNotice } from "../features/updates/AppUpdateProvider";
 import { setupI18n, type resources } from "../i18n";
 import type { AppState } from "../types";
 import { switchProfileFromTray } from "./traySwitch";
 
 const appWindow = isTauri ? getCurrentWindow() : null;
-// macOS 使用原生交通灯（titleBarStyle: Overlay），隐藏自绘窗口控制按钮并为交通灯预留空间
-const isMacWindow = isTauri && /Macintosh/.test(navigator.userAgent);
 
-/// 差异检查：读 config.toml 跟数据库镜像比，把结果写进侧栏角标。
+/// 两端差异检查：结果写入共享角标缓存。
 /// 启动后延迟一次、窗口激活时一次，两处共用这一条规则——放在模块作用域是为了
 /// 引用稳定，激活那条 effect 不需要把它挂进依赖数组。
 /// 失败不静默：写回 error 态，让"config.toml 坏了"在切回窗口那一刻就可见，
 /// 而不是等用户点进 MCP 页才发现。
-const checkMcpDiff = () =>
-  api.mcpSyncPreview()
-    .then((preview) => setMcpDiffBadge({ count: preview.entries.length, error: false }))
-    .catch(() => setMcpDiffBadge({ count: 0, error: true }));
+const checkMcpDiff = () => Promise.all((["codex", "claude"] as const).map((target) =>
+  (target === "codex" ? api.codexMcpSyncPreview() : api.claudeMcpSyncPreview())
+    .then((preview) => setMcpDiffBadge({ count: preview.entries.length, error: false }, target))
+    .catch(() => setMcpDiffBadge({ count: 0, error: true }, target))));
 
-// 进场动画的作用范围沿用原 CSS 动画的选择器：任何新挂载的页内容元素都整段上浮。
+// 页内进场动画不包含设置页签。
 const PAGE_ENTER_TARGET =
-  ".apple-page-enter > :is(.apple-scroll-page, .apple-edit-page, .settings-page) > .apple-edit-content";
+  ".apple-page-enter :is(.apple-scroll-page, .apple-edit-page) > .apple-edit-content";
 
-/// 侧栏条目/分组标题的文案 key：直接从 common/nav 资源推导，新增导航项自动跟随。
+/// 侧栏条目的文案 key：直接从 common/nav 资源推导，新增导航项自动跟随。
 type SidebarLabelKey = `nav.${keyof (typeof resources)["zh-CN"]["common"]["nav"]}`;
 
 /// 页面进场动画：沿原 cubic-bezier(0.16,1,0.35,1) 曲线做 8px 上浮，但位移逐帧量化到整设备像素。
@@ -79,24 +78,34 @@ function animatePageEnter(el: Element) {
   el.animate(frames, { duration: Math.round(total) });
 }
 
-/// 与原 CSS 动画语义一致：每次进入页面（首次挂载、切页、切回保活页）页内容上浮一次，
-/// 各页内部重挂载出现的新页内容也播放。effect 以 view 为依赖：切回已保活的页面时 DOM
-/// 不变、MutationObserver 收不到，靠重跑 scan 补播；observer 只负责同页内部的新挂载，
-/// played 随 effect 重建，因此同一次停留内同一元素不会重复播。保活页隐藏后仍在 DOM 里
-/// （display:none），scan 按 offsetParent 跳过，不给看不见的页面播动画。
+/// 一级切页时将已有内容标记为已播放，不补播动画；observer 播放页内进入和返回的新内容，
+/// 页面容器被移除（换供应商的保活草稿页重进）时给重新可见的已播页补播。
+/// 隐藏保活页按 offsetParent 跳过。
 function usePageEnterAnimation(mainRef: { current: HTMLElement | null }, view: AppView) {
   useLayoutEffect(() => {
     const main = mainRef.current;
     if (!main) return;
-    const played = new WeakSet<Element>();
-    const scan = () => {
+    const played = new WeakSet<Element>(main.querySelectorAll(PAGE_ENTER_TARGET));
+    const scan = (mutations: MutationRecord[]) => {
+      // 同级列表内容互换（MCP 客户端切换）不播放；编辑页进出会替换页面容器，仍照常播放。
+      const peerSwitch = (["addedNodes", "removedNodes"] as const).every((key) =>
+        mutations.some((mutation) => Array.from(mutation[key]).some((node) => node instanceof Element && node.matches(".apple-edit-content"))),
+      );
+      // 页面容器被移除 = 发生了一次页内导航；换供应商流程保活编辑页（草稿保留），
+      // 重进时是已播过的老节点，靠这个信号补播。
+      const pageClosed = mutations.some((mutation) =>
+        Array.from(mutation.removedNodes).some((node) => node instanceof Element && node.matches(".apple-scroll-page, .apple-edit-page")),
+      );
       for (const el of main.querySelectorAll(PAGE_ENTER_TARGET)) {
-        if ((el as HTMLElement).offsetParent === null || played.has(el)) continue;
-        played.add(el);
-        animatePageEnter(el);
+        if ((el as HTMLElement).offsetParent === null) continue;
+        if (!played.has(el)) {
+          played.add(el);
+          if (!peerSwitch) animatePageEnter(el);
+        } else if (pageClosed && !peerSwitch) {
+          animatePageEnter(el);
+        }
       }
     };
-    scan();
     const observer = new MutationObserver(scan);
     observer.observe(main, { childList: true, subtree: true });
     return () => observer.disconnect();
@@ -134,15 +143,15 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
       listen<string>("tray-switch-profile", async ({ payload: id }) => {
         const state = stateRef.current;
         if (busy.current) return;
-        if (!state?.profiles.some((profile) => profile.id === id) || state.active_profile_id === id) {
+        if (!state?.codex_profiles.some((profile) => profile.id === id) || state.active_codex_profile_id === id) {
           await latest.current.refresh();
           return;
         }
         busy.current = true;
         const { feedback, t, refresh } = latest.current;
         try {
-          const result = await switchProfileFromTray(id, state, refresh);
-          feedback.success(t(`feedback.${result}`));
+          await switchProfileFromTray(id, state, refresh);
+          feedback.success(t("feedback.applySuccess", { ns: "common" }));
         } catch (error) {
           const message = String(error);
           await refresh();
@@ -163,10 +172,21 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
 }
 
 export default function AppShell() {
-  const [view, setView] = useState<AppView>("profiles");
+  // 冷启动落页：首帧同步读缓存直出（与 sidebar-collapsed 同款 localStorage 先例），
+  // 第二次冷启动起首帧即目标页不闪；settings 到达后由下方 effect 校准真值并刷新缓存。
+  const [view, setView] = useState<AppView>(() => asAppView(localStorage.getItem("agmux.startup-view")));
+  // 重复点击当前视图的侧栏按钮 = 弹回该视图一级；点其他按钮 = 正常切换，目标视图保活现场不受影响。
+  // popRequest 只对目标视图递增，各视图自带"无子页时零反应"守卫（一级时 setState 同值跳过）。
+  const [popRequest, setPopRequest] = useState<{ view: AppView; epoch: number } | null>(null);
+  const navTo = (target: AppView) => {
+    if (target !== view) setView(target);
+    else setPopRequest((current) => ({ view: target, epoch: (current?.epoch ?? 0) + 1 }));
+  };
+  const popEpochOf = (pageView: AppView) => (popRequest?.view === pageView ? popRequest.epoch : 0);
   // 切页记忆：进过的页面保活（Activity hidden），未访问页连渲染都不发生，冷启动零新增。
-  const [visitedViews, setVisitedViews] = useState<ReadonlySet<AppView>>(() => new Set<AppView>(["profiles"]));
+  const [visitedViews, setVisitedViews] = useState<ReadonlySet<AppView>>(() => new Set<AppView>(["codexProfiles"]));
   const [startupReady, setStartupReady] = useState(false);
+  const [windowControlsHovered, setWindowControlsHovered] = useState(false);
   const { t } = useTranslation();
   // 侧栏角标复用 MCP 页的差异计数文案，避免同一件事在两处各写一份
   const { t: tMcp } = useTranslation("mcp");
@@ -176,13 +196,13 @@ export default function AppShell() {
   useEffect(() => {
     const language = setupI18n(state?.settings.language);
     if (isTauri && state) {
-      void api.setTrayMenu(language, state.profiles.map(({ id, name }) => ({ id, name })), state.active_profile_id).catch(() => undefined);
+      void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id).catch(() => undefined);
     }
-  }, [state?.settings.language, state?.profiles, state?.active_profile_id]);
+  }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id]);
   const { start: startPolling, stop: stopPolling } = useCodexPolling(stateRef, updateCodex);
   const { activationEpoch, activate, deactivate } = useActivationRefresh();
   const sidebar = useSidebar();
-  // 页面进场动画：挂在 <main> 上监听页内容挂载，切回保活页时补播（见 usePageEnterAnimation）
+  // 页面进场动画：只监听页内内容切换，一级切页不补播（见 usePageEnterAnimation）。
   const mainRef = useRef<HTMLElement>(null);
   usePageEnterAnimation(mainRef, view);
   // 首次进入的页面在渲染期就补进挂载清单（React 丢弃中间渲染、不提交空帧）。
@@ -195,11 +215,27 @@ export default function AppShell() {
   // 侧栏 MCP 角标：首屏只读缓存直出（同步读 localStorage，与 sidebar-collapsed 同级），
   // 真正查一次差异放到 startupReady 之后延迟执行，不进首屏与冷启动关键路径。
   const mcpDiffBadge = useSyncExternalStore(subscribeMcpDiffBadge, getMcpDiffBadge);
-  // 角标文本与 MCP 页头同源：规则住在 managementDataCache，不在两处各写一遍
-  const mcpBadge = mcpDiffBadgeText(mcpDiffBadge);
-  const mcpBadgeTitle = mcpDiffBadge?.count
-    ? tMcp("list.updateDiffAria", { count: mcpDiffBadge.count })
-    : mcpDiffBadge?.error ? tMcp("list.diffUnavailable") : undefined;
+  const claudeMcpDiffBadge = useSyncExternalStore(subscribeMcpDiffBadge, () => getMcpDiffBadge("claude"));
+  const mcpBadge = mcpDiffBadgeText(mcpDiffBadge) || mcpDiffBadgeText(claudeMcpDiffBadge);
+  const mcpDiffCount = (mcpDiffBadge?.count ?? 0) + (claudeMcpDiffBadge?.count ?? 0);
+  const mcpBadgeTitle = mcpDiffCount
+    ? tMcp("list.updateDiffAria", { count: mcpDiffCount })
+    : mcpDiffBadge?.error || claudeMcpDiffBadge?.error ? tMcp("list.diffUnavailable") : undefined;
+  const codexCliUpdate = useSyncExternalStore(subscribeCliUpdate, () => getCachedCliUpdate("codex"), () => getCachedCliUpdate("codex"));
+  const claudeCliUpdate = useSyncExternalStore(subscribeCliUpdate, () => getCachedCliUpdate("claude"), () => getCachedCliUpdate("claude"));
+
+  // 冷启动落页：settings 首次到达时跳一次到设置的启动页；之后设置变化只刷新缓存，
+  // 不再拽页——托盘/后台恢复与改设置都不打断当前所在页面（只对冷启动生效）。
+  const startupViewApplied = useRef(false);
+  const startupSetting = state?.settings.startup_view;
+  useEffect(() => {
+    if (startupSetting === undefined) return;
+    const target = asAppView(startupSetting);
+    localStorage.setItem("agmux.startup-view", target);
+    if (startupViewApplied.current) return;
+    startupViewApplied.current = true;
+    setView((current) => (current === target ? current : target));
+  }, [startupSetting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,6 +287,8 @@ export default function AppShell() {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     const onActive = () => {
+      // 隐藏到托盘可能收不到 pointerleave，恢复后等鼠标移动再启用悬停样式。
+      setWindowControlsHovered(false);
       if (!activate()) return;
       void refresh();
       void refreshAuthStatus();
@@ -260,6 +298,7 @@ export default function AppShell() {
       startPolling();
     };
     const onInactive = () => {
+      setWindowControlsHovered(false);
       if (!deactivate()) return;
       stopPolling();
     };
@@ -322,6 +361,14 @@ export default function AppShell() {
     return () => window.clearTimeout(timer);
   }, [startupReady]);
 
+  // CLI 更新胶囊的全局检查时机（首帧后 5 秒首轮 + 每小时懒 tick，6h 冷却闸在
+  // service 内）：覆盖从不进 Agent 工具页、也极少重启的常驻用户。app 层一次
+  // 挂载活整个会话，不绑页面生命周期；失败全部静默，只留后端日志。
+  useEffect(() => {
+    if (!startupReady) return;
+    armCliUpdateTicker(5000);
+  }, [startupReady]);
+
   useEffect(() => {
     const main = document.querySelector("main");
     if (!main) return;
@@ -331,8 +378,8 @@ export default function AppShell() {
     updateScrollbarSize();
   }, []);
 
-  // 切页 = setView 换 Activity 的显隐，不强制重挂载：重复点击当前页由 setState bail-out
-  // 保证无副作用，进入过的页面保住工作现场（编辑草稿、弹窗、页内滚动）。
+  // 切页 = setView 换 Activity 的显隐，不强制重挂载：进入过的页面保住工作现场（编辑草稿、弹窗、页内滚动）；
+  // 重复点击当前页由 navTo 弹回该页一级（popRequest），托盘等程序化跳转照旧 setView。
   const navClass = "apple-sidebar-nav-button app-selection-state";
 
   // 各页内容唯一清单：Record 保证新增 AppView 分支时漏页是编译错误。
@@ -340,13 +387,14 @@ export default function AppShell() {
   // 清理（不加载、不轮询），state 与 DOM 保留，切回即恢复现场，effects 重跑后数据照常刷新。
   const renderPages = (state: AppState) => {
     const pages: Record<AppView, ReactNode> = {
-      profiles: <ProfilesView state={state} authStatusReady={authStatusReady} activationEpoch={activationEpoch} coldStart={!startupReady} onRefresh={refresh} onManageChatgptAccounts={() => setView("accounts")} />,
-      mcp: <McpView activationEpoch={activationEpoch} />,
-      plugins: <PluginsView state={state} />,
-      skills: <SkillsView activationEpoch={activationEpoch} />,
-      claude: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} />,
-      accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} />,
+      codexProfiles: <CodexProfilesView state={state} authStatusReady={authStatusReady} activationEpoch={activationEpoch} coldStart={!startupReady} onRefresh={refresh} onManageChatgptAccounts={() => setView("accounts")} popEpoch={popEpochOf("codexProfiles")} />,
+      mcp: <McpView activationEpoch={activationEpoch} popEpoch={popEpochOf("mcp")} />,
+      plugins: <PluginsView state={state} popEpoch={popEpochOf("plugins")} />,
+      skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
+      claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} />,
+      accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
+      agentTools: <AgentToolsView active={view === "agentTools"} />,
     };
     return (Object.keys(pages) as AppView[]).map((pageView) =>
       visitedViews.has(pageView) ? (
@@ -355,33 +403,31 @@ export default function AppShell() {
     );
   };
 
-  // 侧栏分组（C 方案）：Codex / Claude / 通用导航。新增页面 = 数组加一条，不再手写按钮块；
-  // 产品分组标识在收缩态仍可见，通用导航不显示多余分组标题。icon 存 ReactNode 以保留各页现有图标形态。
+  // 侧栏分组：客户端 / 功能入口 / 底部入口。新增页面 = 数组加一条，不再手写按钮块；
+  // 客户端与功能入口沿用同一组按钮间距。icon 存 ReactNode 以保留各页现有图标形态。
   // labelKey 用本地 key 联合（与 common/nav 资源同步），既过 i18next 强类型又保持条目形状统一。
-  const sidebarGroups: { key: string; labelKey: SidebarLabelKey; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeText?: string; titleText?: string; onSelect: () => void }[] }[] = [
+  const sidebarGroups: { key: string; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeDot?: boolean; titleText?: string; onSelect: () => void }[] }[] = [
     {
-      key: "codex",
-      labelKey: "nav.groupCodex",
+      key: "clients",
       items: [
-        { view: "profiles", labelKey: "nav.providers", icon: <Layers2 strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("profiles") },
-        { view: "plugins", labelKey: "nav.plugins", icon: <Blocks strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("plugins") },
-        { view: "accounts", labelKey: "nav.accounts", icon: <CircleUserRound strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("accounts") },
-      ],
-    },
-    {
-      key: "claude",
-      labelKey: "nav.groupClaude",
-      items: [
-        { view: "claude", labelKey: "nav.claudeProviders", icon: <Layers2 strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("claude") },
+        { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
+        { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
       ],
     },
     {
       key: "common",
-      labelKey: "nav.groupCommon",
       items: [
-        { view: "mcp", labelKey: "nav.mcp", icon: <McpIcon className="h-[18px] w-[18px]" />, badgeText: mcpBadge ?? undefined, titleText: mcpBadgeTitle, onSelect: () => setView("mcp") },
-        { view: "skills", labelKey: "nav.skills", icon: <Puzzle strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("skills") },
-        { view: "settings", labelKey: "nav.settings", icon: <SettingsIcon strokeWidth={2} aria-hidden="true" />, onSelect: () => setView("settings") },
+        { view: "plugins", labelKey: "nav.plugins", icon: <Blocks strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("plugins") },
+        { view: "mcp", labelKey: "nav.mcp", icon: <McpIcon />, badgeDot: Boolean(mcpBadge), titleText: mcpBadgeTitle, onSelect: () => navTo("mcp") },
+        { view: "skills", labelKey: "nav.skills", icon: <BookOpenText strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("skills") },
+        { view: "agentTools", labelKey: "nav.agentTools", icon: <Bot strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("agentTools") },
+      ],
+    },
+    {
+      key: "footer",
+      items: [
+        { view: "accounts", labelKey: "nav.accounts", icon: <CircleUserRound strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("accounts") },
+        { view: "settings", labelKey: "nav.settings", icon: <SettingsIcon strokeWidth={2} aria-hidden="true" />, onSelect: () => navTo("settings") },
       ],
     },
   ];
@@ -390,13 +436,18 @@ export default function AppShell() {
     <FeedbackProvider>
       <TrayActions stateRef={stateRef} refresh={refresh} openSettings={() => setView("settings")} openAccounts={() => setView("accounts")} />
       {/* 首次窗口完成显示后才启动静默检查，避免更新链路进入首屏/冷启动关键路径。 */}
-      <AppUpdateProvider enabled={Boolean(state?.settings.auto_check_update) && startupReady} ready={startupReady}>
+      <AppUpdateProvider enabled={Boolean(state?.settings.auto_check_update) && startupReady} ready={startupReady} proxyMode={state?.settings.proxy_mode} proxyUrl={state?.settings.proxy_url}>
       <div className={`flex h-full min-h-0 flex-col ${isMacWindow ? "is-mac" : ""}`}>
         <div className="apple-window-chrome">
           {isMacWindow ? <div className="apple-chrome-inset" data-tauri-drag-region aria-hidden="true" /> : null}
           <div data-tauri-drag-region className="min-w-0 flex-1 self-stretch" />
           {!isMacWindow ? (
-            <div className="flex h-full items-center">
+            <div
+              className="flex h-full items-center"
+              data-window-controls-hover={windowControlsHovered}
+              onPointerMove={() => setWindowControlsHovered(true)}
+              onPointerLeave={() => setWindowControlsHovered(false)}
+            >
               <button type="button" className="window-control-button" aria-label={t("window.minimize")} onClick={() => void appWindow?.minimize()}><Minus strokeWidth={2} aria-hidden="true" /></button>
               <button type="button" className="window-control-button" aria-label={t("window.maximize")} onClick={() => void appWindow?.toggleMaximize()}><Square strokeWidth={2} aria-hidden="true" /></button>
               <button type="button" className="window-control-button window-control-button--close" aria-label={t("window.close")} onClick={() => void appWindow?.close()}><X strokeWidth={2} aria-hidden="true" /></button>
@@ -411,7 +462,7 @@ export default function AppShell() {
                 className="apple-sidebar-brand flex w-fit cursor-pointer items-center"
                 role="button"
                 tabIndex={0}
-                aria-label="CGswitch"
+                aria-label="Agmux"
                 onClick={sidebar.toggleSidebar}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") sidebar.toggleSidebar();
@@ -419,27 +470,36 @@ export default function AppShell() {
                 onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}
                 onMouseLeave={() => sidebar.setSidebarFlyoutArmed(false)}
               >
-                <img src="/logo.svg" alt="CGswitch" className="app-logo" draggable="false" />
-                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">CGswitch</span>
+                <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
+                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
               </div>
               {sidebar.sidebarFlyoutArmed ? (
                 <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
               ) : null}
+              {!sidebar.sidebarCollapsed ? (
+                <>
+                  <button
+                    type="button"
+                    className="apple-sidebar-collapse apple-icon-button muted absolute right-1.5 top-0"
+                    aria-label={t("sidebar.collapse")}
+                    onClick={sidebar.toggleSidebar}
+                  >
+                    <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
+                  </button>
+                  <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span>
+                </>
+              ) : null}
             </div>
-            <nav className="mx-1.5 mt-3 space-y-3">
+            <nav className="mx-1.5 mt-3 flex flex-1 flex-col gap-3">
               {sidebarGroups.map((group) => (
-                <div key={group.key} className="apple-sidebar-group" role="group" aria-label={group.key === "common" ? undefined : t(group.labelKey)}>
-                  {group.key !== "common" ? <div className="apple-sidebar-group-label" aria-hidden="true">
-                    {group.key === "codex" ? <img src="/codex.svg" alt="" /> : null}
-                    {group.key === "claude" ? <img src="/claude-code.svg" alt="" /> : null}
-                    <span className="apple-sidebar-label">{t(group.labelKey)}</span>
-                  </div> : null}
+                <div key={group.key} className={`apple-sidebar-group ${group.key === "common" ? "apple-sidebar-group--content" : ""} ${group.key === "footer" ? "mt-auto pb-3" : ""}`} role="group">
+                  {group.key === "footer" ? <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} /> : null}
                   <div className="space-y-1">
                     {group.items.map((item) => (
                       <button key={item.view} type="button" className={navClass} data-active={view === item.view ? "true" : undefined} aria-label={t(item.labelKey)} title={item.titleText} onClick={item.onSelect} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}>
                         <span className="relative flex shrink-0">
                           {item.icon}
-                          {item.badgeText ? <span className="apple-count-badge" aria-hidden="true">{item.badgeText}</span> : null}
+                          {item.badgeDot ? <span className="apple-sidebar-update-dot" aria-hidden="true" /> : null}
                         </span>
                         <span className="apple-sidebar-label" aria-hidden={sidebar.sidebarCollapsed}>{t(item.labelKey)}</span>
                         {sidebar.sidebarCollapsed && sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t(item.labelKey)}</span> : null}
@@ -449,7 +509,6 @@ export default function AppShell() {
                 </div>
               ))}
             </nav>
-            <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} />
           </aside>
 
           <main ref={mainRef} className="apple-main-card min-w-0 flex-1 overflow-y-auto overflow-x-hidden pt-[var(--main-top-inset)]">

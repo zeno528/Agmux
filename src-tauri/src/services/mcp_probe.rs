@@ -230,6 +230,59 @@ async fn collect_tools(session: &mut impl ToolsFetch) -> (Vec<McpTool>, bool, Op
     (tools, tools_truncated, tools_error)
 }
 
+/// 探测读环境变量：进程环境优先；Windows 下进程启动之后才设置的用户级变量
+/// 兜底读注册表，让"刚设置完变量立刻测连通"不必重启应用。
+/// 只兜底用户级：机器级改动需要管理员权限，极少发生在会话中途。
+fn probe_env_var(name: &str) -> Option<String> {
+    if let Ok(value) = std::env::var(name) {
+        return Some(value);
+    }
+    windows_user_environment_value(name)
+}
+
+#[cfg(windows)]
+fn windows_user_environment_value(name: &str) -> Option<String> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+
+    let subkey = HSTRING::from("Environment");
+    let value_name = HSTRING::from(name);
+    let read = |buffer: Option<*mut core::ffi::c_void>, size: &mut u32| unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            &subkey,
+            &value_name,
+            RRF_RT_REG_SZ,
+            None,
+            buffer,
+            Some(size),
+        )
+    };
+    // 两段式：先问长度再取值。RRF_RT_REG_SZ 会顺带把 REG_EXPAND_SZ 的 %VAR% 引用展开。
+    let mut size = 0u32;
+    if read(None, &mut size) != ERROR_SUCCESS {
+        return None;
+    }
+    let mut buffer = vec![0u8; size as usize];
+    if read(Some(buffer.as_mut_ptr().cast()), &mut size) != ERROR_SUCCESS {
+        return None;
+    }
+    let wide: Vec<u16> = buffer
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_ne_bytes(*pair))
+        .collect();
+    let text = String::from_utf16_lossy(&wide);
+    Some(text.trim_end_matches('\0').to_string())
+}
+
+#[cfg(not(windows))]
+fn windows_user_environment_value(_name: &str) -> Option<String> {
+    None
+}
+
 fn build_http_headers(spec: &McpServerSpec) -> Result<(HeaderMap, Vec<String>), String> {
     let mut headers = HeaderMap::new();
     let mut secrets = Vec::new();
@@ -241,8 +294,8 @@ fn build_http_headers(spec: &McpServerSpec) -> Result<(HeaderMap, Vec<String>), 
         headers.insert(name, value);
     }
     for (name, env_name) in &spec.env_http_headers {
-        let value = std::env::var(env_name)
-            .map_err(|_| format!("HTTP 头引用的环境变量未设置: {env_name}"))?;
+        let value = probe_env_var(env_name)
+            .ok_or_else(|| format!("HTTP 头引用的环境变量未设置: {env_name}"))?;
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| format!("HTTP 头名称无效: {name}"))?;
         let header_value =
@@ -251,8 +304,8 @@ fn build_http_headers(spec: &McpServerSpec) -> Result<(HeaderMap, Vec<String>), 
         headers.insert(name, header_value);
     }
     if let Some(env_name) = spec.bearer_token_env_var.as_deref() {
-        let token = std::env::var(env_name)
-            .map_err(|_| format!("Bearer Token 环境变量未设置: {env_name}"))?;
+        let token = probe_env_var(env_name)
+            .ok_or_else(|| format!("Bearer Token 环境变量未设置: {env_name}"))?;
         if token.trim().is_empty() {
             return Err(format!("Bearer Token 环境变量为空: {env_name}"));
         }
@@ -426,16 +479,14 @@ async fn probe_http_inner(
         Ok(value) => value,
         Err(error) => return failed_result(start, None, error),
     };
-    // 与 connections::http_client 同理：显式配置检测到的系统代理，
-    // 探测请求走哪个代理由应用自己掌握（走向在探测结果行里一并输出）
-    let mut client_builder = reqwest::Client::builder()
-        .user_agent(format!("CGswitch/{}", env!("CARGO_PKG_VERSION")))
+    let network = match crate::network::Network::new(proxy.map(str::to_owned)) {
+        Ok(network) => network,
+        Err(error) => return failed_result(start, None, error.to_string()),
+    };
+    let client_builder = network
+        .builder()
+        .user_agent(format!("Agmux/{}", env!("CARGO_PKG_VERSION")))
         .timeout(PROBE_TIMEOUT);
-    if let Some(url) = proxy {
-        if let Ok(parsed) = reqwest::Proxy::all(url) {
-            client_builder = client_builder.proxy(parsed);
-        }
-    }
     let client = match client_builder.build() {
         Ok(client) => client,
         Err(error) => {
@@ -457,7 +508,7 @@ async fn probe_http_inner(
             json!({
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": { "name": "CGswitch", "version": env!("CARGO_PKG_VERSION") },
+                "clientInfo": { "name": "Agmux", "version": env!("CARGO_PKG_VERSION") },
             }),
             Some(handshake_start),
         )
@@ -723,7 +774,7 @@ fn probe_stdio(spec: &McpServerSpec, include_tools: bool) -> McpProbeResult {
         json!({
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": { "name": "CGswitch", "version": env!("CARGO_PKG_VERSION") },
+            "clientInfo": { "name": "Agmux", "version": env!("CARGO_PKG_VERSION") },
         }),
     ) {
         Err(error) => failed_result(handshake_start, error.status, error.message),
@@ -780,8 +831,8 @@ impl AppContext {
         // 按用户所在页的引擎解析名单与开关：两侧各自标记自己引擎的禁用状态，
         // Codex 关了不影响 Claude 页探测，反之亦然。
         let server = match tool {
-            SkillTool::Codex => self.list_mcp_servers()?,
-            SkillTool::Claude => self.claude_mcp_servers()?,
+            SkillTool::Codex => self.codex_list_mcp_servers()?,
+            SkillTool::Claude => self.claude_list_mcp_servers()?,
         }
         .into_iter()
         .find(|server| server.name == name)
@@ -792,12 +843,25 @@ impl AppContext {
         let is_http = server.url.is_some() && server.command.is_none();
         // HTTP 探测需要代理归因；stdio 子进程的网络不受应用控制，日志不标注走向
         let proxy = if is_http {
-            super::detect_system_proxy()
+            match crate::network::Network::current().await {
+                Ok(network) => network.proxy,
+                Err(error) => {
+                    let result = failed_result(std::time::Instant::now(), None, error.to_string());
+                    log_probe_outcome(
+                        &server.name,
+                        include_tools,
+                        manual,
+                        &result,
+                        " proxy=invalid",
+                    );
+                    return Ok(result);
+                }
+            }
         } else {
             None
         };
         let route = if is_http {
-            super::connections::proxy_note(&proxy)
+            crate::network::proxy_note(&proxy)
         } else {
             String::new()
         };
@@ -1095,5 +1159,39 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(message, "MCP 错误 -32601: Method not found");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn probe_env_var_falls_back_to_user_registry_without_restart() {
+        // 进程环境不可能带这个唯一命名的变量；写入用户级注册表后应能直接读到，
+        // 不依赖环境变更广播。先删再测，清理上一次中断运行可能留下的残余。
+        let name = "AGMUX_PROBE_ENV_FALLBACK";
+        let delete = || {
+            let _ = std::process::Command::new("reg")
+                .args(["delete", r"HKCU\Environment", "/v", name, "/f"])
+                .status();
+        };
+        delete();
+        assert!(std::env::var(name).is_err());
+        let added = std::process::Command::new("reg")
+            .args([
+                "add",
+                r"HKCU\Environment",
+                "/v",
+                name,
+                "/t",
+                "REG_SZ",
+                "/d",
+                "fixture-token",
+                "/f",
+            ])
+            .status()
+            .unwrap()
+            .success();
+        assert!(added, "写入测试用注册表变量失败");
+        let resolved = std::panic::catch_unwind(|| super::probe_env_var(name));
+        delete();
+        assert_eq!(resolved.unwrap(), Some("fixture-token".to_string()));
     }
 }

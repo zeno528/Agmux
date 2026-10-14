@@ -1,10 +1,10 @@
-import { ArrowLeft, CodeXml, Save } from "lucide-react";
+import { ChevronLeft, CodeXml, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
-import { TrashIcon } from "../../components/TrashIcon";
+import { SkillTargetLogo } from "../../components/SkillTargetLogo";
 import type { EditorDiagnosticSummary, McpServerSpec } from "../../types";
 import McpConnectionForm, { PairEditor, TimeoutInput } from "./McpConnectionForm";
 import { McpSourceLabel } from "./McpSourceLabel";
@@ -15,10 +15,9 @@ interface McpEditProps {
   server: McpServerSpec | null;
   create?: boolean;
   onBack: (savedServer?: McpServerSpec) => void;
-  onDelete?: () => Promise<void>;
 }
 
-export default function McpEdit({ server, create = false, onBack, onDelete }: McpEditProps) {
+export default function McpEdit({ server, create = false, onBack }: McpEditProps) {
   const feedback = useFeedback();
   const { t } = useTranslation("mcp");
   const [name, setName] = useState(server?.name ?? "");
@@ -38,7 +37,6 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<EditorDiagnosticSummary>({ count: 0, firstLine: null });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const patchSeq = useRef(0);
   const parseSeq = useRef(0);
   const editorRef = useRef<ConfigTextEditorHandle>(null);
@@ -64,7 +62,7 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
       try {
         const initial = create
           ? ""
-          : (await api.getMcpServerToml(server?.name ?? "")) ?? await api.patchMcpFragment(`[mcp_servers.${server?.name ?? "server"}]\n`, formSpec());
+          : (await api.codexGetMcpServerToml(server?.name ?? "")) ?? await api.patchMcpFragment(`[mcp_servers.${server?.name ?? "server"}]\n`, formSpec());
         if (!cancelled) { setTomlText(initial); setInitialToml(initial); setInitialized(true); }
       } catch (error) { if (!cancelled) feedback.error(String(error)); }
     })();
@@ -86,7 +84,7 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
     const seq = ++parseSeq.current;
     void api.parseMcpFragment(tomlText).then((spec) => {
       if (seq !== parseSeq.current) return;
-      if (/^[A-Za-z0-9_-]+$/.test(spec.name)) setName(spec.name);
+      if (create && /^[A-Za-z0-9_-]+$/.test(spec.name)) setName(spec.name);
       setTransport(spec.url ? "http" : "stdio");
       setCommand(spec.command ?? "");
       setArgsText(spec.args.join("\n"));
@@ -98,7 +96,7 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
       setHeaderPairs(recordToPairs(spec.http_headers));
       setEnvHeaderPairs(recordToPairs(spec.env_http_headers));
     }).catch(() => undefined);
-  }, [initialized, tomlText]);
+  }, [create, initialized, tomlText]);
 
   const formatToml = async () => {
     if (formatting || saving) return;
@@ -119,7 +117,7 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
     if (startupTimeout !== null && startupTimeout <= 0) { feedback.error(t("feedback.startupTimeoutPositive")); return; }
     if (toolTimeout !== null && toolTimeout <= 0) { feedback.error(t("feedback.toolTimeoutPositive")); return; }
     setSaving(true);
-    try { const savedServer = formSpec(); await api.saveMcpServer(server?.name ?? null, savedServer, tomlText); feedback.success(t("feedback.saved")); onBack(savedServer); }
+    try { const savedServer = formSpec(); await api.codexSaveMcpServer(server?.name ?? null, savedServer, tomlText); feedback.success(t("feedback.saved")); onBack(savedServer); }
     catch (error) { feedback.error(String(error)); }
     finally { setSaving(false); }
   };
@@ -133,20 +131,20 @@ export default function McpEdit({ server, create = false, onBack, onDelete }: Mc
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header justify-between">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={() => onBack()}>
-          <ArrowLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
-          <span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle")}</span>
+          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
+          <SkillTargetLogo target="codex" variant="title" />
+          <span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle", { name })}</span>
         </button>
-        {!create && onDelete ? <button type="button" className="apple-action-button app-button--danger" disabled={saving} onClick={() => void onDelete()}><TrashIcon />{t("edit.uninstall")}</button> : null}
       </div>
 
       <div className="apple-edit-content">
         <div className="apple-edit-surface">
           <McpConnectionForm
+            nameReadOnly={!create}
             name={name} setName={setName} transport={transport} setTransport={(value) => setTransport(value as Transport)}
             command={command} setCommand={setCommand} argsText={argsText} setArgsText={setArgsText}
             url={url} setUrl={setUrl} envPairs={envPairs} setEnvPairs={setEnvPairs}
             headerPairs={headerPairs} setHeaderPairs={setHeaderPairs}
-            advancedOpen={advancedOpen} setAdvancedOpen={setAdvancedOpen}
             httpFields={<div className="mt-4">
               <div className="field-label mb-1.5">{t("edit.bearerLabel")}</div>
               <input className="app-input mono" placeholder={t("edit.bearerPlaceholder")} value={bearer} onChange={(event) => setBearer(event.target.value)} />

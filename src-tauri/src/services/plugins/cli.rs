@@ -1,42 +1,33 @@
-//! codex CLI 执行层：CLI 查找、超时分级、系统代理检测与子进程输出排空。
+//! codex CLI 执行层：CLI 查找、超时分级与子进程输出排空。
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use crate::error::{app_err, AppResult};
 // ==================== codex CLI 执行层 ====================
 
-pub(super) fn codex_cli_file_name() -> &'static str {
-    if cfg!(windows) {
-        "codex.exe"
-    } else {
-        "codex"
-    }
-}
-
 pub(super) fn cli_candidates(
     home: &Path,
     path_dirs: impl IntoIterator<Item = PathBuf>,
 ) -> Vec<PathBuf> {
-    let mut candidates = vec![home.join(".codex").join("bin").join(codex_cli_file_name())];
-    candidates.extend(
-        path_dirs
-            .into_iter()
-            .map(|dir| dir.join(codex_cli_file_name())),
-    );
+    let file_name = super::super::codex_cli::file_name();
+    let mut candidates = vec![home.join(".codex").join("bin").join(file_name)];
+    candidates.extend(path_dirs.into_iter().map(|dir| dir.join(file_name)));
     candidates.push(
         home.join(".codex")
             .join("plugins")
             .join(".plugin-appserver")
-            .join(codex_cli_file_name()),
+            .join(file_name),
     );
     candidates
 }
 
 /// codex CLI 探测链：`~/.codex/bin`、PATH 中的独立 CLI、Desktop appserver 自带副本兜底。
 pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
+    if let Some(path) = super::super::codex_cli::find_standalone(home) {
+        return Some(path);
+    }
     let path_dirs = std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
         .unwrap_or_default();
@@ -45,7 +36,7 @@ pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-// ==================== 代理探测与 CLI 超时 ====================
+// ==================== CLI 超时 ====================
 
 /// codex CLI 子进程按操作类型分档限时：本地操作（list/remove）正常亚秒完成，
 /// 卡住即异常，快速失败；联网操作（add/upgrade = git clone）给慢代理留足时间，
@@ -79,85 +70,10 @@ pub(super) fn plugin_timeout_message(args: &[&str], timeout: Duration) -> String
     } else {
         format!(
             "插件操作超时（{} 秒）：codex CLI 长时间无响应，已终止。请重试；\
-             若持续出现请重启 CGswitch 后再试",
+             若持续出现请重启 Agmux 后再试",
             timeout.as_secs()
         )
     }
-}
-
-/// 探测当前可用的代理地址：显式环境变量优先，其次读系统代理。
-/// GUI 进程拿不到用户 shell 里的 export，git 也不读 macOS/Windows 系统代理——
-/// 这里把两层都查一遍，调用方以环境变量注入 codex CLI 子进程，git 随之继承。
-/// 经 services 模块重导出供启动日志使用；所在模块私有，实际可见范围仍是 crate 内。
-pub fn detect_system_proxy() -> Option<String> {
-    for key in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
-        if let Ok(value) = std::env::var(key) {
-            if !value.trim().is_empty() {
-                return Some(value);
-            }
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // scutil --proxy 输出 "  HTTPSProxy : 127.0.0.1" 形式的键值行
-        if let Ok(output) = std::process::Command::new("scutil").arg("--proxy").output() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            let enabled = ["HTTPSEnable", "HTTPEnable", "SOCKSEnable"]
-                .iter()
-                .any(|key| scutil_value(&text, key).as_deref() == Some("1"));
-            if enabled {
-                if let (Some(host), Some(port)) = (
-                    scutil_value(&text, "HTTPSProxy")
-                        .or_else(|| scutil_value(&text, "HTTPProxy"))
-                        .or_else(|| scutil_value(&text, "SOCKSProxy")),
-                    scutil_value(&text, "HTTPSPort")
-                        .or_else(|| scutil_value(&text, "HTTPPort"))
-                        .or_else(|| scutil_value(&text, "SOCKSPort")),
-                ) {
-                    return Some(format!("http://{host}:{port}"));
-                }
-            }
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // 与 run_codex_plugin 同理：GUI 进程 spawn 控制台程序必须隐藏窗口，
-        // 否则插件页每次 CLI 调用都会闪出 reg.exe 黑窗
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let settings = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-        let reg_value = |name: &str| {
-            std::process::Command::new("reg")
-                .args(["query", settings, "/v", name])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-                .ok()
-                .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-        };
-        if reg_value("ProxyEnable").is_some_and(|text| text.contains("0x1")) {
-            if let Some(value) = reg_value("ProxyServer").and_then(|text| {
-                text.lines().find_map(|line| {
-                    let value = line.split("REG_SZ").nth(1)?.trim();
-                    (!value.is_empty() && !value.contains(';')).then(|| value.to_string())
-                })
-            }) {
-                return Some(format!("http://{value}"));
-            }
-        }
-    }
-    None
-}
-
-/// 解析 scutil --proxy 输出里的单行键值（"  HTTPSProxy : 127.0.0.1"）。
-#[cfg(target_os = "macos")]
-pub(super) fn scutil_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let mut parts = line.trim().split(" : ");
-        match parts.next() {
-            Some(name) if name == key => parts.next().map(|value| value.trim().to_string()),
-            _ => None,
-        }
-    })
 }
 
 /// CLI 报错文本是否呈现为网络不可达（用于追加友好提示）。
@@ -177,10 +93,10 @@ pub(super) fn looks_like_network_error(detail: &str) -> bool {
 }
 
 /// `wait_child_with_timeout` 收集到的子进程输出。
-pub(super) struct ChildOutput {
-    pub(super) status: std::process::ExitStatus,
-    pub(super) stdout: String,
-    pub(super) stderr: String,
+pub(crate) struct ChildOutput {
+    pub(crate) status: std::process::ExitStatus,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
 /// 读空一根管道（在独立线程里跑，直到 EOF）。
@@ -196,7 +112,7 @@ pub(super) fn drain_pipe(mut pipe: Option<impl Read>) -> Vec<u8> {
 /// 排水线程必须在轮询前启动：OS 管道缓冲只有几 KB～几十 KB，
 /// 若等进程退出后再读，大输出（如 `list --available --json` 的市场全量目录）
 /// 会写满管道令子进程永远无法退出，只能等到超时被 kill。
-pub(super) fn wait_child_with_timeout(
+pub(crate) fn wait_child_with_timeout(
     mut child: std::process::Child,
     timeout: Duration,
 ) -> std::io::Result<Option<ChildOutput>> {
@@ -207,13 +123,44 @@ pub(super) fn wait_child_with_timeout(
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait()? {
-            Some(status) => break status,
+            Some(status) if stdout_reader.is_finished() && stderr_reader.is_finished() => {
+                break status
+            }
+            Some(_) if Instant::now() >= deadline => {
+                // ponytail: 已退出父进程的孤儿无法可靠按 PID 归属，排水线程等 EOF；
+                // 不无限 join 或误杀用户会话，需要处理此类 CLI 时再加进程组/Job Object。
+                return Ok(None);
+            }
+            Some(_) => std::thread::sleep(Duration::from_millis(10)),
             None if Instant::now() >= deadline => {
+                // 只终止本次子进程的后代；子进程继承管道时，仅 kill 父进程会让 join 卡住。
+                let system = sysinfo::System::new_all();
+                let mut owned =
+                    std::collections::HashSet::from([sysinfo::Pid::from_u32(child.id())]);
+                loop {
+                    let previous = owned.len();
+                    for (pid, process) in system.processes() {
+                        if process
+                            .parent()
+                            .is_some_and(|parent| owned.contains(&parent))
+                        {
+                            owned.insert(*pid);
+                        }
+                    }
+                    if owned.len() == previous {
+                        break;
+                    }
+                }
+                for pid in owned {
+                    if pid.as_u32() != child.id() {
+                        if let Some(process) = system.process(pid) {
+                            let _ = process.kill();
+                        }
+                    }
+                }
                 let _ = child.kill();
                 let _ = child.wait();
-                // kill 后管道写端关闭、排水线程随之 EOF 结束；join 避免线程悬挂
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
+                // 不在超时分支无限 join：逃逸的后代也可能持有管道。
                 return Ok(None);
             }
             None => std::thread::sleep(Duration::from_millis(150)),
@@ -268,30 +215,11 @@ pub(super) fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<St
             "未找到 codex CLI（已尝试 ~/.codex/bin、PATH 与桌面版 appserver 目录），无法管理插件"
         )
     })?;
-    let mut command = std::process::Command::new(&cli);
+    let mut command = super::super::cli::command(&cli);
     command.arg("plugin").args(args);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(proxy) = detect_system_proxy() {
-        for key in [
-            "HTTPS_PROXY",
-            "https_proxy",
-            "HTTP_PROXY",
-            "http_proxy",
-            "ALL_PROXY",
-            "all_proxy",
-        ] {
-            command.env(key, &proxy);
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::network::Network::detect()
+        .map_err(|error| app_err!("{error}"))?
+        .apply(&mut command);
     let child = command
         .spawn()
         .map_err(|error| app_err!("执行 codex CLI 失败: {error}"))?;
@@ -335,7 +263,7 @@ mod tests {
             home,
             vec![PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")],
         );
-        let filename = codex_cli_file_name();
+        let filename = crate::services::codex_cli::file_name();
         assert_eq!(candidates[0], home.join(".codex/bin").join(filename));
         assert_eq!(candidates[1], Path::new("/usr/local/bin").join(filename));
         assert_eq!(candidates[2], Path::new("/usr/bin").join(filename));
@@ -386,7 +314,7 @@ mod tests {
 
     /// 管道排水回归测试的子进程入口：父测试以本环境变量拉起当前测试二进制，
     /// 正常跑测试时无此变量，直接通过。
-    const TEST_CHILD_MODE_ENV: &str = "CGSWITCH_PLUGINS_TEST_CHILD_MODE";
+    const TEST_CHILD_MODE_ENV: &str = "AGMUX_PLUGINS_TEST_CHILD_MODE";
     #[test]
     fn plugins_test_child_entry() {
         let Some(mode) = std::env::var(TEST_CHILD_MODE_ENV).ok() else {
@@ -405,6 +333,18 @@ mod tests {
             }
             // 挂住不退出，验证超时 kill 路径
             "stall" => std::thread::sleep(Duration::from_secs(60)),
+            "inherited_pipe" => {
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["plugins_test_child_entry", "--nocapture"])
+                    .env(TEST_CHILD_MODE_ENV, "brief_stall")
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .unwrap();
+                // fixture 父进程立刻退出；后代继承管道，随后自行结束。
+                let _ = child.try_wait();
+            }
+            "brief_stall" => std::thread::sleep(Duration::from_secs(2)),
             _ => {}
         }
         std::process::exit(0);
@@ -443,6 +383,18 @@ mod tests {
     }
 
     #[test]
+    fn exited_parent_with_inherited_pipes_cannot_bypass_deadline() {
+        let started = Instant::now();
+        assert!(wait_child_with_timeout(
+            spawn_test_child("inherited_pipe"),
+            Duration::from_millis(500)
+        )
+        .unwrap()
+        .is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
     fn wait_child_kills_stalled_process_on_deadline() {
         let started = Instant::now();
         let outcome =
@@ -452,17 +404,5 @@ mod tests {
             started.elapsed() < Duration::from_secs(10),
             "应在超时时间点附近返回"
         );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn scutil_proxy_fields_parse() {
-        let text = "<dictionary> {\n  HTTPEnable : 1\n  HTTPPort : 20080\n  HTTPProxy : 127.0.0.1\n  HTTPSEnable : 1\n  HTTPSPort : 20080\n  HTTPSProxy : 127.0.0.1\n}\n";
-        assert_eq!(
-            scutil_value(text, "HTTPSProxy").as_deref(),
-            Some("127.0.0.1")
-        );
-        assert_eq!(scutil_value(text, "HTTPSPort").as_deref(), Some("20080"));
-        assert_eq!(scutil_value(text, "NoSuchKey"), None);
     }
 }

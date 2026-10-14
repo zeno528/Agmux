@@ -1,8 +1,5 @@
 //! 插件源的 GitHub 访问层：仓库元数据、文件树、raw 文件下载。
-//!
-//! 每次调用新建 reqwest 客户端——构建时快照当前系统代理（Cargo 已开 system-proxy 特性），
-//! 插件安装是低频操作，不值得为复用客户端引入「陈旧代理快照」问题（OAuth 侧为此付出了
-//! 重建重试的复杂度，这里直接规避）。
+//! 低频下载按需读取共享网络策略，保留本链路的超时与 User-Agent。
 
 use std::time::Duration;
 
@@ -10,7 +7,7 @@ use serde::Deserialize;
 
 use super::{app_err, AppResult};
 
-const USER_AGENT: &str = "cgswitch-plugin-marketplace";
+const USER_AGENT: &str = "agmux-plugin-marketplace";
 const PREVIEW_FILE_LIMIT: usize = 200;
 
 /// 解析后的 GitHub 来源：仓库 + 可选 ref 与插件子目录。
@@ -84,8 +81,11 @@ pub fn parse_github_url(input: &str) -> AppResult<GithubSource> {
     })
 }
 
-fn build_client() -> AppResult<reqwest::Client> {
-    reqwest::Client::builder()
+async fn build_client() -> AppResult<reqwest::Client> {
+    crate::network::Network::current()
+        .await
+        .map_err(|error| app_err!("{error}"))?
+        .builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(30))
         .build()
@@ -116,7 +116,7 @@ fn map_status(
 }
 
 async fn get_bytes(url: &str, context: &str) -> AppResult<Vec<u8>> {
-    let client = build_client()?;
+    let client = build_client().await?;
     let response = client
         .get(url)
         .header("Accept", "application/vnd.github+json")

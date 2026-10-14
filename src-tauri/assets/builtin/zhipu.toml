@@ -1,5 +1,4 @@
 model_provider = "ZAI"
-model = "glm-5.3"
 model_reasoning_effort = "max"
 model_catalog_json = "~/.codex/models.json"
 
