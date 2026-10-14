@@ -9,6 +9,7 @@
 //! live 的任何键（含 hooks）都不再参与（实测 `--settings` 带 hooks 时是整键替换，
 //! 平凡快照不带 hooks 时则靠本 flag 排除 live）——终端会话等价于把该配置激活后
 //! 运行的世界。
+//! 用户级 MCP 另经 `--mcp-config ~/.claude.json` 加载，不把 live settings 带回会话。
 //! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
@@ -124,17 +125,25 @@ impl AppContext {
         let settings_text = settings.display().to_string();
         let banner = format!("Agmux Claude terminal: {settings_text}");
         let model = terminal_model(&profile);
+        let mcp_path = self.paths.claude_mcp_config();
+        let mcp_config = mcp_path
+            .is_file()
+            .then(|| mcp_path.to_string_lossy().into_owned());
 
         #[cfg(target_os = "windows")]
-        launch_windows(dir, &settings_text, &banner, &model)?;
+        launch_windows(dir, &settings_text, &banner, &model, mcp_config.as_deref())?;
         #[cfg(target_os = "macos")]
         match self.settings()?.macos_terminal {
-            MacosTerminal::Ghostty => launch_ghostty(dir, &settings_text, &banner, &model)?,
-            MacosTerminal::Terminal => launch_macos(dir, &settings_text, &banner, &model)?,
+            MacosTerminal::Ghostty => {
+                launch_ghostty(dir, &settings_text, &banner, &model, mcp_config.as_deref())?
+            }
+            MacosTerminal::Terminal => {
+                launch_macos(dir, &settings_text, &banner, &model, mcp_config.as_deref())?
+            }
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
-            let _ = (dir, &settings_text, &banner, &model);
+            let _ = (dir, &settings_text, &banner, &model, &mcp_config);
             return Err(app_err!("当前平台不支持启动终端"));
         }
 
@@ -150,9 +159,15 @@ impl AppContext {
 /// ShellExecuteW 交给系统启动独立 PowerShell，不继承开发进程的控制台输入。
 /// 脚本用 UTF-16LE Base64 传入，避免 ShellExecuteW 再次拆分路径和引号。
 #[cfg(target_os = "windows")]
-fn launch_windows(dir: Option<&str>, settings: &str, banner: &str, model: &str) -> AppResult<()> {
+fn launch_windows(
+    dir: Option<&str>,
+    settings: &str,
+    banner: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+) -> AppResult<()> {
     let shell = find_windows_shell().ok_or_else(|| app_err!("未找到 PowerShell"))?;
-    let script = windows_launch_script(dir, settings, banner, model);
+    let script = windows_launch_script(dir, settings, banner, model, mcp_config);
     shell_execute_script(&shell, &script)
 }
 
@@ -215,7 +230,13 @@ fn find_windows_shell() -> Option<String> {
 /// 路径用 PowerShell 单引号（字面量，不展开 `$`），内嵌单引号按 PS 规则写两遍。
 /// `&`、`|`、`$`、反引号在单引号内全部无害，只有 `'` 自身需要处理。
 #[cfg(target_os = "windows")]
-fn windows_launch_script(dir: Option<&str>, settings: &str, banner: &str, model: &str) -> String {
+fn windows_launch_script(
+    dir: Option<&str>,
+    settings: &str,
+    banner: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+) -> String {
     // GUI 父进程可能缺少持久环境变量；只补缺失项，保留 shell/profile 的进程级覆盖。
     let mut script = String::from(
         "foreach ($scope in 'User','Machine') { \
@@ -228,9 +249,12 @@ fn windows_launch_script(dir: Option<&str>, settings: &str, banner: &str, model:
         script.push_str(&format!("Set-Location -LiteralPath {}; ", ps_quote(dir)));
     }
     script.push_str(&format!(
-        "Write-Output {}; claude --settings {} --setting-sources 'project,local' --model {}",
+        "Write-Output {}; claude --settings {} --setting-sources 'project,local' {}--model {}",
         ps_quote(banner),
         ps_quote(settings),
+        mcp_config
+            .map(|path| format!("--mcp-config {} ", ps_quote(path)))
+            .unwrap_or_default(),
         ps_quote(model)
     ));
     script
@@ -243,10 +267,13 @@ fn ps_quote(value: &str) -> String {
 
 /// 两套 macOS 启动路径共用的 claude 调用行（posix 单引号字面量）。
 #[cfg(target_os = "macos")]
-fn claude_invocation(settings: &str, model: &str) -> String {
+fn claude_invocation(settings: &str, model: &str, mcp_config: Option<&str>) -> String {
     format!(
-        "claude --settings {} --setting-sources 'project,local' --model {}",
+        "claude --settings {} --setting-sources 'project,local' {}--model {}",
         posix_quote(settings),
+        mcp_config
+            .map(|path| format!("--mcp-config {} ", posix_quote(path)))
+            .unwrap_or_default(),
         posix_quote(model)
     )
 }
@@ -256,16 +283,27 @@ fn claude_invocation(settings: &str, model: &str) -> String {
 /// IPC 转发给已有实例后立即退出；无实例时本进程常驻为 GUI——因此 spawn 发射
 /// 不等待（与 Windows ShellExecuteW 同语义）。
 #[cfg(target_os = "macos")]
-fn ghostty_launch_script(banner: &str, settings: &str, model: &str) -> String {
+fn ghostty_launch_script(
+    banner: &str,
+    settings: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+) -> String {
     format!(
         "echo {}; {}",
         posix_quote(banner),
-        claude_invocation(settings, model)
+        claude_invocation(settings, model, mcp_config)
     )
 }
 
 #[cfg(target_os = "macos")]
-fn launch_ghostty(dir: Option<&str>, settings: &str, banner: &str, model: &str) -> AppResult<()> {
+fn launch_ghostty(
+    dir: Option<&str>,
+    settings: &str,
+    banner: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+) -> AppResult<()> {
     const GHOSTTY_BIN: &str = "/Applications/Ghostty.app/Contents/MacOS/ghostty";
     if !Path::new(GHOSTTY_BIN).is_file() {
         return Err(app_err!("未安装 Ghostty（/Applications/Ghostty.app）"));
@@ -275,7 +313,7 @@ fn launch_ghostty(dir: Option<&str>, settings: &str, banner: &str, model: &str) 
         "-e",
         "zsh",
         "-c",
-        &ghostty_launch_script(banner, settings, model),
+        &ghostty_launch_script(banner, settings, model, mcp_config),
     ]);
     if let Some(dir) = dir {
         command.current_dir(dir);
@@ -288,8 +326,14 @@ fn launch_ghostty(dir: Option<&str>, settings: &str, banner: &str, model: &str) 
 
 /// 未装 Ghostty 时的兜底：Terminal.app 系统必带。
 #[cfg(target_os = "macos")]
-fn launch_macos(dir: Option<&str>, settings: &str, banner: &str, model: &str) -> AppResult<()> {
-    let claude = claude_invocation(settings, model);
+fn launch_macos(
+    dir: Option<&str>,
+    settings: &str,
+    banner: &str,
+    model: &str,
+    mcp_config: Option<&str>,
+) -> AppResult<()> {
+    let claude = claude_invocation(settings, model, mcp_config);
     let line = match dir {
         Some(dir) => format!("cd {} && {claude}", posix_quote(dir)),
         None => claude,
@@ -485,6 +529,7 @@ mod tests {
             "Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json",
             "/Users/u/.agmux/terminal/claude_p1.json",
             "sonnet's",
+            Some("/Users/u's home/.claude.json"),
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
@@ -492,7 +537,7 @@ mod tests {
             script,
             "echo 'Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json'; \
              claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
-             --setting-sources 'project,local' --model 'sonnet'\\''s'"
+             --setting-sources 'project,local' --mcp-config '/Users/u'\\''s home/.claude.json' --model 'sonnet'\\''s'"
         );
     }
 
@@ -506,6 +551,7 @@ mod tests {
             "C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
             "Agmux Claude terminal: C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
             "sonnet",
+            None,
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
@@ -522,7 +568,8 @@ mod tests {
     #[test]
     #[cfg(target_os = "windows")]
     fn windows_script_skips_set_location_when_no_directory_is_given() {
-        let script = windows_launch_script(None, "C:\\t\\claude_p1.json", "banner", "default");
+        let script =
+            windows_launch_script(None, "C:\\t\\claude_p1.json", "banner", "default", None);
         assert!(!script.contains("Set-Location"));
         assert!(script.contains(
             "Remove-Item Env:NO_COLOR,Env:TERM -ErrorAction SilentlyContinue; Write-Output 'banner'; claude --settings "
@@ -550,14 +597,20 @@ function claude {
     if ($env:AGMUX_TEST_MCP_KEY -ne 'user') { throw 'Missing user environment' }
     if ($env:AGMUX_TEST_MACHINE -ne 'machine') { throw 'Missing machine environment' }
     if ($env:AGMUX_TEST_INHERITED -ne 'process') { throw 'Process override lost' }
-    if (($args -join '|') -ne '--settings|C:\t\profile.json|--setting-sources|project,local|--model|sonnet') { throw 'Profile changed' }
+    if (($args -join '|') -ne "--settings|C:\t\profile.json|--setting-sources|project,local|--mcp-config|C:\user's home\.claude.json|--model|sonnet") { throw 'Profile or MCP config changed' }
     if ((Test-Path Env:NO_COLOR) -or (Test-Path Env:TERM)) { throw 'Terminal cleanup lost' }
     Write-Output 'claude environment verified'
 }
 "#;
         let script = format!(
             "{fixture}\n{}",
-            windows_launch_script(None, r"C:\t\profile.json", "banner", "sonnet")
+            windows_launch_script(
+                None,
+                r"C:\t\profile.json",
+                "banner",
+                "sonnet",
+                Some(r"C:\user's home\.claude.json")
+            )
         );
         let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
         let output = std::process::Command::new(find_windows_shell().unwrap())
@@ -586,8 +639,13 @@ function claude {
     #[cfg(target_os = "windows")]
     fn windows_paths_are_literal_and_do_not_expand() {
         // 单引号是 PowerShell 的字面量串：$ 与 & 都不展开；内嵌单引号写两遍
-        let script =
-            windows_launch_script(Some("D:\\a&b$c"), "C:\\t\\it's.json", "banner", "sonnet's");
+        let script = windows_launch_script(
+            Some("D:\\a&b$c"),
+            "C:\\t\\it's.json",
+            "banner",
+            "sonnet's",
+            None,
+        );
         assert!(script.contains("Set-Location -LiteralPath 'D:\\a&b$c';"));
         assert!(script.contains("claude --settings 'C:\\t\\it''s.json'"));
         assert!(script.ends_with("--model 'sonnet''s'"));

@@ -1173,6 +1173,18 @@ body.drag-active * {
   position: relative;
 }
 
+/* 错开应用名与收起按钮的出现时机，避免展开初段重叠。 */
+@keyframes sidebar-collapse-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .apple-sidebar-collapse {
+    animation: sidebar-collapse-reveal var(--motion-fast) ease-out calc(var(--motion-sidebar) / 2) backwards;
+  }
+}
+
 /* 品牌按钮（logo+名字）：复用导航按钮的固定图标锚点，收缩时只保留 Logo */
 .apple-sidebar-brand {
   /* logo 缩小 2px 后补 1px 间距，保持 Agmux 文本的起始位置不变 */
