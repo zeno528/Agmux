@@ -91,6 +91,10 @@ function parseSettingsObject(text: string): Record<string, unknown> | null {
   }
 }
 
+function parseSettingsForEdit(text: string) {
+  return text.trim() ? parseSettingsObject(text) : {};
+}
+
 /** 本地 JSON 排版的结果：只判状态，提示文案与写回由调用方自己接（各界面标签不同）。 */
 export type FormatJsonOutcome =
   | { status: "empty" }
@@ -120,7 +124,7 @@ export function readEnvValue(text: string, key: string) {
 
 /** 只更新一个 Claude Code env 字段，保留 settings.json 其他内容。 */
 export function patchEnvValue(text: string, key: string, value: string | null, fallbackSettingsKey?: string) {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const currentEnv = settings.env === undefined ? {} : settings.env;
   if (!currentEnv || typeof currentEnv !== "object" || Array.isArray(currentEnv)) return text;
@@ -157,7 +161,7 @@ export function readAdvancedSettings(text: string) {
 
 /** 只切换默认 bypass 模式，保留权限规则和组织限制；取消不改变其他模式。 */
 export function patchBypassPermissions(text: string, enabled: boolean) {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const current = settings.permissions === undefined ? {} : settings.permissions;
   if (!current || typeof current !== "object" || Array.isArray(current)) return text;
@@ -189,7 +193,7 @@ export function readGitAttributionDisabled(text: string) {
 
 /** 用官方 attribution.commit/pr 关闭或恢复 Claude Code 的 Git 归属文本。 */
 export function patchGitAttribution(text: string, disabled: boolean) {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const current = settings.attribution;
   const attribution: Record<string, unknown> = current && typeof current === "object" && !Array.isArray(current)
@@ -231,7 +235,7 @@ export function readModelMappings(text: string): ClaudeModelMappings {
 
 /** 只更新模型映射字段，保留 settings.json 其他顶层键和 env 键。 */
 export function patchModelMappings(text: string, mappings: ClaudeModelMappings): string {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const currentEnv = settings.env === undefined ? {} : settings.env;
   if (!currentEnv || typeof currentEnv !== "object" || Array.isArray(currentEnv)) return text;
@@ -260,7 +264,7 @@ export function readModelDisplayNames(text: string): ClaudeModelDisplayNames {
 
 /** 只更新模型选择器显示名称，保留其他 settings 内容。 */
 export function patchModelDisplayNames(text: string, names: ClaudeModelDisplayNames): string {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const currentEnv = settings.env === undefined ? {} : settings.env;
   if (!currentEnv || typeof currentEnv !== "object" || Array.isArray(currentEnv)) return text;
@@ -293,6 +297,7 @@ export function buildSettingsText(detail: { raw_settings: string | null; base_ur
 
 /** 从完整文件的 env 对象读出三个托管键。 */
 export function readEnvFields(text: string, kind?: string | null): ClaudeEnvFields | null {
+  if (!text.trim()) return { baseUrl: "", authToken: "", model: "" };
   const settings = parseSettingsObject(text);
   if (!settings) return null;
   const env = settings.env === undefined ? {} : settings.env;
@@ -308,7 +313,7 @@ export function readEnvFields(text: string, kind?: string | null): ClaudeEnvFiel
 
 /** 表单只改完整文件的 env 托管键，其余顶层键原样保留。 */
 export function patchEnvFields(text: string, fields: ClaudeEnvFields, kind?: string | null): string {
-  const settings = parseSettingsObject(text);
+  const settings = parseSettingsForEdit(text);
   if (!settings) return text;
   const currentEnv = settings.env === undefined ? {} : settings.env;
   if (!currentEnv || typeof currentEnv !== "object" || Array.isArray(currentEnv)) return text;

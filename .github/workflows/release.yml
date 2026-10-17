@@ -234,11 +234,9 @@ jobs:
           DATE: ${{ steps.version.outputs.date }}
           GH_TOKEN: ${{ github.token }}
       - uses: actions/download-artifact@v8
-        if: steps.create.outputs.skip != 'true'
         with:
           path: artifacts
       - name: 整理发行资产名称
-        if: steps.create.outputs.skip != 'true'
         run: |
           mkdir -p release-assets
           copy_asset() { cp "$(find "$1" -type f -name "$2" -print -quit)" "$3"; }
@@ -274,7 +272,6 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
       - name: 上传产物到草稿
-        if: steps.create.outputs.skip != 'true'
         run: gh release upload "v$VERSION" release-assets/* --clobber
         shell: bash
         env:
@@ -284,7 +281,7 @@ jobs:
       # prerelease / latest 模式资产就绪后在 run 内立即公开，永不停在草稿等人转换；
       # 预发行不传 --latest，不抢占 latest 指针。
       - name: 按模式公开发行
-        if: steps.create.outputs.skip != 'true' && steps.mode.outputs.mode != 'draft'
+        if: steps.mode.outputs.mode != 'draft'
         shell: bash
         run: |
           if [ "$MODE" = "prerelease" ]; then

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CliStatus } from "../types";
 
-const { codexListMcpServers, claudeListMcpServers, claudeListProfiles, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
+const { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
   codexListMcpServers: vi.fn(),
   claudeListMcpServers: vi.fn(),
   claudeListProfiles: vi.fn(),
+  claudeListPlugins: vi.fn(),
   listMarketplacePlugins: vi.fn(),
   listPlugins: vi.fn(),
   listDatabaseBackups: vi.fn(),
@@ -20,7 +21,7 @@ const localStorageMock = {
   setItem: (key: string, value: string) => persistedStorage.set(key, value),
 };
 
-vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeListProfiles, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
+vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
 
 describe("managementDataCache", () => {
   beforeEach(() => {
@@ -28,6 +29,7 @@ describe("managementDataCache", () => {
     codexListMcpServers.mockReset();
     claudeListMcpServers.mockReset();
     claudeListProfiles.mockReset();
+    claudeListPlugins.mockReset();
     listDatabaseBackups.mockReset();
     getProxyStatus.mockReset();
     codexGetCliStatus.mockReset();
@@ -39,6 +41,34 @@ describe("managementDataCache", () => {
   });
 
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it("Claude 插件页共用已安装与可安装目录缓存", async () => {
+    const catalog = { installed: [], available: [{ pluginId: "demo@market", name: "demo", marketplaceName: "market", description: null }] };
+    claudeListPlugins.mockResolvedValueOnce(catalog);
+    const cache = await import("./managementDataCache");
+    expect(await cache.loadClaudePlugins()).toEqual(catalog);
+    expect(claudeListPlugins).toHaveBeenCalledWith(true);
+    expect(await cache.loadClaudePlugins()).toEqual(catalog);
+    expect(cache.getCachedClaudePlugins()).toEqual(catalog);
+    expect(claudeListPlugins).toHaveBeenCalledTimes(1);
+  });
+
+  it("用户更新开关后，旧请求返回最新缓存，后续刷新仍可取新值", async () => {
+    const cache = await import("./managementDataCache");
+    const before = { installed: [{ id: "fixture@market", scope: "user", enabled: true, version: null, installPath: null, installedAt: null, lastUpdated: null, projectPath: null }], available: [] };
+    const after = { ...before, installed: [{ ...before.installed[0], enabled: false }] };
+    let finish!: (items: typeof before) => void;
+    claudeListPlugins.mockReturnValueOnce(new Promise<typeof before>((resolve) => { finish = resolve; }));
+    cache.setClaudePluginsCache(before);
+    const pending = cache.loadClaudePlugins(true);
+    cache.setClaudePluginsCache(after);
+    finish(before);
+    expect(await pending).toEqual(after);
+    expect(cache.getCachedClaudePlugins()).toEqual(after);
+    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!)).toEqual(after);
+    claudeListPlugins.mockResolvedValueOnce(before);
+    expect(await cache.loadClaudePlugins(true)).toEqual(before);
+  });
 
   it("两端 MCP 差异角标独立更新和恢复，不互相覆盖", async () => {
     const cache = await import("./managementDataCache");

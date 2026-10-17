@@ -12,6 +12,9 @@ import type {
   PluginPreview,
   PluginSkill,
   PluginSummary,
+  ClaudeAvailablePlugin,
+  ClaudeMarketplace,
+  ClaudePluginEntry,
   ClaudeProfileDetail,
   SkillSummary,
   SkillCandidate,
@@ -199,6 +202,63 @@ const webPluginSkills: Record<string, PluginSkill[]> = {
   "memory-bank": [{ name: "session-summary", path: "skills/session-summary/SKILL.md", description: "整理跨会话摘要" }],
   ponytail: [{ name: "ponytail", path: "skills/ponytail/SKILL.md", description: "精简实现工作流" }],
 };
+
+// 与后端一致：Claude Code 插件全部经 claude plugin 子命令驱动（claude plugin --json），
+// 字段形状对齐 claude 2.1.302 实测输出（camelCase；同插件可 user/project 双行并存）
+let webClaudeInstalled: ClaudePluginEntry[] = [
+  {
+    id: "code-review@claude-plugins-official",
+    version: "1fad13414a44",
+    scope: "user",
+    enabled: true,
+    installPath: "C:\\Users\\<user>\\.claude\\plugins\\cache\\claude-plugins-official\\code-review\\1fad13414a44",
+    installedAt: "2026-07-27T17:57:52.773Z",
+    lastUpdated: "2026-07-27T17:57:52.773Z",
+    projectPath: null,
+  },
+  {
+    id: "code-review@claude-plugins-official",
+    version: "1fad13414a44",
+    scope: "project",
+    enabled: false,
+    installPath: "C:\\Users\\<user>\\.claude\\plugins\\cache\\claude-plugins-official\\code-review\\1fad13414a44",
+    installedAt: "2026-10-14T17:06:53.598Z",
+    lastUpdated: "2026-10-14T17:06:53.598Z",
+    projectPath: "C:\\Users\\<user>",
+  },
+  {
+    id: "ponytail@ponytail",
+    version: "4.10.0",
+    scope: "user",
+    enabled: true,
+    installPath: "C:\\Users\\<user>\\.claude\\plugins\\cache\\ponytail\\ponytail\\4.10.0",
+    installedAt: "2026-05-10T05:04:33.432Z",
+    lastUpdated: "2026-08-03T19:09:34.152Z",
+    projectPath: null,
+  },
+];
+
+let webClaudeMarketplaces: ClaudeMarketplace[] = [
+  {
+    name: "claude-plugins-official",
+    source: "github",
+    repo: "anthropics/claude-plugins-official",
+    path: null,
+    installLocation: "C:\\Users\\<user>\\.claude\\plugins\\marketplaces\\claude-plugins-official",
+  },
+  {
+    name: "ponytail",
+    source: "github",
+    repo: "DietrichGebert/ponytail",
+    path: null,
+    installLocation: "C:\\Users\\<user>\\.claude\\plugins\\marketplaces\\ponytail",
+  },
+];
+
+const webClaudeAvailable: ClaudeAvailablePlugin[] = [
+  { pluginId: "ponytail@ponytail", name: "ponytail", description: "Forces the laziest solution that works. YAGNI, stdlib first.", marketplaceName: "ponytail" },
+  { pluginId: "frontend-design@claude-plugins-official", name: "frontend-design", description: "前端设计规范与灵感（未安装示例）", marketplaceName: "claude-plugins-official" },
+];
 
 const webSkills: SkillSummary[] = [
   {
@@ -1374,6 +1434,12 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       const name = String(args?.name ?? "");
       return (webPluginSkills[name] ?? []).map((skill) => ({ ...skill })) as T;
     }
+    case "get_plugin_icon":
+      // 浏览器读不到本地图标文件，回落首字母色块；真实图标在 Tauri 窗口验证
+      return null as T;
+    case "claude_check_plugin_updates":
+      // 版本比对依赖 Claude Code CLI 刷新的市场目录；浏览器调试不模拟
+      return [] as T;
     case "list_plugin_marketplaces":
       return [...webMarketplaces]
         .sort((left, right) => Number(left.kind !== "official") - Number(right.kind !== "official") || left.name.localeCompare(right.name))
@@ -1490,6 +1556,88 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
         });
       });
       return undefined as T;
+    }
+    // ==================== Claude Code 插件管理 ====================
+    case "claude_list_plugins":
+      return {
+        installed: webClaudeInstalled.map((entry) => ({ ...entry })),
+        available: args?.includeAvailable ? webClaudeAvailable.map((plugin) => ({ ...plugin })) : [],
+      } as T;
+    case "claude_list_plugin_marketplaces":
+      return webClaudeMarketplaces.map((marketplace) => ({ ...marketplace })) as T;
+    case "claude_add_plugin_marketplace": {
+      const source = String(args?.source ?? "");
+      const derived = source.split("/").filter(Boolean).pop()?.replace(/\.git$/, "") ?? "";
+      const name = derived || "demo-market";
+      const marketplace: ClaudeMarketplace = {
+        name,
+        source: "github",
+        repo: source.includes("/") ? source : `example/${name}`,
+        path: null,
+        installLocation: `C:\\Users\\<user>\\.claude\\plugins\\marketplaces\\${name}`,
+      };
+      webClaudeMarketplaces = [...webClaudeMarketplaces.filter((item) => item.name !== name), marketplace];
+      return marketplace as T;
+    }
+    case "claude_remove_plugin_marketplace": {
+      const name = String(args?.name ?? "");
+      // 与后端一致：移除市场会一并移除该市场安装的插件（由 CLI 维护一致性）
+      webClaudeMarketplaces = webClaudeMarketplaces.filter((item) => item.name !== name);
+      webClaudeInstalled = webClaudeInstalled.filter((entry) => !entry.id.endsWith(`@${name}`));
+      return undefined as T;
+    }
+    case "claude_update_plugin_marketplace":
+      // 目录刷新是联网操作，浏览器 mock 无新数据可拉，静默成功即可
+      return undefined as T;
+    case "claude_install_plugin": {
+      const pluginId = String(args?.pluginId ?? "");
+      const item = webClaudeAvailable.find((plugin) => plugin.pluginId === pluginId);
+      if (!item) throw new Error("没有找到可安装的插件");
+      const now = new Date().toISOString();
+      const entry: ClaudePluginEntry = {
+        id: pluginId,
+        version: "1.0.0",
+        scope: "user",
+        enabled: true,
+        installPath: `C:\\Users\\<user>\\.claude\\plugins\\cache\\${item.marketplaceName}\\${item.name}\\1.0.0`,
+        installedAt: now,
+        lastUpdated: now,
+        projectPath: null,
+      };
+      webClaudeInstalled = [...webClaudeInstalled.filter((installed) => installed.id !== pluginId), entry]
+        .sort((left, right) => left.id.localeCompare(right.id));
+      return undefined as T;
+    }
+    case "claude_uninstall_plugin": {
+      const pluginId = String(args?.pluginId ?? "");
+      const scope = String(args?.scope ?? "user");
+      const projectPath = args?.projectPath ?? null;
+      webClaudeInstalled = webClaudeInstalled.filter((entry) => !(entry.id === pluginId && entry.scope === scope && entry.projectPath === projectPath));
+      return undefined as T;
+    }
+    case "claude_set_plugin_enabled": {
+      const pluginId = String(args?.pluginId ?? "");
+      const scope = String(args?.scope ?? "user");
+      const projectPath = args?.projectPath ?? null;
+      const enabled = Boolean(args?.enabled);
+      webClaudeInstalled = webClaudeInstalled.map((entry) =>
+        entry.id === pluginId && entry.scope === scope && entry.projectPath === projectPath ? { ...entry, enabled } : entry,
+      );
+      return undefined as T;
+    }
+    case "claude_update_plugin": {
+      const pluginId = String(args?.pluginId ?? "");
+      const scope = String(args?.scope ?? "user");
+      const projectPath = args?.projectPath ?? null;
+      const target = webClaudeInstalled.find((entry) => entry.id === pluginId && entry.scope === scope && entry.projectPath === projectPath);
+      if (!target) throw new Error("没有找到该插件");
+      // mock 剧本：ponytail 4.10.0 可升到 4.11.0，其余视为已是最新
+      const oldVersion = target.version ?? "";
+      const newVersion = pluginId === "ponytail@ponytail" && oldVersion === "4.10.0" ? "4.11.0" : oldVersion;
+      webClaudeInstalled = webClaudeInstalled.map((entry) =>
+        entry.id === pluginId && entry.scope === scope && entry.projectPath === projectPath ? { ...entry, version: newVersion, lastUpdated: new Date().toISOString() } : entry,
+      );
+      return { updateOutcome: newVersion !== oldVersion ? "updated" : "up_to_date", oldVersion, newVersion } as T;
     }
     case "codex_delete_profile": {
       // 使用中的配置不可删除：与后端守卫一致

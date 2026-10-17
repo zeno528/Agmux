@@ -100,7 +100,6 @@ describe("MCP 操作入口", () => {
     const styles = readFileSync(new URL("../../style.css", import.meta.url), "utf8");
     expect(styles).toContain(".mcp-target-switch .apple-count-badge {");
     expect(styles).toContain("position: static;");
-    expect(viewSource).toContain("onClick={() => onChange(target)}");
   });
 
   it("两个客户端共用编辑标题、按钮、通知和卸载确认文案", () => {

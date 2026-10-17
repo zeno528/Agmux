@@ -59,13 +59,9 @@ const stripComments = (source) =>
     .replace(/[ \t]\/\/.*$/gm, "");
 
 function walk(dir) {
-  const entries = [];
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) entries.push(...walk(full));
-    else if (/\.(tsx|ts)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) entries.push(full);
-  }
-  return entries;
+  return readdirSync(dir, { recursive: true })
+    .map((name) => join(dir, name))
+    .filter((full) => !statSync(full).isDirectory() && /\.(tsx|ts)$/.test(full) && !/\.test\.(ts|tsx)$/.test(full));
 }
 
 const rel = (filePath) => filePath.slice(SRC_ROOT.length + 1).replace(/\\/g, "/");

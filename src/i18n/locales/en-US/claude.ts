@@ -23,7 +23,7 @@ export default {
   },
   // Wording follows the official env-vars / model-config / settings-reference docs
   modelMappingHints: {
-    current: "Main model for the session; --model and /model override it, and a /model pick does not persist across restarts",
+    current: "Main model for the session; after switching providers, use /model in the current terminal to select the new model",
     subagent: "Default model for subagents (Task, agent teams); a subagent can override it with its own model field",
     customOption: "Adds one custom entry at the bottom of the /model picker without replacing built-in aliases",
   },

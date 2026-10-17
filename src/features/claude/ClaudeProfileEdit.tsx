@@ -429,7 +429,7 @@ function ClaudeProfileEditor({
               </div>
               <input className="app-input" placeholder={t("adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} />
             </div>
-            {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{tProfiles("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{tProfiles("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving || savingBalance} label={tProfiles("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
+            {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{tProfiles("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{tProfiles("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={tProfiles("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
           </div>
           <div className="apple-panel-section">
             <ProviderModelFields

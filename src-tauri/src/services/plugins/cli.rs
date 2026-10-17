@@ -1,4 +1,4 @@
-//! codex CLI 执行层：CLI 查找、超时分级与子进程输出排空。
+//! 插件 CLI 执行层（codex 与 Claude Code 共用）：CLI 查找、超时分级与子进程输出排空。
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -38,16 +38,21 @@ pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
 
 // ==================== CLI 超时 ====================
 
-/// codex CLI 子进程按操作类型分档限时：本地操作（list/remove）正常亚秒完成，
+/// codex CLI 子进程按操作类型分档限时：本地操作（remove 等）正常亚秒完成，
 /// 卡住即异常，快速失败；联网操作（add/upgrade = git clone）给慢代理留足时间，
 /// 但也不允许无限等待把 UI 卡死。
+/// `plugin list` 实测并非纯本地读（2026-10-17 直跑 appserver CLI：闲置后首跑 34.7s
+/// 出正确结果、随后亚秒，期间运行时缓存零写入——CLI 在出结果前先做网络新鲜度探测），
+/// 归联网档，避免 20s 误杀慢网下合法完成的 list。
 pub(super) const PLUGIN_CLI_TIMEOUT_FAST_SECS: u64 = 20;
 pub(super) const PLUGIN_CLI_TIMEOUT_NETWORK_SECS: u64 = 60;
 
-/// 是否联网操作（add/upgrade/update 底层走 git，慢网/代理下耗时长）。
+/// 是否联网操作（list 出结果前探测远端；add/upgrade/update 底层走 git，慢网/代理下耗时长）。
 pub(super) fn is_network_plugin_op(args: &[&str]) -> bool {
-    args.iter()
-        .any(|arg| matches!(*arg, "add" | "upgrade" | "update"))
+    args == ["list"]
+        || args
+            .iter()
+            .any(|arg| matches!(*arg, "add" | "upgrade" | "update"))
 }
 
 pub(super) fn plugin_cli_timeout(args: &[&str]) -> Duration {
@@ -60,8 +65,13 @@ pub(super) fn plugin_cli_timeout(args: &[&str]) -> Duration {
 
 /// 超时报错按档位区分：联网操作大概率是 GitHub 连通问题；
 /// 本地操作（list/remove）卡住与网络无关，不能误导用户去查代理。
-pub(super) fn plugin_timeout_message(args: &[&str], timeout: Duration) -> String {
-    if is_network_plugin_op(args) {
+/// `is_network` 由调用方按各自引擎的动词表判定（codex 用 add/upgrade/update，Claude 用 install/update）。
+pub(super) fn plugin_timeout_message(
+    is_network: bool,
+    timeout: Duration,
+    client_cli: &str,
+) -> String {
+    if is_network {
         format!(
             "插件操作超时（{} 秒）：无法连通 GitHub。\
              请确认网络可访问 github.com，或在代理软件中开启系统代理 / TUN 模式后重试",
@@ -69,7 +79,7 @@ pub(super) fn plugin_timeout_message(args: &[&str], timeout: Duration) -> String
         )
     } else {
         format!(
-            "插件操作超时（{} 秒）：codex CLI 长时间无响应，已终止。请重试；\
+            "插件操作超时（{} 秒）：{client_cli} 长时间无响应，已终止。请重试；\
              若持续出现请重启 Agmux 后再试",
             timeout.as_secs()
         )
@@ -188,46 +198,107 @@ fn plugin_cli_action(args: &[&str]) -> &'static str {
     }
 }
 
-/// 跑 `codex plugin <args>`，返回 stdout；失败时把 CLI 的报错带出来，
-/// 网络类失败追加代理提示；整体限时，防止 git 卡死拖住 UI。
-/// 所有调用共用一个咽喉：成败各记一行留痕（Warn/Debug），排障不再靠猜。
-pub(super) fn run_codex_plugin(home: &Path, args: &[&str]) -> AppResult<String> {
-    let start = std::time::Instant::now();
-    let result = run_codex_plugin_inner(home, args);
-    let command = format!("plugin {}", args.join(" "));
-    let action = plugin_cli_action(args);
-    match &result {
+// ==================== Claude Code CLI 执行层 ====================
+
+/// Claude Code CLI 探测链：`~/.local/bin` 原生安装优先，PATH 中的独立 CLI 兜底。
+/// npm/winget 等包装安装不是原生形态（CLI 管理页同样不接管），这里不做它们的入口。
+pub(super) fn find_claude_cli(home: &Path) -> Option<PathBuf> {
+    let native = super::super::claude_cli::native_path(home);
+    let file_name = native.file_name()?.to_os_string();
+    if native.is_file() {
+        return Some(native);
+    }
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|dir| dir.join(&file_name))
+        .find(|path| path.is_file())
+}
+
+/// Claude 插件命令是否联网：install/update 底层走 git，marketplace add/update 拉取仓库。
+fn is_claude_network_plugin_op(args: &[&str]) -> bool {
+    matches!(
+        args,
+        ["install", ..]
+            | ["update", ..]
+            | ["marketplace", "add", ..]
+            | ["marketplace", "update", ..]
+    )
+}
+
+fn claude_plugin_timeout(args: &[&str]) -> Duration {
+    Duration::from_secs(if is_claude_network_plugin_op(args) {
+        PLUGIN_CLI_TIMEOUT_NETWORK_SECS
+    } else {
+        PLUGIN_CLI_TIMEOUT_FAST_SECS
+    })
+}
+
+fn claude_plugin_cli_action(args: &[&str]) -> &'static str {
+    match args {
+        ["list", ..] => "读取已安装插件列表",
+        ["install", ..] => "安装插件",
+        ["uninstall", ..] => "卸载插件",
+        ["enable", ..] => "启用插件",
+        ["disable", ..] => "禁用插件",
+        ["update", ..] => "升级插件",
+        ["marketplace", "list"] => "读取插件市场列表",
+        ["marketplace", "add", ..] => "添加插件市场",
+        ["marketplace", "remove", ..] => "移除插件市场",
+        ["marketplace", "update", ..] => "刷新插件市场",
+        _ => "执行 Claude Code 插件命令",
+    }
+}
+
+/// 插件 CLI 咽喉的统一留痕：成功 Debug、失败 Warn；client 打产品名区分两端。
+fn log_plugin_cli_run(
+    client: &str,
+    action: &str,
+    result: &AppResult<String>,
+    start: std::time::Instant,
+) {
+    match result {
         Ok(_) => tauri_plugin_log::log::debug!(
-            "[plugin.cli.run] command={command:?} outcome=success duration_ms={} msg=\"{action}成功\"",
+            "[plugin.cli.run] client={client:?} outcome=success duration_ms={} msg=\"{action}成功\"",
             start.elapsed().as_millis()
         ),
-        Err(error) => tauri_plugin_log::log::warn!(
-            "[plugin.cli.run] command={command:?} outcome=failure failure_kind=internal duration_ms={} error={error:?} msg=\"{action}失败\"",
+        // 命令参数和 CLI 原文可能含 Git URL 凭证；错误仍返回界面，不写日志。
+        Err(_) => tauri_plugin_log::log::warn!(
+            "[plugin.cli.run] client={client:?} outcome=failure failure_kind=internal duration_ms={} msg=\"{action}失败\"",
             start.elapsed().as_millis()
         ),
     }
-    result
 }
 
-pub(super) fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<String> {
-    let cli = find_codex_cli(home).ok_or_else(|| {
-        app_err!(
-            "未找到 codex CLI（已尝试 ~/.codex/bin、PATH 与桌面版 appserver 目录），无法管理插件"
-        )
-    })?;
-    let mut command = super::super::cli::command(&cli);
+/// 插件 CLI 子进程共享内芯：进程构建、代理注入、限时与错误呈现。
+/// CLI 定位、超时分档与动作标签由两端各自的包装负责（动词表不同：codex add/remove，Claude install/uninstall）。
+fn run_plugin_cli_process(
+    cli: &Path,
+    args: &[&str],
+    timeout: Duration,
+    is_network: bool,
+    client_cli: &str,
+    cwd: Option<&Path>,
+) -> AppResult<String> {
+    let mut command = super::super::cli::command(cli);
     command.arg("plugin").args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     crate::network::Network::detect()
         .map_err(|error| app_err!("{error}"))?
         .apply(&mut command);
     let child = command
         .spawn()
-        .map_err(|error| app_err!("执行 codex CLI 失败: {error}"))?;
-    let timeout = plugin_cli_timeout(args);
+        .map_err(|error| app_err!("执行{client_cli}失败: {error}"))?;
     let Some(output) = wait_child_with_timeout(child, timeout)
-        .map_err(|error| app_err!("执行 codex CLI 失败: {error}"))?
+        .map_err(|error| app_err!("执行{client_cli}失败: {error}"))?
     else {
-        return Err(app_err!("{}", plugin_timeout_message(args, timeout)));
+        return Err(app_err!(
+            "{}",
+            plugin_timeout_message(is_network, timeout, client_cli)
+        ));
     };
     let ChildOutput {
         status,
@@ -245,14 +316,90 @@ pub(super) fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<St
         } else {
             ""
         };
-        return Err(app_err!("codex CLI 报错：{detail}{hint}"));
+        return Err(app_err!("{client_cli} 报错：{detail}{hint}"));
     }
     Ok(stdout)
+}
+
+/// 跑 `codex plugin <args>`，返回 stdout；失败时把 CLI 的报错带出来，
+/// 网络类失败追加代理提示；整体限时，防止 git 卡死拖住 UI。
+/// 所有调用共用一个咽喉：成败各记一行留痕（Warn/Debug），排障不再靠猜。
+pub(super) fn run_codex_plugin(home: &Path, args: &[&str]) -> AppResult<String> {
+    let start = std::time::Instant::now();
+    let result = run_codex_plugin_inner(home, args);
+    log_plugin_cli_run("Codex", plugin_cli_action(args), &result, start);
+    result
+}
+
+fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<String> {
+    let cli = find_codex_cli(home).ok_or_else(|| {
+        app_err!(
+            "未找到 codex CLI（已尝试 ~/.codex/bin、PATH 与桌面版 appserver 目录），无法管理插件"
+        )
+    })?;
+    run_plugin_cli_process(
+        &cli,
+        args,
+        plugin_cli_timeout(args),
+        is_network_plugin_op(args),
+        "codex CLI",
+        None,
+    )
+}
+
+/// 跑 `claude plugin <args>`（Claude Code CLI，全部子命令带 --json 由调用方拼），
+/// 形态与 `run_codex_plugin` 完全对称：限时、代理注入、错误呈现与留痕共用一套。
+pub(super) fn run_claude_plugin(
+    home: &Path,
+    args: &[&str],
+    cwd: Option<&Path>,
+) -> AppResult<String> {
+    let start = std::time::Instant::now();
+    let result = run_claude_plugin_inner(home, args, cwd);
+    log_plugin_cli_run(
+        "Claude Code",
+        claude_plugin_cli_action(args),
+        &result,
+        start,
+    );
+    result
+}
+
+fn run_claude_plugin_inner(home: &Path, args: &[&str], cwd: Option<&Path>) -> AppResult<String> {
+    let cli = find_claude_cli(home).ok_or_else(|| {
+        app_err!("未找到 Claude Code CLI（已尝试 ~/.local/bin 与 PATH），无法管理插件")
+    })?;
+    run_plugin_cli_process(
+        &cli,
+        args,
+        claude_plugin_timeout(args),
+        is_claude_network_plugin_op(args),
+        "Claude Code CLI",
+        cwd,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn plugin_process_runs_in_the_selected_project_directory() {
+        let project = tempfile::tempdir().unwrap();
+        let cli = project.path().join("fixture.cmd");
+        std::fs::write(&cli, "@echo off\r\necho %CD%\r\n").unwrap();
+        let output = run_plugin_cli_process(
+            &cli,
+            &["uninstall", "fixture"],
+            Duration::from_secs(5),
+            false,
+            "fixture CLI",
+            Some(project.path()),
+        )
+        .unwrap();
+        assert_eq!(Path::new(output.trim()), project.path());
+    }
     use std::process::Stdio;
     use std::time::{Duration, Instant};
 
@@ -283,6 +430,11 @@ mod tests {
             plugin_cli_timeout(&["marketplace", "list"]).as_secs(),
             PLUGIN_CLI_TIMEOUT_FAST_SECS
         );
+        assert_eq!(
+            plugin_cli_timeout(&["list"]).as_secs(),
+            PLUGIN_CLI_TIMEOUT_NETWORK_SECS,
+            "plugin list 出结果前有网络探测，冷跑可超 20s，不能按本地档误杀"
+        );
         assert!(looks_like_network_error(
             "fatal: unable to access 'https://github.com/': Failed to connect"
         ));
@@ -302,14 +454,58 @@ mod tests {
     #[test]
     fn plugin_timeout_message_matches_operation_tier() {
         let network = plugin_timeout_message(
-            &["marketplace", "add", "o/r"],
+            true,
             Duration::from_secs(PLUGIN_CLI_TIMEOUT_NETWORK_SECS),
+            "codex CLI",
         );
         assert!(network.contains("GitHub"));
-        let local =
-            plugin_timeout_message(&["list"], Duration::from_secs(PLUGIN_CLI_TIMEOUT_FAST_SECS));
+        let local = plugin_timeout_message(
+            false,
+            Duration::from_secs(PLUGIN_CLI_TIMEOUT_FAST_SECS),
+            "codex CLI",
+        );
         assert!(!local.contains("GitHub"), "本地操作超时不能诊断为网络问题");
         assert!(local.contains("20"));
+    }
+
+    #[test]
+    fn claude_plugin_timeout_and_actions_follow_verb_table() {
+        // 联网档：install/update 与 marketplace add/update（git 拉取）
+        for args in [
+            &["install", "demo@ponytail"][..],
+            &["update", "demo@ponytail"][..],
+            &["marketplace", "add", "o/r"][..],
+            &["marketplace", "update", "ponytail"][..],
+        ] {
+            assert_eq!(
+                claude_plugin_timeout(args).as_secs(),
+                PLUGIN_CLI_TIMEOUT_NETWORK_SECS,
+                "{args:?} 应为联网档"
+            );
+        }
+        // 本地档：list/enable/disable/uninstall 与 marketplace list/remove
+        for args in [
+            &["list", "--json", "--available"][..],
+            &["enable", "demo@ponytail"][..],
+            &["disable", "demo@ponytail"][..],
+            &["uninstall", "demo@ponytail"][..],
+            &["marketplace", "list"][..],
+            &["marketplace", "remove", "ponytail"][..],
+        ] {
+            assert_eq!(
+                claude_plugin_timeout(args).as_secs(),
+                PLUGIN_CLI_TIMEOUT_FAST_SECS,
+                "{args:?} 应为本地档"
+            );
+        }
+        assert_eq!(
+            claude_plugin_cli_action(&["uninstall", "demo@ponytail"]),
+            "卸载插件"
+        );
+        assert_eq!(
+            claude_plugin_cli_action(&["marketplace", "update", "ponytail"]),
+            "刷新插件市场"
+        );
     }
 
     /// 管道排水回归测试的子进程入口：父测试以本环境变量拉起当前测试二进制，

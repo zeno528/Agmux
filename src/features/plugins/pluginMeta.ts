@@ -1,6 +1,6 @@
 import type { MarketplacePlugin, PluginMarketplace, PluginSummary } from "../../types";
 
-export type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
+type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
 
 /** 插件清单 contains / capabilities 的数据键 → 展示标签的 i18n 键（数据键本身不是界面文案）。 */
 export const containsLabels: Partial<Record<string, ContainsLabelKey>> = {
@@ -64,17 +64,6 @@ export function findConfiguredMarketplace(
   return marketplaces.find(
     (marketplace) => marketplace.name === recommended.name || recommended.aliases.includes(marketplace.name),
   );
-}
-
-/// 市场页两卡分组：已配置市场按 kind 归卡；未配置的推荐进对应卡，兜底渲染为安装行。
-export function splitMarketplaceCards(marketplaces: PluginMarketplace[]) {
-  const card = (kind: PluginMarketplace["kind"]) => ({
-    marketplaces: marketplaces.filter((marketplace) => marketplace.kind === kind),
-    pending: recommendedMarketplaces.filter(
-      (recommended) => recommended.kind === kind && !findConfiguredMarketplace(recommended, marketplaces),
-    ),
-  });
-  return { official: card("official"), thirdParty: card("third-party") };
 }
 
 /// 别名市场纠正：Codex 给同一目录挂镜像/远程双身份，安装记录只落在其中一个；

@@ -1,6 +1,6 @@
 [package]
 name = "agmux"
-version = "0.35.3"
+version = "0.36.0"
 description = "A lightweight Codex model profile switcher"
 authors = ["zeno528"]
 license = "MIT"
@@ -38,6 +38,8 @@ directories = "6.0.0"
 reqwest = { version = "0.13.5", features = ["form", "json", "system-proxy"] }
 tokio = { version = "1.53.1", features = ["sync", "time", "macros", "rt"] }
 base64 = "0.23.1"
+# 仅用 decode/resize/re-encode（超重插件图标的现场瘦身）；已在 tauri 依赖树内，零额外编译
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 chrono = "0.4"
 url = "2.5.8"
 getrandom = "0.4.3"

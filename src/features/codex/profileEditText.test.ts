@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatgptModelOptions, patchModelValue, patchProviderFields, readCatalogOptions, readModelValue, readProviderFields, resolveAuthSource, withMcpSection } from "./profileEditText";
+import { chatgptModelOptions, emptyConfigSeed, patchModelValue, patchProviderFields, readCatalogOptions, readModelValue, readProviderFields, resolveAuthSource, withMcpSection } from "./profileEditText";
 
 it("远程模型和账号缓存保留顺序、空档位以及默认档位兜底", () => {
   expect(chatgptModelOptions([
@@ -217,6 +217,35 @@ describe("profileEditText", () => {
     const text = 'model_provider = "missing"\n\n[model_providers.other]\nbase_url = "https://other.example"';
     expect(readProviderFields(text).found).toBe(false);
     expect(patchProviderFields(text, "https://new.example", "new-secret")).toBe(text);
+  });
+
+  it("builds the empty-editor seed from the provider model_provider points to", () => {
+    // 回归：主供应商指向 selected 但 other 表在前，逐项取全文第一命中会拼出
+    // 只含 other 表的骨架，表单输入的地址密钥写不进去
+    const dual = [
+      'model_provider = "selected"',
+      "",
+      "[model_providers.other]",
+      'base_url = "https://other.example"',
+      'wire_api = "chat"',
+      "",
+      "[model_providers.selected]",
+      'base_url = "https://selected.example"',
+      'wire_api = "responses"',
+      "",
+    ].join("\n");
+    const seed = emptyConfigSeed(dual);
+    expect(seed).toBe('model_provider = "selected"\n[model_providers.selected]\nwire_api = "responses"\n');
+    const patched = patchProviderFields(seed, "https://typed.example", "typed-key");
+    expect(patched).toContain("[model_providers.selected]");
+    expect(patched).toContain('base_url = "https://typed.example"');
+    expect(patched).toContain('experimental_bearer_token = "typed-key"');
+  });
+
+  it("seeds the first table when model_provider is absent, and nothing when its target is missing", () => {
+    const noProvider = '[model_providers.first]\nwire_api = "chat"\n\n[model_providers.second]\nwire_api = "responses"\n';
+    expect(emptyConfigSeed(noProvider)).toBe('[model_providers.first]\nwire_api = "chat"\n');
+    expect(emptyConfigSeed('model_provider = "missing"\n\n[model_providers.other]\nwire_api = "chat"\n')).toBe("");
   });
 
   it("appends a normalized MCP section only when present", () => {

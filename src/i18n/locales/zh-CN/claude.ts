@@ -23,7 +23,7 @@ export default {
   },
   // 悬停提示里的作用简述，措辞依据官方文档（env-vars / model-config / settings-reference）
   modelMappingHints: {
-    current: "会话主模型；--model 和 /model 都能覆盖它，且 /model 的选择不会跨重启保留",
+    current: "会话主模型；切换供应商后，在当前终端用 /model 选择新模型",
     subagent: "子代理（Task、agent team）默认模型；单个子代理可用自己的 model 字段覆盖",
     customOption: "在 /model 菜单底部追加一条自定义模型项，不替换内置别名",
   },

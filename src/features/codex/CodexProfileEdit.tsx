@@ -26,6 +26,7 @@ import {
 } from "../../presets";
 import {
   chatgptModelOptions,
+  emptyConfigSeed,
   patchModelValue,
   patchProviderFields,
   readCatalogOptions,
@@ -186,6 +187,7 @@ function CodexProfileEditor({
     return list;
   }, [catalogFileName, liveCatalogPath, showAuthTab]);
   const baseFragment = create ? presetFragment : detail?.config_fragment ?? "";
+  const configSeed = emptyConfigSeed(baseFragment);
   const liveConfigFragment = useMemo(() => {
     if (!baseFragment) return "";
     return withMcpSection(patchProviderFields(baseFragment, baseUrl, apiKey), mcpSection);
@@ -328,7 +330,8 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const next = patchProviderFields(current, baseUrl, apiKey);
+      const source = !current.trim() && (baseUrl.trim() || apiKey.trim()) ? configSeed : current;
+      const next = patchProviderFields(source, baseUrl, apiKey);
       return next === current ? current : next;
     });
   }, [apiKey, baseUrl]);
@@ -337,9 +340,10 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const effort = readModelValue(current, "model_reasoning_effort") ?? "";
+      const source = !current.trim() && modelValue.trim() ? configSeed : current;
+      const effort = readModelValue(source, "model_reasoning_effort") ?? "";
       const picked = selectModel(modelValue, effort, modelEfforts[modelValue]);
-      let next = patchModelValue(current, modelValue);
+      let next = patchModelValue(source, modelValue);
       if (picked.effort !== effort) next = patchModelValue(next, picked.effort, "model_reasoning_effort");
       return next === current ? current : next;
     });
@@ -348,14 +352,16 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     const model = readModelValue(configText);
-    if (model !== null && model !== modelValue) setModelValue(model);
+    if (model !== null || !configText.trim()) {
+      if ((model ?? "") !== modelValue) setModelValue(model ?? "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configText]);
 
   useEffect(() => {
     if (!initialized.current) return;
     const fields = readProviderFields(configText);
-    if (fields.found) {
+    if (fields.found || !configText.trim()) {
       if (fields.base_url !== baseUrl) setBaseUrl(fields.base_url);
       if (!fields.tokenMasked) {
         const key = /^<.*>$/.test(fields.experimental_bearer_token) ? "" : fields.experimental_bearer_token;
@@ -673,7 +679,7 @@ function CodexProfileEditor({
               {effortField}
             </div> : null}
             {(!create || Boolean(selectedPreset?.admin_url)) ? <div className="mt-4"><div className="mb-1.5 flex items-center gap-2"><span className="field-label">{t("edit.adminUrlLabel")}</span><button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-5 shrink-0" disabled={!adminUrl.trim()} aria-label={t("card.openWebsite")} onClick={() => void api.openUrl(adminUrl.trim()).catch((error) => feedback.error(String(error)))}><ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden="true" />{t("card.openWebsite")}</button></div><input className="app-input" placeholder={t("edit.adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} /></div> : null}
-              {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving || savingBalance} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
+              {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
           </fieldset>
           {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
             {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}

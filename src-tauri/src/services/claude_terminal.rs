@@ -1,16 +1,15 @@
-//! Claude Code 供应商终端：在新终端里起一个只属于某个供应商的 `claude` 会话。
+//! Claude Code 供应商终端：激活项跟随 live，其他项使用独立覆盖。
 //!
-//! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的配置写进
-//! `.agmux/terminal/claude_<id>.json`，终端里跑
-//! `claude --settings <该文件> --setting-sources project,local`。
+//! 激活项的 `--settings` 指向 `~/.claude/settings.json`；非激活项把配置写进
+//! `.agmux/terminal/claude_<id>.json` 并指向该文件。两者都只加载 project/local。
 //! 配置生成复用激活逻辑；不加载 user settings，避免当前激活项的 Hooks、权限等混入。
 //! `--add-dir` 只引入共用 Skills，MCP 经 `--mcp-config ~/.claude.json` 读取。
 //! 保留默认 Claude 用户目录，共用登录、历史会话与信任记录；不跳过权限检查。
 //! `--settings` 同名字段按官方覆盖语义高于 project/local，不另造优先级规则。
-//! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
+//! 非激活项的覆盖文件只影响该供应商终端；激活项直接读取 live，后续切换可热加载。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
-//! 覆盖文件固定命名、每次覆写、不随进程删除——终端里能直接看到路径，便于排查。
+//! 非激活项覆盖文件固定命名、每次覆写、不随进程删除；终端里会回显配置路径。
 
 use std::path::Path;
 #[cfg(any(windows, target_os = "macos"))]
@@ -24,6 +23,7 @@ use std::path::PathBuf;
 
 use super::claude::claude_settings_bytes;
 use super::AppContext;
+#[cfg(test)]
 use crate::database::StoredClaudeProfile;
 use crate::error::{app_err, AppResult};
 use crate::fsutil::atomic_write;
@@ -74,28 +74,16 @@ fn prepare_shared_skills(terminal: &Path, source: &Path) -> AppResult<std::path:
     Ok(shared)
 }
 
-fn terminal_model(profile: &StoredClaudeProfile) -> String {
-    profile
-        .model
-        .as_deref()
+fn terminal_model(bytes: &[u8]) -> AppResult<String> {
+    let settings: Value =
+        serde_json::from_slice(bytes).map_err(|error| app_err!("终端配置解析失败: {error}"))?;
+    let model = [&settings["env"]["ANTHROPIC_MODEL"], &settings["model"]]
+        .into_iter()
+        .filter_map(Value::as_str)
         .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            profile
-                .raw_settings
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-                .and_then(|settings| {
-                    settings
-                        .get("model")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|model| !model.is_empty())
-                        .map(str::to_owned)
-                })
-        })
-        .unwrap_or_else(|| "default".to_string())
+        .find(|model| !model.is_empty())
+        .unwrap_or("default");
+    Ok(model.into())
 }
 
 /// 终端启动脚本与 AppleScript 都会二次求值，路径里的引号和换行直接拒收。
@@ -123,31 +111,36 @@ fn posix_quote(value: &str) -> String {
 }
 
 impl AppContext {
-    /// 写覆盖文件并在新终端里启动 `claude --settings <file>`。
+    /// 激活项使用 live settings；非激活项写覆盖文件再启动终端。
     /// 目录缺失、终端起不来都返回 Err，由调用方透出给用户——这是用户主动点的操作。
     pub fn claude_open_terminal(&self, id: &str, cwd: Option<&str>) -> AppResult<()> {
         let profile = self.database.claude_profile(id)?;
         let dir = checked_cwd(cwd)?;
 
         self.paths.ensure()?;
-        let settings = self.paths.terminal_settings(&profile.id);
-        let stale_extra_keys = self.claude_previous_extra_keys(id)?;
-        atomic_write(
-            &settings,
-            &claude_settings_bytes(
-                Some(&profile),
-                &self.paths.claude_home.join("settings.json"),
-                &stale_extra_keys,
-            )?,
-        )?;
+        let active = self.database.active_claude_profile()?.as_deref() == Some(id);
+        let live = self.paths.claude_home.join("settings.json");
+        let settings = if active {
+            live.clone()
+        } else {
+            self.paths.terminal_settings(&profile.id)
+        };
+        let bytes = if active {
+            std::fs::read(&live).map_err(|error| app_err!("无法读取实时 Claude 配置: {error}"))?
+        } else {
+            claude_settings_bytes(Some(&profile), &live, &self.claude_previous_extra_keys(id)?)?
+        };
+        let model = terminal_model(&bytes)?;
+        if !active {
+            atomic_write(&settings, &bytes)?;
+        }
         let shared_skills =
             prepare_shared_skills(&self.paths.terminal, &self.paths.claude_home.join("skills"))?;
         let shared_skills = shared_skills.to_string_lossy();
 
-        // 启动前回显覆盖文件路径：用户能立刻确认这个终端用的是哪份配置。
+        // 启动前回显配置路径：用户能立刻确认这个终端用的是哪份配置。
         let settings_text = settings.display().to_string();
         let banner = format!("Agmux Claude terminal: {settings_text}");
-        let model = terminal_model(&profile);
         let mcp_path = self.paths.claude_mcp_config();
         let mcp_config = mcp_path
             .is_file()
@@ -569,17 +562,26 @@ mod tests {
 
     #[test]
     fn terminal_model_uses_target_profile_instead_of_active_user_model() {
+        let model = |target: &StoredClaudeProfile| {
+            terminal_model(&terminal_settings_document(target).unwrap()).unwrap()
+        };
         let mut target = profile(Some("deepseek"), Some("sk-x"), None);
         target.model = None;
         target.raw_settings = Some(r#"{"model":"sonnet"}"#.into());
         assert!(!env_of(&target).contains_key("ANTHROPIC_MODEL"));
-        assert_eq!(terminal_model(&target), "sonnet");
+        assert_eq!(model(&target), "sonnet");
 
         target.raw_settings = None;
-        assert_eq!(terminal_model(&target), "default");
+        assert_eq!(model(&target), "default");
 
         target.model = Some("deepseek-flash[1M]".into());
-        assert_eq!(terminal_model(&target), "deepseek-flash[1M]");
+        assert_eq!(model(&target), "deepseek-flash[1M]");
+        target.extra_env =
+            Some(r#"{"ANTHROPIC_DEFAULT_SONNET_MODEL":"deepseek-flash[1M]"}"#.into());
+        assert_eq!(model(&target), "deepseek-flash[1M]");
+        assert_eq!(env_of(&target)["ANTHROPIC_MODEL"], "deepseek-flash[1M]");
+        target.raw_settings = Some(r#"{"env":{"ANTHROPIC_MODEL":"sonnet","ANTHROPIC_DEFAULT_SONNET_MODEL":"other-model[1M]"}}"#.into());
+        assert_eq!(model(&target), "sonnet");
     }
 
     #[test]
