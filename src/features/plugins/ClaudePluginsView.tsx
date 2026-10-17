@@ -235,7 +235,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
                         {updateVersion && updateVersion !== entry.version ? (
                           <button
                             type="button"
-                            className="apple-icon-button"
+                            className="apple-icon-button chip-success"
                             title={t("claudePlugin.action.upgradeTitle", { version: updateVersion })}
                             aria-label={t("claudePlugin.action.upgradeTo", { version: updateVersion })}
                             onClick={() => void upgrade(entry)}
