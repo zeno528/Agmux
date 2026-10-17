@@ -1,5 +1,6 @@
 //! 插件生命周期操作：列表、市场管理、安装/卸载/升级与 GitHub 预览。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::codex::config as codex_config;
@@ -22,8 +23,8 @@ use super::catalog::{
 use super::cli::{find_codex_cli, run_codex_plugin};
 use super::skills::is_registered_skill;
 use super::store::{
-    plugin_store_path, scan_codex_plugin_cache, store_contains, store_skills,
-    trusted_plugin_store_path,
+    installed_icon_fallback, plugin_icon_from, plugin_store_path, scan_codex_plugin_cache,
+    store_contains, store_skills, trusted_plugin_store_path,
 };
 use super::MANIFEST_RELATIVE_PATH;
 use super::{
@@ -34,6 +35,102 @@ use super::{
 // ==================== AppContext 服务 ====================
 
 impl AppContext {
+    /// 插件卡片图标 → data URL。`raw_path` 是本地受信根
+    /// （codex/claude 插件缓存与市场物化目录）内的图片文件，或远程目录给出的 https logo URL。
+    /// 超重位图（>512KB，实测 ponytail logo 554KB/5422px）现场缩到卡片尺寸并落盘缓存。
+    pub async fn plugin_icon_data_url(&self, raw_path: String) -> AppResult<Option<String>> {
+        if raw_path.starts_with("https://") {
+            return self.remote_icon_data_url(&raw_path).await;
+        }
+        let Some(home) = self.paths.codex_home.parent().map(Path::to_path_buf) else {
+            return Err(app_err!("无法定位用户主目录"));
+        };
+        let codex_home = self.paths.codex_home.clone();
+        let claude_plugins = self.paths.claude_home.join("plugins");
+        let icon_cache = self.paths.plugin_icons.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            read_plugin_icon(&home, &codex_home, &claude_plugins, &icon_cache, &raw_path)
+        })
+        .await
+        .map_err(|error| app_err!("插件图标读取任务失败: {error}"))?
+    }
+
+    /// 远程图标：桌面端目录缓存里的 CDN logo（curated-remote 条目本地无物化）。
+    /// 只认已知主机、10 秒超时、8MB 上限；下载后走与本地图标同一条瘦身/缓存管线。
+    async fn remote_icon_data_url(&self, raw_url: &str) -> AppResult<Option<String>> {
+        if !remote_icon_allowed(raw_url) {
+            return Err(app_err!("插件图标地址不在允许的来源内"));
+        }
+        // /content 的图片身份在 id 参数中；签名变化不改变缓存，图片变化必须区分。
+        let mut stable = url::Url::parse(raw_url).map_err(|error| app_err!("{error}"))?;
+        let image_id = stable
+            .query_pairs()
+            .find(|(name, _)| name == "id")
+            .map(|(_, value)| value.into_owned());
+        stable.set_query(None);
+        if let Some(image_id) = image_id {
+            stable.query_pairs_mut().append_pair("id", &image_id);
+        }
+        stable.set_fragment(None);
+        let key = hash_key(stable.as_str());
+        let cache_file = self.paths.plugin_icons.join(format!("{key}.png"));
+        if let Ok(cached) = std::fs::read(&cache_file) {
+            use base64::Engine as _;
+            return Ok(Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(cached)
+            )));
+        }
+        let client = crate::network::Network::current()
+            .await
+            .map_err(|error| app_err!("{error}"))?
+            .builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|error| app_err!("创建网络客户端失败: {error}"))?;
+        let response = client
+            .get(raw_url)
+            .send()
+            .await
+            .map_err(|error| app_err!("插件图标下载失败：{error}"))?;
+        if !response.status().is_success() {
+            return Err(app_err!(
+                "插件图标下载失败（HTTP {}）",
+                response.status().as_u16()
+            ));
+        }
+        if response.content_length().unwrap_or(0) as usize > REMOTE_ICON_MAX_BYTES {
+            return Err(app_err!(
+                "插件图标超过 {}MB 上限",
+                REMOTE_ICON_MAX_BYTES / 1024 / 1024
+            ));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|error| app_err!("插件图标下载失败：{error}"))?;
+        if bytes.len() > REMOTE_ICON_MAX_BYTES {
+            return Err(app_err!(
+                "插件图标超过 {}MB 上限",
+                REMOTE_ICON_MAX_BYTES / 1024 / 1024
+            ));
+        }
+        let icon_cache = self.paths.plugin_icons.clone();
+        let bytes = bytes.to_vec();
+        tauri::async_runtime::spawn_blocking(move || {
+            use base64::Engine as _;
+            let Some(resized) = shrink_icon(&icon_cache, &key, &bytes) else {
+                return Ok(None);
+            };
+            Ok(Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(resized)
+            )))
+        })
+        .await
+        .map_err(|error| app_err!("插件图标处理任务失败: {error}"))?
+    }
+
     /// Codex CLI 直接写 config.toml 后，收拢 Agmux 管理的全局段；无变化不落盘。
     fn normalize_plugin_config_order(&self) -> AppResult<()> {
         let config_path = self.paths.codex_config();
@@ -119,6 +216,7 @@ impl AppContext {
             return Ok(Vec::new());
         };
         let marketplace = marketplace.to_string();
+        let codex_home = self.paths.codex_home.clone();
         let root = root
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from);
@@ -135,7 +233,20 @@ impl AppContext {
             )?;
             // 别名身份（openai-curated ↔ openai-curated-remote）导致的 installed 标记
             // 偏差由前端对照已安装名单纠正（数据现成，避免此处每次多跑一轮 CLI）。
-            parse_marketplace_plugins_output(&output, &marketplace, root.as_deref())
+            let mut items =
+                parse_marketplace_plugins_output(&output, &marketplace, root.as_deref())?;
+            // 未物化的远程条目（curated-remote）同样从桌面端目录缓存补 logo URL
+            if items.iter().any(|item| item.icon_path.is_none()) {
+                let map = remote_logo_urls(&codex_home);
+                for item in &mut items {
+                    if item.icon_path.is_none() {
+                        if let Some(url) = map.get(&item.name) {
+                            item.icon_path = Some(url.clone());
+                        }
+                    }
+                }
+            }
+            Ok(items)
         })
         .await
         .map_err(|error| app_err!("插件市场目录任务失败: {error}"))?
@@ -573,6 +684,225 @@ pub(super) fn is_desktop_builtin(name: &str) -> bool {
     )
 }
 
+/// 图标直传的大小上限；超过则现场瘦身（解码→缩放→重编码）而不是拒绝。
+const PLUGIN_ICON_MAX_BYTES: usize = 512 * 1024;
+/// 卡片图标实际所需的最大边长（2.125rem 色块 × 高分屏余量）。
+const PLUGIN_ICON_MAX_DIMENSION: u32 = 256;
+/// 远程图标下载上限与允许的主机（桌面端远程目录缓存里的 CDN）。
+const REMOTE_ICON_MAX_BYTES: usize = 8 * 1024 * 1024;
+const REMOTE_ICON_HOSTS: [&str; 3] = ["openai.com", "oaistatic.com", "openai.org"];
+
+/// 超重位图瘦身：解码 → 缩到卡片尺寸 → PNG 重编码，按 key 落盘缓存。
+/// 缓存键不含签名参数/时间戳，同一 logo 只处理一次。
+fn shrink_icon(icon_cache: &Path, key: &str, bytes: &[u8]) -> Option<Vec<u8>> {
+    let cache_file = icon_cache.join(format!("{key}.png"));
+    if let Ok(cached) = std::fs::read(&cache_file) {
+        return Some(cached);
+    }
+    let thumb = image::load_from_memory(bytes)
+        .ok()?
+        .thumbnail(PLUGIN_ICON_MAX_DIMENSION, PLUGIN_ICON_MAX_DIMENSION);
+    let mut out = Vec::new();
+    thumb
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .ok()?;
+    // 缓存写失败不阻塞本次返回；旧缓存文件不自动清理（单个几十 KB）
+    let _ = atomic_write(&cache_file, &out);
+    Some(out)
+}
+
+fn hash_key(parts: impl std::hash::Hash) -> String {
+    use std::hash::Hasher as _;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    parts.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// 远程图标地址白名单：只接受 https 且主机属于已知 CDN。
+fn remote_icon_allowed(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return false;
+    };
+    if url.scheme() != "https" {
+        return false;
+    }
+    let host = url.host_str().unwrap_or_default();
+    REMOTE_ICON_HOSTS
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")))
+}
+
+#[derive(serde::Deserialize)]
+struct RemoteCatalog {
+    #[serde(default)]
+    plugins: Vec<RemoteCatalogPlugin>,
+}
+
+#[derive(serde::Deserialize)]
+struct RemoteCatalogPlugin {
+    name: String,
+    #[serde(default)]
+    release: Option<RemoteCatalogRelease>,
+}
+
+#[derive(serde::Deserialize)]
+struct RemoteCatalogRelease {
+    #[serde(default)]
+    interface: Option<RemoteCatalogInterface>,
+}
+
+#[derive(serde::Deserialize)]
+struct RemoteCatalogInterface {
+    #[serde(default)]
+    logo_url: Option<String>,
+}
+
+/// 已装插件名 → 远程 logo URL。数据源是桌面端自己写的远程目录缓存
+/// (`~/.codex/cache/remote_plugin_catalog/*.json`，单文件 35MB级)：
+/// curated-remote 插件本地没有物化，只有这里带 https 签名 logo URL。
+/// 按目录最新 mtime 记忆化，一次会话只解析一次。
+fn remote_logo_urls(codex_home: &Path) -> std::sync::Arc<HashMap<String, String>> {
+    type Memo = Option<(u64, std::sync::Arc<HashMap<String, String>>)>;
+    static MEMO: std::sync::Mutex<Memo> = std::sync::Mutex::new(None);
+    let dir = codex_home.join("cache").join("remote_plugin_catalog");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Default::default();
+    };
+    let files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("json"))
+        .collect();
+    let stamp = files
+        .iter()
+        .filter_map(|path| std::fs::metadata(path).ok()?.modified().ok())
+        .filter_map(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .max()
+        .unwrap_or(0);
+    let mut memo = MEMO.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some((cached, map)) = memo.as_ref() {
+        if *cached == stamp {
+            return map.clone();
+        }
+    }
+    let mut map = HashMap::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(catalog) = serde_json::from_str::<RemoteCatalog>(&text) else {
+            continue;
+        };
+        for plugin in catalog.plugins {
+            let Some(url) = plugin
+                .release
+                .and_then(|release| release.interface)
+                .and_then(|interface| interface.logo_url)
+            else {
+                continue;
+            };
+            map.entry(plugin.name).or_insert(url);
+        }
+    }
+    let map = std::sync::Arc::new(map);
+    *memo = Some((stamp, map.clone()));
+    map
+}
+
+/// 本地解析不到图标的条目补远程 URL（exa 等 curated-remote 条目本地无物化）。
+fn fill_remote_icons(codex_home: &Path, summaries: &mut [PluginSummary]) {
+    let missing: Vec<usize> = (0..summaries.len())
+        .filter(|index| summaries[*index].icon_path.is_none())
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    let map = remote_logo_urls(codex_home);
+    for index in missing {
+        if let Some(url) = map.get(&summaries[index].name) {
+            summaries[index].icon_path = Some(url.clone());
+        }
+    }
+}
+
+/// 图标读取的白名单根：与 `trusted_plugin_store_path` 同源的受信区，
+/// 再补 Claude 插件缓存与市场物化目录（claudeHome/plugins 含 cache 与 marketplaces）。
+fn read_plugin_icon(
+    home: &Path,
+    codex_home: &Path,
+    claude_plugins: &Path,
+    icon_cache: &Path,
+    raw_path: &str,
+) -> AppResult<Option<String>> {
+    use base64::Engine as _;
+    let data_url = |mime: &str, bytes: &[u8]| {
+        format!(
+            "data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    };
+    let path =
+        std::fs::canonicalize(raw_path).map_err(|error| app_err!("插件图标文件不可读: {error}"))?;
+    let under_root = |root: &Path| {
+        std::fs::canonicalize(root)
+            .map(|root| path.starts_with(root))
+            .unwrap_or(false)
+    };
+    let trusted = [
+        codex_home.join("plugins"),
+        // 第三方市场的物化 checkout（ponytail 等实测在 .tmp/marketplaces）
+        codex_home.join(".tmp"),
+        home.join(".cache/codex-runtimes/plugins"),
+        home.join(".cache/codex/plugins"),
+        claude_plugins.to_path_buf(),
+    ];
+    if !trusted.iter().any(|root| under_root(root)) {
+        return Err(app_err!("插件图标路径不在受信的插件目录内"));
+    }
+    let mime = match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => return Ok(None),
+    };
+    let metadata =
+        std::fs::metadata(&path).map_err(|error| app_err!("插件图标文件不可读: {error}"))?;
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&path).map_err(|error| app_err!("插件图标文件不可读: {error}"))?;
+    if bytes.len() <= PLUGIN_ICON_MAX_BYTES {
+        return Ok(Some(data_url(mime, &bytes)));
+    }
+    // 超重图标：不是拒绝，而是现场瘦身——解码缩到卡片实际所需尺寸后重编码，
+    // 处理结果按（路径+大小+mtime）落盘缓存，第二次起直接读小文件。
+    // SVG 无法廉价缩身且极少超限，维持放弃。解码失败（损坏/伪装扩展名）回落字母。
+    if mime == "image/svg+xml" {
+        return Ok(None);
+    }
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let Some(resized) = shrink_icon(
+        icon_cache,
+        &hash_key((&path, bytes.len(), modified)),
+        &bytes,
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(data_url("image/png", &resized)))
+}
+
 /// list_plugins 的同步实现（跑在 blocking 线程池）。
 pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec<PluginSummary>> {
     let sources = marketplace_sources(home);
@@ -596,6 +926,10 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
             let plugin_path =
                 plugin_store_path(codex_home, &marketplace, &name, version.as_deref(), &path);
             let manifest = read_manifest(&plugin_path);
+            // 图标：manifest logo → 约定名 → 物化目录回退链（git URL/连接器 ID 报告的路径找不到真身时）
+            let icon_path = plugin_icon_from(manifest.as_ref(), &plugin_path)
+                .or_else(|| installed_icon_fallback(codex_home, &marketplace, &name))
+                .map(|path| path.display().to_string());
             summaries.push(PluginSummary {
                 // 版本以 manifest 为准（根因见 store.rs），读不到才回落 CLI 版本。
                 version: manifest
@@ -626,6 +960,7 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
                 marketplace: Some(marketplace),
                 store_path: plugin_path.display().to_string(),
                 source_url: None,
+                icon_path,
                 name,
             });
         }
@@ -633,6 +968,8 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
         summaries.extend(scan_codex_plugin_cache(codex_home));
     }
     enrich_plugin_sources(&mut summaries, &sources);
+    // curated-remote 等未物化条目：本地解析不到图标时补远程目录里的 CDN logo
+    fill_remote_icons(codex_home, &mut summaries);
     summaries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(summaries)
 }
@@ -642,6 +979,176 @@ mod tests {
     use super::*;
     use crate::services::codex_cli::file_name;
     use crate::services::plugins::test_context;
+
+    #[tokio::test]
+    async fn remote_icon_cache_keeps_image_ids_and_ignores_signatures() {
+        let (_home, context) = test_context();
+        let first = "https://files.openai.com/content?id=fixture-one";
+        let second = "https://files.openai.com/content?id=fixture-two";
+        for (url, bytes) in [
+            ("https://files.openai.com/content", b"old".as_slice()),
+            (first, b"first".as_slice()),
+            (second, b"second".as_slice()),
+        ] {
+            std::fs::write(
+                context
+                    .paths
+                    .plugin_icons
+                    .join(format!("{}.png", hash_key(url))),
+                bytes,
+            )
+            .unwrap();
+        }
+        let read = |url: &str| format!("{url}&sig=fixture");
+        let first_icon = context.remote_icon_data_url(&read(first)).await.unwrap();
+        let second_icon = context.remote_icon_data_url(&read(second)).await.unwrap();
+        assert_ne!(first_icon, second_icon);
+        assert_eq!(
+            first_icon,
+            context
+                .remote_icon_data_url(&format!("{first}&sig=rotated#fragment"))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn remote_logo_urls_map_plugin_names_from_desktop_catalog() {
+        let home = tempfile::tempdir().unwrap();
+        let codex_home = home.path().join(".codex");
+        let dir = codex_home.join("cache/remote_plugin_catalog");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("fixture.json"),
+            r#"{"plugins":[
+                {"name":"app-fixture","release":{"interface":{"logo_url":"https://files.openai.com/content?id=file_fixture&sig=abc"}}},
+                {"name":"app-no-logo","release":{"interface":{}}}
+            ]}"#,
+        )
+        .unwrap();
+        let map = remote_logo_urls(&codex_home);
+        assert_eq!(
+            map.get("app-fixture").map(String::as_str),
+            Some("https://files.openai.com/content?id=file_fixture&sig=abc")
+        );
+        assert!(!map.contains_key("app-no-logo"));
+    }
+
+    #[test]
+    fn remote_icon_hosts_are_allowlisted() {
+        assert!(remote_icon_allowed("https://files.openai.com/content?id=x"));
+        assert!(remote_icon_allowed("https://cdn.oaistatic.com/a.png"));
+        // 非白名单主机、http、私有协议一律拒绝
+        assert!(!remote_icon_allowed("https://evil.example.com/a.png"));
+        assert!(!remote_icon_allowed("http://files.openai.com/a.png"));
+        assert!(!remote_icon_allowed("connectors://app_x/logo"));
+        assert!(!remote_icon_allowed("file:///etc/passwd"));
+    }
+
+    #[test]
+    fn plugin_icon_read_whitelists_roots_and_extensions() {
+        let home = tempfile::tempdir().unwrap();
+        let codex_home = home.path().join(".codex");
+        let claude_plugins = home.path().join(".claude/plugins");
+        let icon_cache = home.path().join("plugin-icons");
+        std::fs::create_dir_all(&icon_cache).unwrap();
+        let icon = codex_home.join("plugins/cache/market/sample/1.0.0/assets/icon.png");
+        std::fs::create_dir_all(icon.parent().unwrap()).unwrap();
+        std::fs::write(&icon, b"not-really-png").unwrap();
+        // 受信根内：返回 data URL
+        let data_url = read_plugin_icon(
+            home.path(),
+            &codex_home,
+            &claude_plugins,
+            &icon_cache,
+            &icon.display().to_string(),
+        )
+        .unwrap()
+        .expect("受信根内的 png 应产出 data URL");
+        assert!(data_url.starts_with("data:image/png;base64,"));
+        // 受信根外：拒绝（不能当任意文件读取通道）
+        let outside = home.path().join("secret.png");
+        std::fs::write(&outside, b"x").unwrap();
+        assert!(read_plugin_icon(
+            home.path(),
+            &codex_home,
+            &claude_plugins,
+            &icon_cache,
+            &outside.display().to_string()
+        )
+        .is_err());
+        // 受信根内但非图片扩展：返回 None 而非报错
+        let text = codex_home.join("plugins/cache/market/sample/1.0.0/README.md");
+        std::fs::write(&text, b"readme").unwrap();
+        assert_eq!(
+            read_plugin_icon(
+                home.path(),
+                &codex_home,
+                &claude_plugins,
+                &icon_cache,
+                &text.display().to_string()
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    /// 超重位图（实测 ponytail logo 554KB/5422px）不拒绝：现场缩到卡片尺寸重编码，
+    /// 结果落盘缓存，第二次调用直接命中缓存。
+    #[test]
+    fn oversized_raster_icon_is_resized_and_cached() {
+        use base64::Engine as _;
+        let home = tempfile::tempdir().unwrap();
+        let codex_home = home.path().join(".codex");
+        let claude_plugins = home.path().join(".claude/plugins");
+        let icon_cache = home.path().join("plugin-icons");
+        std::fs::create_dir_all(&icon_cache).unwrap();
+        // 1500×1500 随机噪声位图：PNG 压不动，确保远超 512KB 直传上限
+        let mut state = 0x2545_F491_u32;
+        let bitmap = image::RgbaImage::from_fn(1500, 1500, |_, _| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            image::Rgba([state as u8, (state >> 8) as u8, (state >> 16) as u8, 255])
+        });
+        let icon = codex_home.join("plugins/cache/market/sample/1.0.0/assets/icon.png");
+        std::fs::create_dir_all(icon.parent().unwrap()).unwrap();
+        image::DynamicImage::ImageRgba8(bitmap).save(&icon).unwrap();
+        assert!(
+            std::fs::metadata(&icon).unwrap().len() as usize > PLUGIN_ICON_MAX_BYTES,
+            "fixture 必须超过直传上限才有意义"
+        );
+
+        let first = read_plugin_icon(
+            home.path(),
+            &codex_home,
+            &claude_plugins,
+            &icon_cache,
+            &icon.display().to_string(),
+        )
+        .unwrap()
+        .expect("超重位图应缩身后返回");
+        let payload = first.strip_prefix("data:image/png;base64,").unwrap();
+        let decoded = image::load_from_memory(
+            &base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(decoded.width().max(decoded.height()) <= PLUGIN_ICON_MAX_DIMENSION);
+        // 处理结果已落盘：缓存目录出现一个 png，第二次调用返回同一份内容
+        assert_eq!(std::fs::read_dir(&icon_cache).unwrap().count(), 1);
+        let second = read_plugin_icon(
+            home.path(),
+            &codex_home,
+            &claude_plugins,
+            &icon_cache,
+            &icon.display().to_string(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(first, second);
+    }
 
     /// CLI 在而 list 失败时必须报错，不能回退缓存扫描：plugins/cache 是全量市场目录
     /// （含未装条目、桌面内置、镜像重复、origin 全错），静默顶替会把它伪装成已安装列表。

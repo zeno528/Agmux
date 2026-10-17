@@ -279,6 +279,13 @@ body {
   padding-block: 4px;
 }
 
+/* 与 .plan-badge 同高的实底胶囊（插件卡版本徽标旁的 scope 标签）：
+   只对齐高度与行高，横向留白和配色仍沿用 .apple-chip */
+.apple-chip--badge {
+  line-height: 1.4;
+  padding-block: 1.5px;
+}
+
 /* 成功色胶囊（备份记录"手动"来源标记）：与 apple-chip--accent 同构，配色走成功色；
    文字用 --success-text 保证浅色 tint 上可读（同 .chip-success 的选择） */
 .apple-chip--success {
@@ -436,19 +443,6 @@ button.plan-badge:hover:not(:disabled) {
 .skill-markdown-preview pre code {
   background: transparent;
   padding: 0;
-}
-
-/* 行内代码 token：文案中把路径/段名/服务器名等关键变量从正文里分出来。
-   搭配 .mono 使用：class="mono code-tok" */
-.code-tok {
-  border-radius: 5px;
-  background: rgb(0 0 0 / 0.05);
-  padding: 1px 5px;
-  font-size: 12px;
-}
-
-:root.dark .code-tok {
-  background: rgb(255 255 255 / 0.1);
 }
 
 /* 表单字段标签：比输入内容更明确，但不抢过区块标题 */
@@ -1262,13 +1256,6 @@ body.drag-active * {
   min-width: 0;
 }
 
-.apple-page-bar--sticky {
-  position: sticky;
-  /* 与 .apple-page-bar 的负上边距共用 --main-top-inset，sticky 顶点始终贴住 main 顶部 */
-  top: calc(-1 * var(--main-top-inset));
-  z-index: 10;
-}
-
 /* 标题栏与下方内容的间距走外边距：不再用内边距，避免压缩统一高度的垂直居中空间 */
 .apple-page-bar--roomy {
   margin-bottom: 0.75rem;
@@ -1815,6 +1802,166 @@ body.drag-active * {
 
 /* MCP 卡片展开体（工具面板/差异详情共用）：去掉 body 顶部内边距，内容紧贴卡片头 */
 .mcp-tools-disclosure.apple-disclosure--open .apple-disclosure__body { padding-top: 0; }
+
+/* ===== 插件看板（Codex / Claude 两端共用）：卡片网格 + 一级过滤 chips ===== */
+/* 分区（有更新/已安装/可安装）：标题与上一区块拉开呼吸，标题到内容保持紧凑 */
+.plugin-section {
+  padding-top: 0.5rem;
+}
+
+.plugin-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* 网格随容器宽度自适应 2-4 列；行式内容（有更新、市场源弹层）仍走 apple-list-card。 */
+.plugin-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+  gap: var(--gap-section);
+}
+
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  /* 与 .apple-group 分组卡片同一底色：深色下才不会和页面底色糊成一片 */
+  background: var(--panel-bg);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-edge-shadow);
+  padding: 0.875rem 1rem 0.75rem;
+  transition: box-shadow var(--motion-fast) ease-out;
+}
+
+.plugin-card:hover {
+  box-shadow: var(--card-edge-shadow), 0 4px 14px rgb(0 0 0 / 0.08);
+}
+
+/* 插件卡状态灯：禁用 = 灰色（与 MCP 页离线灯同语义），标题/aria 提供文字说明 */
+.plugin-status-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--text-secondary);
+}
+
+.plugin-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+/* 图标替身：无图标数据时用插件名首字；填充复用供应商配置卡片的浅色块 token，不做彩色填充 */
+.plugin-card-icon {
+  display: grid;
+  place-items: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 0.5625rem;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  /* 底色是固定浅色块（两套主题同值），文字不能用随主题翻转的 text-secondary/accent 之外的中性色，
+     与 ProfileIconTile 的字母同一套取色 */
+  color: var(--accent);
+  background: var(--provider-icon-bg);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 22%, transparent);
+  overflow: hidden;
+}
+
+/* 真实插件图标（data URL）：铺满色块并继承圆角；contain 保留 logo 完整形状 */
+.plugin-card-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.plugin-card-name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+button.plugin-card-name {
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--motion-fast) ease-out;
+}
+
+button.plugin-card-name:hover {
+  color: var(--accent);
+}
+
+.plugin-card-desc {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.6em;
+}
+
+.plugin-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+  min-height: 1.75rem;
+}
+
+/* 卡片内的图标按钮比全局小一号（28px）：共享定义不动，宿主场景覆盖尺寸变量（尺寸随卡片密度收紧） */
+.plugin-card .apple-icon-button {
+  --icon-button-size: 1.75rem;
+}
+
+.plugin-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.plugin-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.8125rem;
+  border-radius: 999px;
+  background: var(--main-surface-bg);
+  box-shadow: var(--card-edge-shadow);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--motion-fast) ease-out,
+    color var(--motion-fast) ease-out;
+}
+
+.plugin-filter-chip:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.plugin-filter-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: none;
+}
+
+/* 「有更新」提醒 chip：未选中时用警示色勾住视线 */
+.plugin-filter-chip--alert:not([aria-pressed="true"]) {
+  color: var(--warning);
+}
+
+.plugin-filter-chip__count {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  opacity: 0.72;
+}
 
 .apple-icon-button {
   display: grid;
@@ -3092,33 +3239,6 @@ button:focus-visible {
   outline: none;
 }
 
-.app-dynamic-input__create {
-  display: inline-flex;
-  width: 100%;
-  min-height: var(--control-height);
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  border: 1px dashed var(--panel-border);
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  transition: border-color var(--motion-fast) ease-out, background-color var(--motion-fast) ease-out, color var(--motion-fast) ease-out;
-}
-
-.app-dynamic-input__create:hover,
-.app-dynamic-input__create:focus-visible {
-  border-color: var(--accent);
-  background: var(--hover-bg);
-  color: var(--accent);
-}
-
-.app-dynamic-input__create:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .apple-disclosure__summary {
   display: flex;
   width: 100%;
@@ -3188,6 +3308,39 @@ button:focus-visible {
 
 /* 搜索框灰色描边画在内部，避免缩放后边框外侧出现浅色细线。 */
 .app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border), 0 0 0 3px transparent; }
+
+/* 搜索框统一隐藏浏览器原生清空键，由 AppSearchInput 的清空按钮接管（lucide 图标 + 悬停反馈）。 */
+.app-input--pill::-webkit-search-cancel-button { display: none; }
+
+/* 有内容时右侧给清空按钮让位，文本不滑到按钮底下。 */
+.app-input--pill--clearable { padding-right: 1.75rem; }
+
+/* 搜索清空按钮：小圆形热区、悬停底色反馈，与图标按钮同一套交互语言。 */
+.app-search-clear {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--motion-fast) ease-out,
+    color var(--motion-fast) ease-out;
+}
+
+.app-search-clear:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.app-search-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* 文本域沿用旧版 NInput：隐藏原生滚动条，保留滚轮滚动和右下角调整大小。 */
 textarea.app-input {
@@ -3403,7 +3556,8 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 }
 
 :root.dark .app-switch-rail { background-color: rgb(255 255 255 / 0.20); }
-.app-switch[data-state="checked"] .app-switch-rail { background-color: var(--primary-button-bg); }
+/* 开启态统一用项目蓝（--accent），两套主题同色，不随 --primary-button-bg 翻转 */
+.app-switch[data-state="checked"] .app-switch-rail { background-color: var(--accent); }
 /* 焦点环走 :focus-visible：鼠标点击不留环，键盘 Tab 导航仍可见 */
 .app-switch:focus-visible .app-switch-rail { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
 :root.dark .app-switch:focus-visible .app-switch-rail { box-shadow: 0 0 8px 0 color-mix(in srgb, var(--accent) 30%, transparent); }
@@ -3426,7 +3580,8 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1), left 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), max-width 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.app-switch[data-state="checked"] .app-switch-thumb { left: calc(100% - var(--switch-button-width) - var(--switch-offset)); background: var(--primary-button-text); }
+/* 滑块保持基色白色（已开启时不再翻成 --primary-button-text，避免深色主题变黑） */
+.app-switch[data-state="checked"] .app-switch-thumb { left: calc(100% - var(--switch-button-width) - var(--switch-offset)); }
 :root.dark .app-switch-thumb { box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.4); }
 .app-switch:not(:disabled):is(:active, [data-pressed="true"]) .app-switch-thumb { max-width: var(--switch-button-width-pressed); }
 .app-switch[data-state="checked"]:not(:disabled):is(:active, [data-pressed="true"]) .app-switch-thumb { left: calc(100% - var(--switch-button-width-pressed) - var(--switch-offset)); }

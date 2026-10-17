@@ -14,10 +14,10 @@ use crate::models::{
     McpSyncPreview, ProfileBalanceInfo, Settings, TrayClickAction,
 };
 use crate::services::{
-    AppContext, ClaudeMarketplace, ClaudePluginInventory, ClaudePluginUpdateResult, CliFailure,
-    CliStatus, CliUpdate, CodexProfileConnectionResult, DatabaseBackupInfo, MarketplacePlugin,
-    PluginMarketplace, PluginPreview, PluginSkill, PluginSummary, PluginUpdate, ProfileBalance,
-    SkillSummary, SkillTool,
+    AppContext, ClaudeMarketplace, ClaudePluginInventory, ClaudePluginUpdate,
+    ClaudePluginUpdateResult, CliFailure, CliStatus, CliUpdate, CodexProfileConnectionResult,
+    DatabaseBackupInfo, MarketplacePlugin, PluginMarketplace, PluginPreview, PluginSkill,
+    PluginSummary, PluginUpdate, ProfileBalance, SkillSummary, SkillTool,
 };
 
 /// CLI 状态检测走阻塞线程池；两端命令共用壳，兜底文案只此一份。
@@ -149,6 +149,14 @@ pub fn get_codex_status(state: State<'_, AppContext>) -> AppResult<CodexAppStatu
 #[tauri::command]
 pub async fn list_plugins(state: State<'_, AppContext>) -> AppResult<Vec<PluginSummary>> {
     state.list_plugins().await
+}
+
+#[tauri::command]
+pub async fn get_plugin_icon(
+    path: String,
+    state: State<'_, AppContext>,
+) -> AppResult<Option<String>> {
+    state.plugin_icon_data_url(path).await
 }
 
 #[tauri::command]
@@ -438,6 +446,13 @@ pub async fn uninstall_plugin(name: String, state: State<'_, AppContext>) -> App
 }
 
 // ==================== Claude Code 插件管理 ====================
+
+#[tauri::command]
+pub async fn claude_check_plugin_updates(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<ClaudePluginUpdate>> {
+    state.claude_check_plugin_updates().await
+}
 
 #[tauri::command]
 pub async fn claude_list_plugins(

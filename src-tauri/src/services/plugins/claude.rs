@@ -4,6 +4,8 @@
 //! 数据形状以 2026-10-17 对 claude 2.1.302 的隔离实测为准：
 //! - `list --json --available` → `{installed: [...], available: [...]}`；
 //!   未配置任何市场时退回纯已装数组形态（解析两种都收）。
+//!   该命令还会带上 CLI 内置的 anthropic-plugin-directory（数千条，不是用户配置的
+//!   市场源），可安装目录只保留 `marketplace list` 里的市场。
 //! - 同一插件 id 可按 scope 和 projectPath 多行并存。
 //! - `list` 的 `enabled` 是「user 闸 && cwd 项目闸」合并后的有效值（同插件所有行
 //!   同值），不是每行 scope 的开关；逐行真源由 `overlay_scoped_enabled` 从各
@@ -12,6 +14,7 @@
 //!   update 额外带 updateOutcome（updated / up_to_date）与新旧版本号。
 //! - marketplace list 的 source 有两形：github 带 repo，directory 带 path。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -41,6 +44,9 @@ pub struct ClaudePluginEntry {
     /// project/local scope 所属目录。
     #[serde(default)]
     pub project_path: Option<String>,
+    /// 安装目录内的本地图标（plugin.json 的 logo 字段解析而来）；无则前端回落首字母。
+    #[serde(default)]
+    pub icon_path: Option<String>,
 }
 
 /// 已配置的插件市场（`claude plugin marketplace list --json`）。
@@ -70,6 +76,10 @@ pub struct ClaudeAvailablePlugin {
     #[serde(default)]
     pub description: Option<String>,
     pub marketplace_name: String,
+    /// 市场物化目录（marketplaces/<市场>/plugins/<name>）内的本地图标；
+    /// 官方目录只物化少数条目，多数可安装插件本地无图标、回落首字母。
+    #[serde(default)]
+    pub icon_path: Option<String>,
 }
 
 /// 已装 + 可用目录全景（进页一次拉全）。
@@ -229,6 +239,53 @@ fn overlay_scoped_enabled(inventory: &mut ClaudePluginInventory, config_dir: &Pa
     }
 }
 
+/// `list --available` 会把 CLI 内置的 anthropic-plugin-directory（实测 3496 条）
+/// 一并算进可安装目录，但它不在用户的 `marketplace list` 里——只保留已配置市场，
+/// 否则可安装区被无关插件淹没，图标解析也会白扫数千个不存在的目录。
+fn retain_configured_marketplaces(
+    available: &mut Vec<ClaudeAvailablePlugin>,
+    marketplaces: &[ClaudeMarketplace],
+) {
+    let configured: HashSet<&str> = marketplaces
+        .iter()
+        .map(|marketplace| marketplace.name.as_str())
+        .collect();
+    available.retain(|plugin| configured.contains(plugin.marketplace_name.as_str()));
+}
+
+/// 可安装条目的本地图标：官方市场 checkout 只物化少数条目到
+/// `marketplaces/<市场>/plugins/<name>`，探得到就有图标，探不到回落首字母。
+fn resolve_available_icons(home: &Path, available: &mut [ClaudeAvailablePlugin]) {
+    for plugin in available.iter_mut() {
+        let dir = home
+            .join(".claude")
+            .join("plugins")
+            .join("marketplaces")
+            .join(&plugin.marketplace_name)
+            .join("plugins")
+            .join(&plugin.name);
+        if let Some(icon) = super::store::plugin_icon_path(&dir) {
+            plugin.icon_path = Some(icon.display().to_string());
+        }
+    }
+}
+
+/// 已安装条目的本地图标：`<installPath>/.claude-plugin/plugin.json` 的 `logo` 字段
+/// 是相对安装根的路径（实测 superpowers → assets/antigravity-logo.png）；
+/// 缺失时按 codex 同款约定名兜底探测。全部本地文件读取，无网络。
+fn resolve_installed_icons(installed: &mut [ClaudePluginEntry]) {
+    for entry in installed.iter_mut() {
+        let Some(install) = entry.install_path.as_deref().map(Path::new) else {
+            continue;
+        };
+        let manifest = std::fs::read_to_string(install.join(super::CLAUDE_MANIFEST_RELATIVE_PATH))
+            .ok()
+            .and_then(|text| super::catalog::parse_manifest_text(&text).ok());
+        entry.icon_path = super::store::plugin_icon_from(manifest.as_ref(), install)
+            .map(|path| path.display().to_string());
+    }
+}
+
 fn parse_claude_inventory(text: &str) -> AppResult<ClaudePluginInventory> {
     let text = text.trim();
     let parse_error = |error: serde_json::Error| app_err!("Claude 插件列表解析失败: {error}");
@@ -271,6 +328,61 @@ fn parse_claude_op(text: &str) -> AppResult<ClaudeCliOpOutcome> {
     }
 }
 
+/// CLI 自己写的最新目录快照（`plugin-catalog-cache.json`）：单插件 `version`/`sha`，
+/// 以及本地路径条目共用的市场仓库提交 `marketplace_sha`。
+#[derive(Deserialize)]
+struct PluginCatalogCache {
+    catalog: PluginCatalogBody,
+}
+
+#[derive(Deserialize, Default)]
+struct PluginCatalogBody {
+    #[serde(default)]
+    marketplace_sha: String,
+    plugins: std::collections::HashMap<String, PluginCatalogEntry>,
+}
+
+#[derive(Deserialize, Default)]
+struct PluginCatalogEntry {
+    #[serde(default)]
+    version: String,
+}
+
+/// 有更新的插件与目标版本（卡片悬停提示用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudePluginUpdate {
+    pub id: String,
+    pub version: String,
+}
+
+/// 更新判定（对齐 CLI `plugin update` 的 dry 语义：`version` 相等即最新），
+/// 返回目标版本，无更新返回 None：
+/// - 目录有版本 → 与已装版本比较，落后则给出目录版本；
+/// - 目录版本为空（本地路径条目，已装版本是市场仓库 commit 前缀）→ 与 marketplace_sha
+///   前缀比较，落后则给出新提交前缀；
+/// - 数据缺失一律判为「无更新」，宁可不显示升级图标，也不误报。
+fn plugin_update_version(entry: &ClaudePluginEntry, catalog: &PluginCatalogBody) -> Option<String> {
+    let current = catalog.plugins.get(&entry.id)?;
+    let installed = entry.version.as_deref().unwrap_or_default();
+    if installed.is_empty() {
+        return None;
+    }
+    if !current.version.is_empty() {
+        return (installed != current.version).then(|| current.version.clone());
+    }
+    let marketplace = entry
+        .id
+        .rsplit_once('@')
+        .map(|(_, market)| market)
+        .unwrap_or_default();
+    if marketplace != "claude-plugins-official" || catalog.marketplace_sha.is_empty() {
+        return None;
+    }
+    (!catalog.marketplace_sha.starts_with(installed))
+        .then(|| catalog.marketplace_sha.chars().take(12).collect())
+}
+
 impl AppContext {
     fn claude_home(&self) -> AppResult<std::path::PathBuf> {
         self.paths
@@ -278,6 +390,43 @@ impl AppContext {
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| app_err!("无法定位用户主目录"))
+    }
+
+    /// 检查已装插件是否有更新：先刷新市场目录（CLI 没有 dry-run，刷新是唯一拿到最新目录的方式），
+    /// 再按 CLI 自己的目录快照比对版本。返回需要升级的插件 id（按 id 去重，多 scope 共用）。
+    pub async fn claude_check_plugin_updates(&self) -> AppResult<Vec<ClaudePluginUpdate>> {
+        for marketplace in self.claude_list_plugin_marketplaces().await? {
+            self.claude_update_plugin_marketplace(&marketplace.name)
+                .await?;
+        }
+        let home = self.claude_home()?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let output = run_claude_plugin(&home, &["list", "--json"], None)?;
+            let installed = parse_claude_inventory(&output)?.installed;
+            if installed.is_empty() {
+                return Ok(Vec::new());
+            }
+            let text =
+                std::fs::read_to_string(home.join(".claude/plugins/plugin-catalog-cache.json"))
+                    .map_err(|error| app_err!("读取 Claude Code 插件目录失败: {error}"))?;
+            let catalog = serde_json::from_str::<PluginCatalogCache>(&text)
+                .map_err(|error| app_err!("Claude Code 插件目录解析失败: {error}"))?
+                .catalog;
+            let mut updates: Vec<ClaudePluginUpdate> = installed
+                .iter()
+                .filter_map(|entry| {
+                    plugin_update_version(entry, &catalog).map(|version| ClaudePluginUpdate {
+                        id: entry.id.clone(),
+                        version,
+                    })
+                })
+                .collect();
+            updates.sort_by(|left, right| left.id.cmp(&right.id));
+            updates.dedup_by(|left, right| left.id == right.id);
+            Ok(updates)
+        })
+        .await
+        .map_err(|error| app_err!("检查 Claude Code 插件更新任务失败: {error}"))?
     }
 
     fn claude_plugin_event(&self, action: &str, plugin_id: &str) {
@@ -306,6 +455,13 @@ impl AppContext {
             let output = run_claude_plugin(&home, args, None)?;
             let mut inventory = parse_claude_inventory(&output)?;
             overlay_scoped_enabled(&mut inventory, &config_dir);
+            resolve_installed_icons(&mut inventory.installed);
+            if include_available {
+                let listing = run_claude_plugin(&home, &["marketplace", "list", "--json"], None)?;
+                let marketplaces = parse_claude_marketplaces(&listing)?;
+                retain_configured_marketplaces(&mut inventory.available, &marketplaces);
+                resolve_available_icons(&home, &mut inventory.available);
+            }
             Ok(inventory)
         })
         .await
@@ -542,6 +698,91 @@ mod tests {
         assert!(claude_plugin_cwd("user", None).unwrap().is_none());
     }
 
+    #[test]
+    fn plugin_catalog_rejects_missing_or_invalid_snapshots() {
+        for text in ["{", "{}", r#"{"catalog":null}"#, r#"{"catalog":{}}"#] {
+            assert!(serde_json::from_str::<PluginCatalogCache>(text).is_err());
+        }
+        let empty =
+            serde_json::from_str::<PluginCatalogCache>(r#"{"catalog":{"plugins":{}}}"#).unwrap();
+        assert!(empty.catalog.plugins.is_empty());
+    }
+
+    #[test]
+    fn plugin_update_version_matches_cli_update_semantics() {
+        let entry = |id: &str, version: &str| ClaudePluginEntry {
+            id: id.to_string(),
+            version: Some(version.to_string()),
+            scope: "user".to_string(),
+            enabled: true,
+            install_path: None,
+            installed_at: None,
+            last_updated: None,
+            project_path: None,
+            icon_path: None,
+        };
+        let mut catalog = PluginCatalogBody {
+            marketplace_sha: "ea10b213686c90bb1984b2016937310e05336cf3".to_string(),
+            ..Default::default()
+        };
+        catalog.plugins.insert(
+            "versioned@mkt".into(),
+            PluginCatalogEntry {
+                version: "1.1.0".into(),
+            },
+        );
+        catalog.plugins.insert(
+            "sha-only@claude-plugins-official".into(),
+            PluginCatalogEntry::default(),
+        );
+        catalog.plugins.insert(
+            "sha-stale@claude-plugins-official".into(),
+            PluginCatalogEntry::default(),
+        );
+        catalog.plugins.insert(
+            "sha-other-market@ponytail".into(),
+            PluginCatalogEntry::default(),
+        );
+        // 版本不同 → 有更新并给出目标版本；相同 → 无更新
+        assert_eq!(
+            plugin_update_version(&entry("versioned@mkt", "1.0.0"), &catalog).as_deref(),
+            Some("1.1.0")
+        );
+        assert_eq!(
+            plugin_update_version(&entry("versioned@mkt", "1.1.0"), &catalog),
+            None
+        );
+        // 目录无版本：已装版本是市场仓库 commit 前缀，前缀命中即最新；落后则给出新前缀
+        assert_eq!(
+            plugin_update_version(
+                &entry("sha-only@claude-plugins-official", "ea10b213686c"),
+                &catalog
+            ),
+            None
+        );
+        assert_eq!(
+            plugin_update_version(
+                &entry("sha-stale@claude-plugins-official", "1fad13414a44"),
+                &catalog
+            )
+            .as_deref(),
+            Some("ea10b213686c")
+        );
+        // 非官方市场的空版本条目无从判断：宁可不显示升级图标，不误报
+        assert_eq!(
+            plugin_update_version(
+                &entry("sha-other-market@ponytail", "16352ac229eb"),
+                &catalog
+            ),
+            None
+        );
+        // 目录里没有的插件不报更新
+        assert_eq!(
+            plugin_update_version(&entry("unknown@mkt", "1.0.0"), &catalog),
+            None
+        );
+    }
+
     /// CLI 的 enabled 是 cwd 合并值（同插件所有行同值）；逐行真源在各 scope 的
     /// settings 文件，缺 key 视为关，读不到文件的行保留 CLI 值。
     #[test]
@@ -556,6 +797,7 @@ mod tests {
                 installed_at: None,
                 last_updated: None,
                 project_path: project_path.map(str::to_string),
+                icon_path: None,
             }
         }
         let config = tempfile::tempdir().unwrap();
@@ -647,6 +889,39 @@ mod tests {
         assert_eq!(items[1].source, "directory");
         assert_eq!(items[1].path.as_deref(), Some(r"C:\demo\market"));
         assert!(items[1].repo.is_none());
+    }
+
+    #[test]
+    fn available_plugins_drop_builtin_directory_outside_configured_markets() {
+        // 实测：list --available 会混入 CLI 内置 anthropic-plugin-directory（3496 条）
+        let mut available = vec![
+            ClaudeAvailablePlugin {
+                plugin_id: "ui5-modernization@anthropic-plugin-directory".into(),
+                name: "ui5-modernization".into(),
+                description: None,
+                marketplace_name: "anthropic-plugin-directory".into(),
+                icon_path: None,
+            },
+            ClaudeAvailablePlugin {
+                plugin_id: "code-review@claude-plugins-official".into(),
+                name: "code-review".into(),
+                description: None,
+                marketplace_name: "claude-plugins-official".into(),
+                icon_path: None,
+            },
+        ];
+        let configured = vec![ClaudeMarketplace {
+            name: "claude-plugins-official".into(),
+            source: "github".into(),
+            repo: None,
+            path: None,
+            install_location: None,
+        }];
+
+        retain_configured_marketplaces(&mut available, &configured);
+
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].marketplace_name, "claude-plugins-official");
     }
 
     #[test]

@@ -199,6 +199,7 @@ pub(super) struct MarketplaceEntryMetadata {
     capabilities: Vec<String>,
     contains: Vec<String>,
     version: Option<String>,
+    icon_path: Option<String>,
 }
 
 pub(super) fn marketplace_entry_metadata(
@@ -228,6 +229,21 @@ pub(super) fn marketplace_entry_metadata(
     let manifest_interface = local_manifest
         .as_ref()
         .and_then(|item| item.interface.as_ref());
+    // 图标先看清单条目指向的本地目录，再按市场物化约定探 `plugins/<name>`（openai 运行时市场走后者）。
+    let icon_dir = local_path
+        .clone()
+        .or_else(|| Some(root.join("plugins").join(name)));
+    let icon_path = icon_dir
+        .as_deref()
+        .and_then(|dir| {
+            let manifest = if Some(dir) == local_path.as_deref() {
+                local_manifest.clone()
+            } else {
+                read_manifest(dir)
+            };
+            super::store::plugin_icon_from(manifest.as_ref(), dir)
+        })
+        .map(|path| path.display().to_string());
     MarketplaceEntryMetadata {
         display_name: interface
             .and_then(|item| item.get("displayName"))
@@ -254,6 +270,7 @@ pub(super) fn marketplace_entry_metadata(
         version: local_manifest
             .as_ref()
             .and_then(|item| item.version.clone()),
+        icon_path,
     }
 }
 
@@ -319,6 +336,7 @@ pub(super) fn parse_marketplace_plugins_output(
                 category: metadata.category,
                 capabilities: metadata.capabilities,
                 contains: metadata.contains,
+                icon_path: metadata.icon_path,
             })
         })
         .collect())

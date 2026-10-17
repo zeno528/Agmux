@@ -1434,6 +1434,12 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       const name = String(args?.name ?? "");
       return (webPluginSkills[name] ?? []).map((skill) => ({ ...skill })) as T;
     }
+    case "get_plugin_icon":
+      // 浏览器读不到本地图标文件，回落首字母色块；真实图标在 Tauri 窗口验证
+      return null as T;
+    case "claude_check_plugin_updates":
+      // 版本比对依赖 Claude Code CLI 刷新的市场目录；浏览器调试不模拟
+      return [] as T;
     case "list_plugin_marketplaces":
       return [...webMarketplaces]
         .sort((left, right) => Number(left.kind !== "official") - Number(right.kind !== "official") || left.name.localeCompare(right.name))

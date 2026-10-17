@@ -35,6 +35,8 @@ pub struct PluginSummary {
     pub marketplace: Option<String>,
     pub store_path: String,
     pub source_url: Option<String>,
+    /// 插件目录内的本地图标文件（assets/icon.png 约定）；无则前端回落首字母。
+    pub icon_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -67,6 +69,8 @@ pub struct MarketplacePlugin {
     pub category: Option<String>,
     pub capabilities: Vec<String>,
     pub contains: Vec<String>,
+    /// 市场物化目录内的本地图标（未安装插件同样有本地 checkout 文件）。
+    pub icon_path: Option<String>,
 }
 
 /// 外部市场快照更新后，已安装插件的可升级项。
@@ -150,6 +154,8 @@ pub(super) struct PluginManifest {
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
+    logo: Option<String>,
+    #[serde(default)]
     interface: Option<PluginInterface>,
 }
 
@@ -166,6 +172,11 @@ pub(super) struct PluginInterface {
     category: Option<String>,
     #[serde(default)]
     capabilities: Vec<String>,
+    /// 图标的权威相对路径（实测 github → ./assets/github.png）；logoDark 为深色版备选。
+    #[serde(default)]
+    logo: Option<String>,
+    #[serde(default)]
+    logo_dark: Option<String>,
 }
 
 pub(super) const MANIFEST_RELATIVE_PATH: &str = ".codex-plugin/plugin.json";
@@ -204,6 +215,8 @@ impl PluginSummary {
             marketplace: None,
             store_path: store_path.display().to_string(),
             source_url: None,
+            icon_path: store::plugin_icon_from(manifest, store_path)
+                .map(|path| path.display().to_string()),
         }
     }
 }
@@ -217,7 +230,7 @@ mod store;
 
 pub use claude::{
     ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory,
-    ClaudePluginUpdateResult,
+    ClaudePluginUpdate, ClaudePluginUpdateResult,
 };
 pub(crate) use cli::{wait_child_with_timeout, ChildOutput};
 

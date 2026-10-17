@@ -69,7 +69,7 @@ describe("AppShell 布局", () => {
       ["features/codex/CodexProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/claude/ClaudeProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/mcp/McpView", "if (!popEpoch) return;\n    setEditingServer(null);\n    setCreatingServer(false);\n    setDiffOpen(false);\n  }, [popEpoch]);"],
-      ["features/plugins/CodexPluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
+      ["features/plugins/CodexPluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setShowAdd(false);\n    setShowSources(false);\n  }, [popEpoch]);"],
       ["features/skills/SkillsView", "if (!popEpoch) return;\n    setImporting(false);\n  }, [popEpoch]);"],
     ];
     for (const [file, effect] of popEffects) {
@@ -319,7 +319,7 @@ describe("AppShell 布局", () => {
   });
 
   it("所有编辑正文复用共享容器，不依赖 apple-group 的嵌套层数", () => {
-    const files = ["codex/CodexProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView", "plugins/AddPluginView", "plugins/MarketplaceDetailView"];
+    const files = ["codex/CodexProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView", "plugins/AddPluginView"];
     // 「必须使用 apple-edit-surface」由 check-style-leaks 的结构检查兜底；这里守另一半：不得再挂 apple-group
     for (const file of files) {
       const page = readFileSync(new URL(`../features/${file}.tsx`, import.meta.url), "utf8");

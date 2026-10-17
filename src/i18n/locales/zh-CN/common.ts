@@ -20,6 +20,9 @@ export default {
     maximize: "最大化",
     close: "关闭",
   },
+  search: {
+    clear: "清空搜索",
+  },
   select: {
     placeholder: "请选择",
     optionsLabel: "选项",

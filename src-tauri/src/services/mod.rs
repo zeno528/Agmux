@@ -46,8 +46,9 @@ pub use connections::{
 pub use model_fetch::fetch_models;
 pub use plugins::{
     ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory,
-    ClaudePluginUpdateResult, MarketplacePlugin, PluginCandidate, PluginMarketplace, PluginPreview,
-    PluginSkill, PluginSummary, PluginUpdate, SkillCandidate, SkillSummary, SkillTool,
+    ClaudePluginUpdate, ClaudePluginUpdateResult, MarketplacePlugin, PluginCandidate,
+    PluginMarketplace, PluginPreview, PluginSkill, PluginSummary, PluginUpdate, SkillCandidate,
+    SkillSummary, SkillTool,
 };
 pub use storage::DatabaseBackupInfo;
 

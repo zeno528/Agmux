@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 const styleSource = readFileSync(new URL("../style.css", import.meta.url), "utf8");
 
 describe("AppSwitch styles", () => {
-  it("开启态复用主按钮的主题背景色与文字色", () => {
-    expect(styleSource).toContain('.app-switch[data-state="checked"] .app-switch-rail { background-color: var(--primary-button-bg); }');
-    expect(styleSource).toContain('background: var(--primary-button-text);');
+  it("开启态统一用项目蓝，两套主题同色", () => {
+    expect(styleSource).toContain('.app-switch[data-state="checked"] .app-switch-rail { background-color: var(--accent); }');
+    // 滑块保持基色白，不再翻成主题按钮文字色（深色下会变黑）
+    expect(styleSource).not.toContain("background: var(--primary-button-text);");
   });
 });

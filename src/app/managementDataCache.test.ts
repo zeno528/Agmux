@@ -42,18 +42,15 @@ describe("managementDataCache", () => {
 
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  it("Claude 一级列表不请求目录，市场目录缓存不覆盖一级列表", async () => {
-    const installed = { installed: [], available: [] };
+  it("Claude 插件页共用已安装与可安装目录缓存", async () => {
     const catalog = { installed: [], available: [{ pluginId: "demo@market", name: "demo", marketplaceName: "market", description: null }] };
-    claudeListPlugins.mockResolvedValueOnce(installed).mockResolvedValueOnce(catalog);
+    claudeListPlugins.mockResolvedValueOnce(catalog);
     const cache = await import("./managementDataCache");
-    expect(await cache.loadClaudePlugins()).toEqual(installed);
-    expect(claudeListPlugins).toHaveBeenNthCalledWith(1);
-    expect(await cache.loadClaudePlugins(false, true)).toEqual(catalog);
-    expect(claudeListPlugins).toHaveBeenNthCalledWith(2, true);
-    expect(await cache.loadClaudePlugins()).toEqual(installed);
-    expect(cache.getCachedClaudePlugins(true)).toEqual(catalog);
-    expect(claudeListPlugins).toHaveBeenCalledTimes(2);
+    expect(await cache.loadClaudePlugins()).toEqual(catalog);
+    expect(claudeListPlugins).toHaveBeenCalledWith(true);
+    expect(await cache.loadClaudePlugins()).toEqual(catalog);
+    expect(cache.getCachedClaudePlugins()).toEqual(catalog);
+    expect(claudeListPlugins).toHaveBeenCalledTimes(1);
   });
 
   it("用户更新开关后，旧请求返回最新缓存，后续刷新仍可取新值", async () => {
@@ -68,7 +65,7 @@ describe("managementDataCache", () => {
     finish(before);
     expect(await pending).toEqual(after);
     expect(cache.getCachedClaudePlugins()).toEqual(after);
-    expect(JSON.parse(persistedStorage.get("agmux.claude-plugins-cache-v1")!)).toEqual(after);
+    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!)).toEqual(after);
     claudeListPlugins.mockResolvedValueOnce(before);
     expect(await cache.loadClaudePlugins(true)).toEqual(before);
   });

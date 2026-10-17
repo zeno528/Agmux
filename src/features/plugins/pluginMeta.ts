@@ -66,17 +66,6 @@ export function findConfiguredMarketplace(
   );
 }
 
-/// 市场页两卡分组：已配置市场按 kind 归卡；未配置的推荐进对应卡，兜底渲染为安装行。
-export function splitMarketplaceCards(marketplaces: PluginMarketplace[]) {
-  const card = (kind: PluginMarketplace["kind"]) => ({
-    marketplaces: marketplaces.filter((marketplace) => marketplace.kind === kind),
-    pending: recommendedMarketplaces.filter(
-      (recommended) => recommended.kind === kind && !findConfiguredMarketplace(recommended, marketplaces),
-    ),
-  });
-  return { official: card("official"), thirdParty: card("third-party") };
-}
-
 /// 别名市场纠正：Codex 给同一目录挂镜像/远程双身份，安装记录只落在其中一个；
 /// 条目标记未安装但同名插件已在任意市场安装时视为已装（名单来自已安装列表，无需额外 CLI 查询）。
 export function resolveAliasInstalled(

@@ -269,6 +269,8 @@ export interface MarketplacePlugin {
   category: string | null;
   capabilities: string[];
   contains: string[];
+  /** 市场物化目录内的本地图标（未安装插件同样有本地 checkout 文件）。 */
+  icon_path?: string | null;
 }
 
 export interface PluginUpdate {
@@ -290,6 +292,8 @@ export interface ClaudePluginEntry {
   lastUpdated: string | null;
   /** project/local scope 所属目录。 */
   projectPath: string | null;
+  /** 安装目录内的本地图标文件路径（后端解析 plugin.json logo 字段）；无则首字母兜底。 */
+  iconPath?: string | null;
 }
 
 export interface ClaudeMarketplace {
@@ -307,11 +311,20 @@ export interface ClaudeAvailablePlugin {
   name: string;
   description: string | null;
   marketplaceName: string;
+  /** 市场物化目录内的本地图标；官方目录只物化少数条目，多数回落首字母。 */
+  iconPath?: string | null;
 }
 
 export interface ClaudePluginInventory {
   installed: ClaudePluginEntry[];
   available: ClaudeAvailablePlugin[];
+}
+
+export interface ClaudePluginUpdate {
+  /** 形如 name@marketplace。 */
+  id: string;
+  /** 目标版本（本地路径插件为市场仓库新提交前缀）。 */
+  version: string;
 }
 
 export interface ClaudePluginUpdateResult {
@@ -399,6 +412,8 @@ export interface PluginSummary {
   marketplace: string | null;
   store_path: string;
   source_url: string | null;
+  /** 插件目录内的本地图标（assets/icon.png 约定）；无则首字母兜底。 */
+  icon_path?: string | null;
 }
 
 export interface PluginCandidate {

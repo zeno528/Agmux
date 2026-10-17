@@ -127,14 +127,7 @@ function restoreClaudePluginInventory(raw: unknown): ClaudePluginInventory | nul
   if (candidate.installed.some((item) => typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string")) return null;
   return raw as ClaudePluginInventory;
 }
-const claudePlugins = createManagementCache<ClaudePluginInventory>(api.claudeListPlugins, {
-  key: "agmux.claude-plugins-cache-v1",
-  restore: (raw) => {
-    const inventory = restoreClaudePluginInventory(raw);
-    return inventory ? { ...inventory, available: [] } : null;
-  },
-});
-const claudePluginCatalog = createManagementCache<ClaudePluginInventory>(() => api.claudeListPlugins(true), {
+const claudePlugins = createManagementCache<ClaudePluginInventory>(() => api.claudeListPlugins(true), {
   key: "agmux.claude-plugin-catalog-cache-v1",
   restore: restoreClaudePluginInventory,
 });
@@ -236,17 +229,16 @@ export function loadPluginMarketplaces(force = false): Promise<PluginMarketplace
   return pluginMarketplaces.load(force);
 }
 
-export function loadClaudePlugins(force = false, includeAvailable = false): Promise<ClaudePluginInventory> {
-  return (includeAvailable ? claudePluginCatalog : claudePlugins).load(force);
+export function loadClaudePlugins(force = false): Promise<ClaudePluginInventory> {
+  return claudePlugins.load(force);
 }
 
-export function getCachedClaudePlugins(includeAvailable = false): ClaudePluginInventory | null {
-  return (includeAvailable ? claudePluginCatalog : claudePlugins).get();
+export function getCachedClaudePlugins(): ClaudePluginInventory | null {
+  return claudePlugins.get();
 }
 
-export function setClaudePluginsCache(items: ClaudePluginInventory, includeAvailable = false): void {
-  if (includeAvailable) claudePluginCatalog.set(items);
-  else claudePlugins.set({ ...items, available: [] });
+export function setClaudePluginsCache(items: ClaudePluginInventory): void {
+  claudePlugins.set(items);
 }
 
 export function loadClaudePluginMarketplaces(force = false): Promise<ClaudeMarketplace[]> {

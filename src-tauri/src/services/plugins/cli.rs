@@ -38,16 +38,21 @@ pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
 
 // ==================== CLI 超时 ====================
 
-/// codex CLI 子进程按操作类型分档限时：本地操作（list/remove）正常亚秒完成，
+/// codex CLI 子进程按操作类型分档限时：本地操作（remove 等）正常亚秒完成，
 /// 卡住即异常，快速失败；联网操作（add/upgrade = git clone）给慢代理留足时间，
 /// 但也不允许无限等待把 UI 卡死。
+/// `plugin list` 实测并非纯本地读（2026-10-17 直跑 appserver CLI：闲置后首跑 34.7s
+/// 出正确结果、随后亚秒，期间运行时缓存零写入——CLI 在出结果前先做网络新鲜度探测），
+/// 归联网档，避免 20s 误杀慢网下合法完成的 list。
 pub(super) const PLUGIN_CLI_TIMEOUT_FAST_SECS: u64 = 20;
 pub(super) const PLUGIN_CLI_TIMEOUT_NETWORK_SECS: u64 = 60;
 
-/// 是否联网操作（add/upgrade/update 底层走 git，慢网/代理下耗时长）。
+/// 是否联网操作（list 出结果前探测远端；add/upgrade/update 底层走 git，慢网/代理下耗时长）。
 pub(super) fn is_network_plugin_op(args: &[&str]) -> bool {
-    args.iter()
-        .any(|arg| matches!(*arg, "add" | "upgrade" | "update"))
+    args == ["list"]
+        || args
+            .iter()
+            .any(|arg| matches!(*arg, "add" | "upgrade" | "update"))
 }
 
 pub(super) fn plugin_cli_timeout(args: &[&str]) -> Duration {
@@ -424,6 +429,11 @@ mod tests {
         assert_eq!(
             plugin_cli_timeout(&["marketplace", "list"]).as_secs(),
             PLUGIN_CLI_TIMEOUT_FAST_SECS
+        );
+        assert_eq!(
+            plugin_cli_timeout(&["list"]).as_secs(),
+            PLUGIN_CLI_TIMEOUT_NETWORK_SECS,
+            "plugin list 出结果前有网络探测，冷跑可超 20s，不能按本地档误杀"
         );
         assert!(looks_like_network_error(
             "fatal: unable to access 'https://github.com/': Failed to connect"

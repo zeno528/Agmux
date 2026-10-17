@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareMarketplacePlugins, comparePlugins, matchesQuery, resolveAliasInstalled, splitMarketplaceCards } from "./pluginMeta";
+import { compareMarketplacePlugins, comparePlugins, matchesQuery, resolveAliasInstalled } from "./pluginMeta";
 
 describe("插件搜索", () => {
   it("仅按插件名忽略大小写匹配，不搜显示名与描述", () => {
@@ -50,36 +50,5 @@ describe("市场明细排序", () => {
       plugin("app-69ea", true),
     ].sort(compareMarketplacePlugins);
     expect(ordered.map((item) => item.name)).toEqual(["app-69ea", "canva", "beta", "zeta"]);
-  });
-});
-
-describe("市场两卡分组", () => {
-  const marketplace = (name: string, kind: string) =>
-    ({ name, kind }) as Parameters<typeof splitMarketplaceCards>[0][number];
-
-  it("已配置市场按 kind 归卡，未配置推荐进对应卡兜底", () => {
-    const { official, thirdParty } = splitMarketplaceCards([
-      marketplace("openai-bundled", "official"),
-      marketplace("openai-curated", "official"),
-      marketplace("ponytail", "third-party"),
-    ]);
-    expect(official.marketplaces.map((item) => item.name)).toEqual(["openai-bundled", "openai-curated"]);
-    expect(official.pending).toEqual([]);
-    expect(thirdParty.marketplaces.map((item) => item.name)).toEqual(["ponytail"]);
-    expect(thirdParty.pending).toEqual([]);
-  });
-
-  it("推荐未配置时进对应卡安装行：官方缺 curated、第三方缺 ponytail", () => {
-    const { official, thirdParty } = splitMarketplaceCards([
-      marketplace("openai-primary-runtime", "official"),
-    ]);
-    expect(official.pending.map((item) => item.name)).toEqual(["openai-curated"]);
-    expect(thirdParty.pending.map((item) => item.name)).toEqual(["ponytail"]);
-  });
-
-  it("别名命中视为已配置（openai-api-curated）", () => {
-    const { official } = splitMarketplaceCards([marketplace("openai-api-curated", "official")]);
-    expect(official.pending).toEqual([]);
-    expect(official.marketplaces.map((item) => item.name)).toEqual(["openai-api-curated"]);
   });
 });

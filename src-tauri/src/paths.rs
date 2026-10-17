@@ -26,6 +26,8 @@ pub struct AppPaths {
     /// 供应商终端的 per-session settings 覆盖文件目录：只放 `claude --settings`
     /// 的临时覆盖，不进 ~/.claude，不参与 apply 与回写。
     pub terminal: PathBuf,
+    /// 插件图标瘦身缓存：超重位图解码缩放后的重编码结果落这里，键含源文件 mtime。
+    pub plugin_icons: PathBuf,
 }
 
 impl AppPaths {
@@ -54,6 +56,7 @@ impl AppPaths {
             &self.codex_files_backup,
             &self.logs,
             &self.terminal,
+            &self.plugin_icons,
         ] {
             std::fs::create_dir_all(dir)
                 .map_err(|error| app_err!("无法创建目录 {}: {error}", dir.display()))?;
@@ -77,6 +80,7 @@ pub fn from_home(home: &Path) -> AppResult<AppPaths> {
         codex_files_backup: root.join("backups").join("codex-files"),
         logs: root.join("logs"),
         terminal: root.join("terminal"),
+        plugin_icons: root.join("plugin-icons"),
         codex_home: home.join(".codex"),
         claude_home: home.join(".claude"),
         root,
