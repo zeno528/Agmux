@@ -22,7 +22,16 @@ function replaceCompactTokenLimitText(text: string, limit: number) {
 }
 
 function hasSystemProxyOverride(text: string) {
-  return /^\s*respect_system_proxy\s*=/m.test(text);
+  // shortcut: 仅处理 [features] 普通赋值；需支持多行字符串、点号键或内联表时再接入 TOML 解析器。
+  let inFeatures = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\[/.test(line)) {
+      inFeatures = /^\s*\[features\]\s*(?:#.*)?$/.test(line);
+    } else if (inFeatures && /^\s*respect_system_proxy\s*=\s*true\s*(?:#.*)?$/.test(line)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // 仅匹配 [features.context_management] 段内的 experimental_mode = true；[^[] 保证不跨入下一个段头

@@ -329,9 +329,9 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span
-                className={`h-2 w-2 shrink-0 rounded-full ${result?.ok ? "bg-success" : "bg-(--text-secondary)"}`}
+                className={`h-2 w-2 shrink-0 rounded-full ${server.enabled !== false && result?.ok ? "bg-success" : "bg-(--text-secondary)"}`}
                 role="img"
-                aria-label={t(probing ? "list.connectionStateChecking" : result?.ok ? "list.connectionStateConnected" : "list.connectionStateUnavailable")}
+                aria-label={t(server.enabled === false ? "list.testConnectionDisabled" : probing ? "list.connectionStateChecking" : result?.ok ? "list.connectionStateConnected" : "list.connectionStateUnavailable")}
               />
               <span className="min-w-0 truncate font-semibold">{server.name}</span>
               <MetaChip>{server?.url ? "HTTP" : server?.command ? "STDIO" : t("transport.unknown")}</MetaChip>

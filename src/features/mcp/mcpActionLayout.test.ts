@@ -4,7 +4,7 @@ import { Children, createElement, isValidElement, type ReactElement, type ReactN
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { setupI18n } from "../../i18n";
-import McpView, { compareMcpServers, McpTargetSwitch } from "./McpView";
+import McpView, { compareMcpServers, McpServerRow, McpTargetSwitch } from "./McpView";
 import { setMcpDiffBadge } from "../../app/managementDataCache";
 import McpConnectionForm from "./McpConnectionForm";
 
@@ -14,6 +14,22 @@ const claudeEditSource = readFileSync(new URL("./ClaudeMcpEdit.tsx", import.meta
 const sharedFormSource = readFileSync(new URL("./McpConnectionForm.tsx", import.meta.url), "utf8");
 
 describe("MCP 操作入口", () => {
+  it("禁用时旧成功结果和进行中的检测不再点亮状态灯", () => {
+    setupI18n("zh-CN");
+    const noop = () => undefined;
+    const html = renderToStaticMarkup(createElement(McpServerRow, {
+      server: { name: "sample", enabled: false, command: "sample-mcp", args: [], env: {}, url: null,
+        startup_timeout_sec: null, tool_timeout_sec: null, bearer_token_env_var: null, http_headers: {}, env_http_headers: {} },
+      result: { ok: true, latency_ms: 1, status: null, protocol_version: null, server_info: null,
+        tools: [], tools_truncated: false, error: null, tools_error: null },
+      probing: true, detailsVisible: false, toolsBusy: false, toolsLoaded: false,
+      onEdit: noop, onDelete: noop, onProbe: noop, onToggleTools: noop,
+    }));
+    const indicator = html.match(/<span\b[^>]*role="img"[^>]*>/)![0];
+    expect(indicator).not.toContain("bg-success");
+    expect(indicator).toContain('aria-label="已禁用"');
+  });
+
   it("已有 MCP 名称仅展示，新建名称可填写，连接字段仍可编辑", () => {
     setupI18n("zh-CN");
     const noop = () => undefined;

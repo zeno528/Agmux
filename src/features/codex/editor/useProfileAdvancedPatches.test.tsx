@@ -8,13 +8,13 @@ vi.mock("../../../app/Feedback", () => ({ useFeedback: () => ({ error: vi.fn() }
 setupI18n("zh-CN");
 afterEach(() => vi.restoreAllMocks());
 
-function captureControls() {
+function captureControls(configText = 'model = "example"\n') {
   let controls!: ProfileAdvancedPatches;
   const onPatched = vi.fn();
   const setConfigText = vi.fn();
   function Capture() {
     controls = useProfileAdvancedPatches({
-      configText: 'model = "example"\n', setConfigText,
+      configText, setConfigText,
       initialized: { current: true }, showLongContextOverride: true, onPatched,
     });
     return null;
@@ -22,6 +22,20 @@ function captureControls() {
   renderToStaticMarkup(<Capture />);
   return { controls, onPatched, setConfigText };
 }
+
+it.each([
+  ["", false],
+  ["[features]\nrespect_system_proxy = true\n", true],
+  ["[features]\nrespect_system_proxy = false\n", false],
+  ["[features] # flags\r\n  respect_system_proxy = true # enabled\r\n", true],
+  ["[features]\n# respect_system_proxy = true\n", false],
+  ['[features]\nrespect_system_proxy = "true"\n', false],
+  ["respect_system_proxy = true\n[features]\n", false],
+  ["[features]\n[other]\nrespect_system_proxy = true\n", false],
+  ["[features.context_management]\nrespect_system_proxy = true\n", false],
+])("系统代理仅在 [features] 普通赋值为 true 时开启：%s", (text, enabled) => {
+  expect(captureControls(text).controls.systemProxyEnabled).toBe(enabled);
+});
 
 describe("工具栏配置写入后的定位请求", () => {
   it.each([

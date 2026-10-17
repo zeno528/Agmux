@@ -15,6 +15,7 @@ const clientLabels: Record<CliClient, string> = {
 
 type CliUpgradePillProps = {
   client: CliClient;
+  busy?: boolean;
   onUpdated?: (status: CliStatus) => void | Promise<unknown>;
 };
 
@@ -40,17 +41,17 @@ export function cliFailureMessage(error: CliFailure, client: CliClient, t: TFunc
 /// 懒计时器 / Agent 页静默检查写入），原生安装且发现新版本才出现；点击直接走
 /// 官方升级链路——用户主动动作，失败照常透出。升级完成立即静默复检一次，
 /// 版本追平后胶囊自然消失。未安装/非原生安装的客户端不显示（没有升级链路）。
-export function CliUpgradePill({ client, onUpdated }: CliUpgradePillProps) {
+export function CliUpgradePill({ client, busy = false, onUpdated }: CliUpgradePillProps) {
   const { t: tCommon } = useTranslation("common");
   const { t: tSettings } = useTranslation("settings");
   const feedback = useFeedback();
   const update = useSyncExternalStore(subscribeCliUpdate, () => getCachedCliUpdate(client), () => getCachedCliUpdate(client));
   const native = getCachedCliStatus(client)?.installation === "native";
   const [upgrading, setUpgrading] = useState(false);
-  if (!update?.available || !native) return null;
+  if ((!update?.available && !busy) || !native) return null;
   const label = clientLabels[client];
   const upgrade = async () => {
-    if (upgrading) return;
+    if (upgrading || busy) return;
     setUpgrading(true);
     try {
       // 胶囊结果跨重启持久化，但后端只保留会话内的检查结果——点击先静默补检，
@@ -77,11 +78,15 @@ export function CliUpgradePill({ client, onUpdated }: CliUpgradePillProps) {
     <button
       type="button"
       className="plan-badge gap-1"
-      disabled={upgrading}
-      title={tCommon("cliUpdate.upgradeTitle", { client: label, version: update.latest_version, channel: update.channel })}
+      disabled={upgrading || busy}
+      title={busy ? tSettings("cli.working") : update ? tCommon("cliUpdate.upgradeTitle", { client: label, version: update.latest_version, channel: update.channel }) : undefined}
       onClick={() => void upgrade()}
     >
-      {upgrading ? <><LoadingSpinner /><span className="meta-xs">{tSettings("cli.updating")}</span></> : <><Download size={12} strokeWidth={2} aria-hidden="true" />{tCommon("cliUpdate.upgrade", { version: update.latest_version })}</>}
+      {upgrading || busy ? (
+        <span className="inline-flex items-center gap-1" role="status" aria-live="polite">
+          <LoadingSpinner /><span className="meta-xs">{tSettings(upgrading ? "cli.updating" : "cli.working")}</span>
+        </span>
+      ) : update ? <><Download size={12} strokeWidth={2} aria-hidden="true" />{tCommon("cliUpdate.upgrade", { version: update.latest_version })}</> : null}
     </button>
   );
 }

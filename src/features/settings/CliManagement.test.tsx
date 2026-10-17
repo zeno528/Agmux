@@ -6,7 +6,7 @@ import enSettings from "../../i18n/locales/en-US/settings";
 import zhSettings from "../../i18n/locales/zh-CN/settings";
 import type { CliFailure, CliStatus } from "../../types";
 import { CliCard, useCliManagement } from "./CliManagement";
-import { cliFailureMessage } from "../../components/CliUpgradePill";
+import { CliUpgradePill, cliFailureMessage } from "../../components/CliUpgradePill";
 
 const hooks = vi.hoisted(() => ({
   cells: [] as unknown[], effects: [] as (() => void | (() => void))[], index: 0, t: null as TFunction<"settings"> | null,
@@ -17,6 +17,7 @@ const hooks = vi.hoisted(() => ({
 }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
   useEffect: (effect: () => void | (() => void), deps: unknown[]) => {
     const index = hooks.index++;
     const previous = hooks.cells[index] as unknown[] | undefined;
@@ -92,6 +93,7 @@ it.each(["codex", "claude"] as const)("%s 首页任务结束后恢复 Agent 页�
 it.each(["codex", "claude"] as const)("%s 静默和主动检查共用按钮检查中状态，结束后恢复", async (client) => {
   const checked = { status, latest_version: "1.2.3", channel: "latest", available: false };
   hooks.cached.mockReturnValue(status);
+  hooks.cachedUpdate.mockReturnValue({ latest_version: "1.2.4", channel: "latest", available: true });
   hooks.command.mockResolvedValueOnce(status);
   let finishQuiet!: (value: typeof checked) => void;
   hooks.serviceCheck.mockReturnValueOnce(new Promise<typeof checked>((resolve) => { finishQuiet = resolve; }));
@@ -108,6 +110,7 @@ it.each(["codex", "claude"] as const)("%s 静默和主动检查共用按钮检�
     expect(button.disabled).toBe(true);
     expect(renderToStaticMarkup(<>{button.children}</>)).toContain("cli.checkingUpdate");
     expect(renderToStaticMarkup(card).match(/cli.checkingUpdate/g)).toHaveLength(1);
+    expect(renderToStaticMarkup(card)).toContain("cli.working");
   };
   assertChecking();
   await render().check();
@@ -392,6 +395,51 @@ it("版本号与升级动作复用同一徽标样式", () => {
   const html = renderToStaticMarkup(<CliCard client="claude" management={management} />);
   expect(html).toContain('class="plan-badge">1.2.3</span>');
   expect(html).toContain('<button type="button" class="plan-badge gap-1"');
+});
+
+it.each(["codex", "claude"] as const)("%s 跨页升级失败后不被旧忙碌缓存锁住，可以重试", async (client) => {
+  hooks.cached.mockReturnValue(status);
+  hooks.cachedUpdate.mockReturnValue({ latest_version: "1.2.4", channel: "latest", available: true });
+  hooks.serviceCheck.mockResolvedValue({ status, available: true });
+  let fail!: (error: Error) => void;
+  hooks.command.mockReturnValueOnce(new Promise<CliStatus>((_, reject) => { fail = reject; }));
+  const render = () => { hooks.index = 0; return buttons(CliUpgradePill({ client }))[0]; };
+  render().onClick();
+  await flush();
+  expect(hooks.command).toHaveBeenCalledOnce();
+  hooks.cached.mockReturnValue({ ...status, busy: true }); // 进 Agent 页检测到任务，离页后缓存不再刷新。
+  expect(render().disabled).toBe(true);
+  fail(new Error("fixture"));
+  await flush();
+  expect(hooks.error).toHaveBeenCalledOnce();
+  expect(hooks.success).not.toHaveBeenCalled();
+  expect(render().disabled).toBe(false);
+  hooks.command.mockResolvedValueOnce(status);
+  render().onClick();
+  await flush();
+  expect(hooks.command).toHaveBeenCalledTimes(2);
+  expect(hooks.success).toHaveBeenCalledOnce();
+  expect(render().disabled).toBe(false);
+});
+
+it.each(["codex", "claude"] as const)("%s 外部任务的进度显示在禁用的升级胶囊内，结束后恢复", (client) => {
+  for (const available of [false, true]) {
+    hooks.cachedUpdate.mockReturnValue(available ? { latest_version: "1.2.4", channel: "latest", available: true } : null);
+    for (const busy of [true, false]) {
+      const current = { ...status, busy };
+      hooks.cached.mockReturnValue(current);
+      const html = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: current }} />);
+      if (busy) {
+        expect(html).toMatch(/<button[^>]*class="plan-badge gap-1"[^>]*disabled=""[^>]*>.*cli.working.*<\/button>/);
+        expect(html.match(/cli.working<\/span>/g)).toHaveLength(1);
+        expect(html).toContain('role="status"');
+      } else {
+        expect(html).not.toContain("cli.working");
+        expect(html).not.toContain('disabled=""');
+        expect(html.includes('class="plan-badge gap-1"')).toBe(available);
+      }
+    }
+  }
 });
 
 it("混装与其他任务阻止安装，桌面内置副本可以共存", () => {

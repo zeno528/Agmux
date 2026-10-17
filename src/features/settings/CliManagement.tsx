@@ -117,7 +117,7 @@ export function CliCard({ client, management }: { client: Client; management: Re
   const { t } = useTranslation("settings");
   const { status, busy, operation, check, refresh, run } = management;
   const unavailable = !status || status.busy || !["missing", "broken", "native"].includes(status.installation);
-  // 检查进度放在按钮上；安装和外部任务沿用卡片中的反馈。
+  // 检查进度放在按钮上；原生安装的外部任务由升级胶囊反馈。
   const showProgress = busy && operation === "install";
   const stageText = showProgress
     ? t("cli.installing")
@@ -140,10 +140,11 @@ export function CliCard({ client, management }: { client: Client; management: Re
             {status?.installation === "native" ? (
               <CliUpgradePill
                 client={client}
+                busy={status.busy || (busy && operation !== "refresh")}
                 onUpdated={() => { void refresh(); }}
               />
             ) : null}
-            {showProgress || status?.busy ? (
+            {showProgress || (status?.busy && status.installation !== "native") ? (
               <span className="inline-flex items-center gap-1.5 text-(--text-secondary)" role="status" aria-live="polite">
                 <LoadingSpinner size="md" />
                 <span className="meta-xs">{stageText}</span>
