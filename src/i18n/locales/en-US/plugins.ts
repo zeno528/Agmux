@@ -116,4 +116,56 @@ export default {
     installedNeedsAuth: "\"{{name}}\" installed. Please complete authorization in the Codex desktop app",
     uninstalled: "Uninstalled \"{{name}}\"",
   },
+  // Dual-engine switch (mirrors the MCP page): Codex and Claude Code plugin systems are independent
+  target: {
+    label: "Choose plugin engine",
+    codex: "Codex",
+    claude: "Claude",
+  },
+  // Claude Code plugin management (all through claude plugin subcommands, never touching CLI-internal files)
+  claudePlugin: {
+    loading: "Loading Claude Code plugins...",
+    loadingAria: "Loading Claude Code plugins",
+    installedCountAria: "{{count}} installed plugins",
+    empty: "No Claude Code plugins installed yet. Click Marketplace in the top right to install one, or set up the Claude Code CLI in Agent Tools first",
+    disabled: "Disabled",
+    toggleLabel: "Enable or disable {{name}}",
+    market: {
+      pluginCount: "{{count}} plugins",
+    },
+    action: {
+      install: "Install",
+      installed: "Installed",
+      upgrade: "Upgrade",
+      upgradeTitle: "Upgrade to the latest marketplace version (restart the Claude Code session to apply)",
+      uninstall: "Uninstall",
+      uninstallAria: "Uninstall {{name}}",
+      addMarket: "Add Marketplace",
+      removeMarket: "Remove Marketplace",
+      removeMarketAria: "Remove plugin marketplace {{name}}",
+      refreshMarkets: "Refresh marketplace catalogs",
+    },
+    confirm: {
+      uninstallTitle: "Uninstall plugin",
+      uninstallBody: "Uninstall \"{{name}}\" ({{scope}} scope)? This runs the Claude Code CLI; you can reinstall it later",
+      removeMarketTitle: "Remove plugin marketplace",
+      removeMarketBody: "Remove \"{{name}}\"? Plugins installed from this marketplace are removed as well",
+    },
+    toast: {
+      installed: "Installed \"{{name}}\". Restart the Claude Code session to take effect",
+      uninstalled: "Uninstalled \"{{name}}\"",
+      updated: "\"{{name}}\" upgraded from {{old}} to {{new}}. Restart the Claude Code session to take effect",
+      upToDate: "\"{{name}}\" is already up to date ({{version}})",
+      marketAdded: "Added plugin marketplace \"{{name}}\"",
+      marketRemoved: "Removed plugin marketplace \"{{name}}\"",
+      marketsRefreshed: "Refreshed {{count}} marketplace catalogs",
+    },
+    addMarket: {
+      title: "Add plugin marketplace",
+      description: "Accepts GitHub shorthand (owner/repo), Git/HTTPS URLs, or a local marketplace directory; Claude Code owns the result",
+      placeholder: "owner/repo or https://...git",
+      cancel: "Cancel",
+      confirm: "Add",
+    },
+  },
 } as const;

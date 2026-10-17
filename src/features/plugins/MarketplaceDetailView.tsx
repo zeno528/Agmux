@@ -10,6 +10,8 @@ import { TrashIcon } from "../../components/TrashIcon";
 import ContainsChips from "./components/ContainsChips";
 import PluginSearchInput from "./components/PluginSearchInput";
 import SourceLink from "./components/SourceLink";
+import { MarketplacePage } from "./components/MarketplaceLayout";
+import { MarketplacePluginRow } from "./components/MarketplacePluginRow";
 import { compareMarketplacePlugins, marketplaceKindLabels, matchesQuery, resolveAliasInstalled } from "./pluginMeta";
 import type { MarketplacePlugin, PluginMarketplace } from "../../types";
 
@@ -115,24 +117,19 @@ export default function MarketplaceDetailView({
   };
 
   return (
-    <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
-      <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
-        <button type="button" className="apple-page-header apple-back-button" aria-label={t("nav.backToMarketplace")} onClick={onBack}>
-          <ManagementPageTitle
+    <MarketplacePage
+      onBack={onBack}
+      backLabel={t("nav.backToMarketplace")}
+      heading={<ManagementPageTitle
             className="management-page-title--compact"
             icon={<ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
             title={marketplace.display_name ?? marketplace.name}
             count={loaded ? installedPluginCount : undefined}
             countLabel={loaded ? t("marketDetail.installedCountAria", { count: installedPluginCount }) : undefined}
             loadingLabel={t("marketDetail.loadingAria")}
-          />
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          <PluginSearchInput value={query} onChange={setQuery} />
-        </div>
-      </div>
-      <div className="apple-edit-content">
-        <div className="space-y-4">
+          />}
+      actions={<PluginSearchInput value={query} onChange={setQuery} />}
+    >
           {thirdPartyProfile ? (
             <div className="apple-edit-surface">
               <div className="apple-panel-section">
@@ -163,24 +160,13 @@ export default function MarketplaceDetailView({
                 </div>
               </div>
             )) : visiblePlugins.map((plugin) => (
-              <div key={plugin.plugin_id} className="apple-panel-section apple-panel-section--compact">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-semibold">{plugin.display_name ?? plugin.name}</span>
-                      {plugin.version ? <span className="apple-chip">v{plugin.version}</span> : null}
-                      {plugin.installed ? <span className="apple-chip apple-chip--accent">{t("marketDetail.installed")}</span> : null}
-                    </div>
-                    {plugin.description ? <div className="muted mt-1 break-words text-sm">{plugin.description}</div> : null}
-                    {(plugin.category || plugin.capabilities.length || plugin.contains.length) ? (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        {plugin.category ? <span className="apple-chip">{t("detail.category", { category: plugin.category })}</span> : null}
-                        {plugin.capabilities.length ? <ContainsChips items={plugin.capabilities} /> : null}
-                        {plugin.contains.length ? <ContainsChips items={plugin.contains} /> : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  {!plugin.installed || marketplace.kind === "third-party" ? (
+              <MarketplacePluginRow
+                key={plugin.plugin_id}
+                name={plugin.display_name ?? plugin.name}
+                version={plugin.version}
+                installed={plugin.installed}
+                description={plugin.description}
+                actions={!plugin.installed || marketplace.kind === "third-party" ? (
                     <button
                       type="button"
                       className={`apple-action-button shrink-0 ${plugin.installed ? "app-button--danger" : "app-button--primary"}`}
@@ -191,12 +177,17 @@ export default function MarketplaceDetailView({
                       {plugin.installed ? t("action.uninstall") : t("action.install")}
                     </button>
                   ) : null}
-                </div>
-              </div>
+              >
+                {(plugin.category || plugin.capabilities.length || plugin.contains.length) ? (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        {plugin.category ? <span className="apple-chip">{t("detail.category", { category: plugin.category })}</span> : null}
+                        {plugin.capabilities.length ? <ContainsChips items={plugin.capabilities} /> : null}
+                        {plugin.contains.length ? <ContainsChips items={plugin.contains} /> : null}
+                      </div>
+                    ) : null}
+              </MarketplacePluginRow>
             ))}
           </div>
-        </div>
-      </div>
-    </section>
+    </MarketplacePage>
   );
 }

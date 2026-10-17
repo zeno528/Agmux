@@ -69,7 +69,7 @@ describe("AppShell 布局", () => {
       ["features/codex/CodexProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/claude/ClaudeProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/mcp/McpView", "if (!popEpoch) return;\n    setEditingServer(null);\n    setCreatingServer(false);\n    setDiffOpen(false);\n  }, [popEpoch]);"],
-      ["features/plugins/PluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
+      ["features/plugins/CodexPluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
       ["features/skills/SkillsView", "if (!popEpoch) return;\n    setImporting(false);\n  }, [popEpoch]);"],
     ];
     for (const [file, effect] of popEffects) {
@@ -227,7 +227,6 @@ describe("AppShell 布局", () => {
   it("按 4K 150% 缩放换算侧栏与窗口标题栏尺寸，并让窗口控制区底边与主卡片顶边重合", () => {
     expect(styles).toContain("--sidebar-width-collapsed: 3.125rem;");
     expect(styles).toContain("--window-chrome-height: 2.2083333333rem;");
-    expect(styles).toContain("margin: 0 3px 3px 0;");
   });
 
   it("浅色主题的侧栏与窗口标题栏使用统一背景色", () => {

@@ -26,6 +26,7 @@ import {
 } from "../../presets";
 import {
   chatgptModelOptions,
+  emptyConfigSeed,
   patchModelValue,
   patchProviderFields,
   readCatalogOptions,
@@ -186,6 +187,7 @@ function CodexProfileEditor({
     return list;
   }, [catalogFileName, liveCatalogPath, showAuthTab]);
   const baseFragment = create ? presetFragment : detail?.config_fragment ?? "";
+  const configSeed = emptyConfigSeed(baseFragment);
   const liveConfigFragment = useMemo(() => {
     if (!baseFragment) return "";
     return withMcpSection(patchProviderFields(baseFragment, baseUrl, apiKey), mcpSection);
@@ -328,7 +330,8 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const next = patchProviderFields(current, baseUrl, apiKey);
+      const source = !current.trim() && (baseUrl.trim() || apiKey.trim()) ? configSeed : current;
+      const next = patchProviderFields(source, baseUrl, apiKey);
       return next === current ? current : next;
     });
   }, [apiKey, baseUrl]);
@@ -337,9 +340,10 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const effort = readModelValue(current, "model_reasoning_effort") ?? "";
+      const source = !current.trim() && modelValue.trim() ? configSeed : current;
+      const effort = readModelValue(source, "model_reasoning_effort") ?? "";
       const picked = selectModel(modelValue, effort, modelEfforts[modelValue]);
-      let next = patchModelValue(current, modelValue);
+      let next = patchModelValue(source, modelValue);
       if (picked.effort !== effort) next = patchModelValue(next, picked.effort, "model_reasoning_effort");
       return next === current ? current : next;
     });
@@ -348,14 +352,16 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     const model = readModelValue(configText);
-    if (model !== null && model !== modelValue) setModelValue(model);
+    if (model !== null || !configText.trim()) {
+      if ((model ?? "") !== modelValue) setModelValue(model ?? "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configText]);
 
   useEffect(() => {
     if (!initialized.current) return;
     const fields = readProviderFields(configText);
-    if (fields.found) {
+    if (fields.found || !configText.trim()) {
       if (fields.base_url !== baseUrl) setBaseUrl(fields.base_url);
       if (!fields.tokenMasked) {
         const key = /^<.*>$/.test(fields.experimental_bearer_token) ? "" : fields.experimental_bearer_token;

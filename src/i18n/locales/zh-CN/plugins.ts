@@ -116,4 +116,56 @@ export default {
     installedNeedsAuth: "「{{name}}」安装成功，请在 Codex 桌面端完成授权",
     uninstalled: "已卸载插件「{{name}}」",
   },
+  // 双引擎切换（与 MCP 页同构）：Codex 与 Claude Code 插件体系独立
+  target: {
+    label: "选择插件引擎",
+    codex: "Codex",
+    claude: "Claude",
+  },
+  // Claude Code 插件管理（全部经 claude plugin 子命令，不读写 CLI 内部文件）
+  claudePlugin: {
+    loading: "正在加载 Claude Code 插件…",
+    loadingAria: "正在加载 Claude Code 插件",
+    installedCountAria: "{{count}} 个已安装插件",
+    empty: "还没有安装 Claude Code 插件。点击右上角「插件市场」安装，或先到「Agent 工具」安装 Claude Code CLI",
+    disabled: "已禁用",
+    toggleLabel: "启用或禁用 {{name}}",
+    market: {
+      pluginCount: "{{count}} 个插件",
+    },
+    action: {
+      install: "安装",
+      installed: "已安装",
+      upgrade: "升级",
+      upgradeTitle: "升级到市场最新版（升级后重启 Claude Code 会话生效）",
+      uninstall: "卸载",
+      uninstallAria: "卸载 {{name}}",
+      addMarket: "添加市场",
+      removeMarket: "移除市场",
+      removeMarketAria: "移除插件市场 {{name}}",
+      refreshMarkets: "刷新市场目录",
+    },
+    confirm: {
+      uninstallTitle: "卸载插件",
+      uninstallBody: "确定卸载「{{name}}」（{{scope}} 范围）吗？将通过 Claude Code CLI 卸载，之后可重新安装",
+      removeMarketTitle: "移除插件市场",
+      removeMarketBody: "确定移除「{{name}}」吗？该市场已安装的插件会一并移除",
+    },
+    toast: {
+      installed: "已安装插件「{{name}}」，重启 Claude Code 会话后生效",
+      uninstalled: "已卸载插件「{{name}}」",
+      updated: "「{{name}}」已从 {{old}} 升级到 {{new}}，重启 Claude Code 会话后生效",
+      upToDate: "「{{name}}」已是最新版本（{{version}}）",
+      marketAdded: "已添加插件市场「{{name}}」",
+      marketRemoved: "已移除插件市场「{{name}}」",
+      marketsRefreshed: "已刷新 {{count}} 个市场目录",
+    },
+    addMarket: {
+      title: "添加插件市场",
+      description: "支持 GitHub 简写（owner/repo）、Git/HTTPS 地址或本地市场目录；添加后由 Claude Code 识别并管理",
+      placeholder: "owner/repo 或 https://...git",
+      cancel: "取消",
+      confirm: "添加",
+    },
+  },
 } as const;

@@ -277,6 +277,50 @@ export interface PluginUpdate {
   version: string;
 }
 
+// Claude Code 插件（claude plugin --json 契约，字段为 CLI 原生 camelCase）
+export interface ClaudePluginEntry {
+  /** 形如 name@marketplace；同一 id 可按 scope 和 projectPath 多行并存。 */
+  id: string;
+  version: string | null;
+  /** user / project / local。 */
+  scope: string;
+  enabled: boolean;
+  installPath: string | null;
+  installedAt: string | null;
+  lastUpdated: string | null;
+  /** project/local scope 所属目录。 */
+  projectPath: string | null;
+}
+
+export interface ClaudeMarketplace {
+  name: string;
+  /** github / directory。 */
+  source: string;
+  repo: string | null;
+  path: string | null;
+  installLocation: string | null;
+}
+
+export interface ClaudeAvailablePlugin {
+  /** 形如 name@marketplace。 */
+  pluginId: string;
+  name: string;
+  description: string | null;
+  marketplaceName: string;
+}
+
+export interface ClaudePluginInventory {
+  installed: ClaudePluginEntry[];
+  available: ClaudeAvailablePlugin[];
+}
+
+export interface ClaudePluginUpdateResult {
+  /** updated / up_to_date。 */
+  updateOutcome: string;
+  oldVersion: string;
+  newVersion: string;
+}
+
 /** Skill 启停的目标工具：同一份正本分发到各工具自己的 skills 目录。 */
 export type SkillTool = "codex" | "claude";
 

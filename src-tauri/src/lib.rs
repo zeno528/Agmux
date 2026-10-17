@@ -399,6 +399,15 @@ pub fn run() {
             commands::preview_plugin,
             commands::install_plugin,
             commands::uninstall_plugin,
+            commands::claude_list_plugins,
+            commands::claude_list_plugin_marketplaces,
+            commands::claude_add_plugin_marketplace,
+            commands::claude_remove_plugin_marketplace,
+            commands::claude_update_plugin_marketplace,
+            commands::claude_install_plugin,
+            commands::claude_uninstall_plugin,
+            commands::claude_set_plugin_enabled,
+            commands::claude_update_plugin,
             commands::open_path,
         ])
         .setup(move |app| {

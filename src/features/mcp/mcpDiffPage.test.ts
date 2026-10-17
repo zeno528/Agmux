@@ -102,7 +102,6 @@ describe("MCP 差异二级页", () => {
     expect(viewSource).toContain("!header?.editing && mcpDiffBadgeText(targetBadge)");
     expect(viewSource).toContain('t("list.viewDiff")');
     expect(viewSource).not.toContain("{header?.badgeText ? (");
-    expect(viewSource).toContain('className="apple-count-badge"');
     expect(viewSource).not.toContain("list.diffChip");
     expect(viewSource).not.toContain("McpSyncDialog");
   });

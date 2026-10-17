@@ -9,6 +9,7 @@ import { TrashIcon } from "../../components/TrashIcon";
 import AddPluginView from "./AddPluginView";
 import MarketplaceDetailView from "./MarketplaceDetailView";
 import SourceLink from "./components/SourceLink";
+import { MarketplacePage, MarketplaceGroup, MarketplaceRow } from "./components/MarketplaceLayout";
 import { findConfiguredMarketplace, marketplaceKindLabels, recommendedMarketplaces, splitMarketplaceCards } from "./pluginMeta";
 import type { PluginMarketplace, PluginUpdate } from "../../types";
 
@@ -171,28 +172,14 @@ export default function PluginMarketplaceView({
 
   const { official, thirdParty } = splitMarketplaceCards(marketplaces);
 
-  const renderMarketplaceRow = (marketplace: PluginMarketplace) => {
-    const pluginCount = marketplacePluginCounts[marketplace.name];
-    return (
-      <div key={marketplace.name} className="apple-list-row">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold">{marketplace.display_name ?? marketplace.name}</span>
-            {pluginCount === undefined ? (
-              <span role="status" aria-label={t("marketDetail.loadingAria")}><LoadingSpinner /></span>
-            ) : pluginCount === null ? (
-              <span className="apple-chip" aria-label={t("market.pluginCountUnavailable")}>—</span>
-            ) : (
-              <span className="apple-chip" aria-label={t("marketDetail.browsableAria", { count: pluginCount })}>
-                {t("market.pluginCount", { count: pluginCount })}
-              </span>
-            )}
-          </div>
-          <div className="mono muted meta-xs mt-1 break-all">{marketplace.root}</div>
-        </div>
-        {/* 行内动作与 Skill/MCP 列表同构：图标按钮放右侧动作区，不进标题行（32px 图标会把行撑高 10px） */}
-        <div className="flex shrink-0 items-center gap-2">
-          {marketplace.kind === "third-party" ? (
+  const renderMarketplaceRow = (marketplace: PluginMarketplace) => (
+    <MarketplaceRow
+      key={marketplace.name}
+      name={marketplace.display_name ?? marketplace.name}
+      source={marketplace.root}
+      count={marketplacePluginCounts[marketplace.name]}
+      actions={<>
+        {marketplace.kind === "third-party" ? (
             <button
               type="button"
               className="apple-icon-button text-[var(--danger)]/70 hover:bg-(--danger)/10 hover:text-[var(--danger)]"
@@ -208,10 +195,9 @@ export default function PluginMarketplaceView({
             <ChevronRight className="h-4 w-4" strokeWidth={2} />
             {t("action.browse")}
           </button>
-        </div>
-      </div>
-    );
-  };
+      </>}
+    />
+  );
 
   // 未配置的推荐条目：卡内兜底安装行，安装成功后按已配置市场归位
   const renderPendingRow = (recommended: (typeof recommendedMarketplaces)[number]) => (
@@ -235,18 +221,10 @@ export default function PluginMarketplaceView({
   const renderMarketplaceCard = (kind: PluginMarketplace["kind"]) => {
     const card = kind === "official" ? official : thirdParty;
     return (
-      <>
-        <div className="flex items-center gap-2">
-          <div className="field-label">{t(marketplaceKindLabels[kind])}</div>
-          {marketplacesLoaded ? (
-            <span className="apple-chip" aria-label={t("market.cardCountAria", { count: card.marketplaces.length })}>{card.marketplaces.length}</span>
-          ) : <LoadingSpinner />}
-        </div>
-        <div className="apple-group apple-list-card">
-          {card.marketplaces.map(renderMarketplaceRow)}
-          {card.pending.map(renderPendingRow)}
-        </div>
-      </>
+      <MarketplaceGroup title={t(marketplaceKindLabels[kind])} count={marketplacesLoaded ? card.marketplaces.length : undefined}>
+        {card.marketplaces.map(renderMarketplaceRow)}
+        {card.pending.map(renderPendingRow)}
+      </MarketplaceGroup>
     );
   };
 
@@ -266,30 +244,24 @@ export default function PluginMarketplaceView({
   }
 
   return (
-    <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
-      <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
-        <button type="button" className="apple-page-header apple-back-button" aria-label={t("nav.backToPlugins")} onClick={onBack}>
-          <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
-          <span className="apple-title">{t("marketplace")}</span>
+    <MarketplacePage
+      contentRef={contentRef}
+      backLabel={t("nav.backToPlugins")}
+      onBack={onBack}
+      heading={<><ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} /><span className="apple-title">{t("marketplace")}</span></>}
+      actions={<>
+        <button type="button" className="apple-action-button" disabled={checkingUpdates || upgradingAll} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
+          <RefreshCw className={`h-4 w-4 ${checkingUpdates || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
+          {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
         </button>
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checkingUpdates || upgradingAll} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
-            <RefreshCw className={`h-4 w-4 ${checkingUpdates || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
-            {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
-          </button>
-          <button type="button" className="apple-action-button app-button--primary" onClick={() => setShowAddPlugin(true)}>
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            {t("add.title")}
-          </button>
-        </div>
-      </div>
-      <div ref={contentRef} className="apple-edit-content">
-        <div className="space-y-4">
-          {marketplacesError ? <p className="muted text-sm">{marketplacesError}</p> : null}
-          {renderMarketplaceCard("official")}
-          {renderMarketplaceCard("third-party")}
-        </div>
-      </div>
-    </section>
+        <button type="button" className="apple-action-button app-button--primary" onClick={() => setShowAddPlugin(true)}>
+          <Plus className="h-4 w-4" strokeWidth={2} />{t("add.title")}
+        </button>
+      </>}
+    >
+      {marketplacesError ? <p className="muted text-sm">{marketplacesError}</p> : null}
+      {renderMarketplaceCard("official")}
+      {renderMarketplaceCard("third-party")}
+    </MarketplacePage>
   );
 }

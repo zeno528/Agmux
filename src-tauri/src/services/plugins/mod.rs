@@ -209,11 +209,16 @@ impl PluginSummary {
 }
 
 mod catalog;
+mod claude;
 mod cli;
 mod ops;
 mod skills;
 mod store;
 
+pub use claude::{
+    ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory,
+    ClaudePluginUpdateResult,
+};
 pub(crate) use cli::{wait_child_with_timeout, ChildOutput};
 
 #[cfg(test)]

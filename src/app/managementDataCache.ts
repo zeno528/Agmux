@@ -1,5 +1,5 @@
 import { api } from "../api";
-import type { ClaudeProfileSummary, CliStatus, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
+import type { ClaudeMarketplace, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
 
 export type McpProbeCacheEntry = {
   fingerprint: string;
@@ -45,6 +45,7 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
   let cache: T | null = null;
   let request: Promise<T> | null = null;
   let restored = false;
+  let revision = 0;
 
   const restoreFromStorage = () => {
     if (restored || !persist) return;
@@ -66,8 +67,11 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
       // 窗口期内切页再回来只能对着在途请求转圈。
       if (cache !== null && !force) return Promise.resolve(cache);
       if (!request) {
+        const startedAt = revision;
         request = loader()
           .then((items) => {
+            // 用户操作写入的新状态优先于更早发出的列表请求。
+            if (startedAt !== revision && cache !== null) return cache;
             cache = items;
             saveToStorage(items);
             return items;
@@ -83,6 +87,7 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
       return cache;
     },
     set(items: T): void {
+      revision += 1;
       cache = items;
       saveToStorage(items);
     },
@@ -113,6 +118,29 @@ const claudeProfiles = createManagementCache<ClaudeProfileSummary[]>(api.claudeL
 const pluginMarketplaces = createManagementCache<PluginMarketplace[]>(api.listPluginMarketplaces, {
   key: "agmux.plugin-marketplaces-cache-v1",
   restore: restoreNamedList<PluginMarketplace>,
+});
+/// Claude 插件全景缓存的最小形状校验：installed/available 都是数组，installed 每项含字符串 id。
+function restoreClaudePluginInventory(raw: unknown): ClaudePluginInventory | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const candidate = raw as { installed?: unknown; available?: unknown };
+  if (!Array.isArray(candidate.installed) || !Array.isArray(candidate.available)) return null;
+  if (candidate.installed.some((item) => typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string")) return null;
+  return raw as ClaudePluginInventory;
+}
+const claudePlugins = createManagementCache<ClaudePluginInventory>(api.claudeListPlugins, {
+  key: "agmux.claude-plugins-cache-v1",
+  restore: (raw) => {
+    const inventory = restoreClaudePluginInventory(raw);
+    return inventory ? { ...inventory, available: [] } : null;
+  },
+});
+const claudePluginCatalog = createManagementCache<ClaudePluginInventory>(() => api.claudeListPlugins(true), {
+  key: "agmux.claude-plugin-catalog-cache-v1",
+  restore: restoreClaudePluginInventory,
+});
+const claudePluginMarketplaces = createManagementCache<ClaudeMarketplace[]>(api.claudeListPluginMarketplaces, {
+  key: "agmux.claude-plugin-marketplaces-cache-v1",
+  restore: restoreNamedList<ClaudeMarketplace>,
 });
 // 备份记录列表：只在内存缓存（不落 localStorage）——设置页切分页重挂载时直出，
 // 避免先闪"还没有备份记录"空态；跨重启的首开由进页静默刷新立刻补齐。
@@ -206,6 +234,27 @@ export function getCachedPluginMarketplaces(): PluginMarketplace[] | null {
 
 export function loadPluginMarketplaces(force = false): Promise<PluginMarketplace[]> {
   return pluginMarketplaces.load(force);
+}
+
+export function loadClaudePlugins(force = false, includeAvailable = false): Promise<ClaudePluginInventory> {
+  return (includeAvailable ? claudePluginCatalog : claudePlugins).load(force);
+}
+
+export function getCachedClaudePlugins(includeAvailable = false): ClaudePluginInventory | null {
+  return (includeAvailable ? claudePluginCatalog : claudePlugins).get();
+}
+
+export function setClaudePluginsCache(items: ClaudePluginInventory, includeAvailable = false): void {
+  if (includeAvailable) claudePluginCatalog.set(items);
+  else claudePlugins.set({ ...items, available: [] });
+}
+
+export function loadClaudePluginMarketplaces(force = false): Promise<ClaudeMarketplace[]> {
+  return claudePluginMarketplaces.load(force);
+}
+
+export function getCachedClaudePluginMarketplaces(): ClaudeMarketplace[] | null {
+  return claudePluginMarketplaces.get();
 }
 
 export function getCachedSkills(): SkillSummary[] | null {
