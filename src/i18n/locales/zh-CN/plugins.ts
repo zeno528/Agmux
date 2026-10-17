@@ -89,8 +89,6 @@ export default {
     empty: "还没有安装插件。点击右上角「市场源」添加第三方市场",
     searchPlaceholder: "搜索插件…",
     noMatch: "没有匹配的插件",
-    viewDetailAria: "查看 {{name}} 详情",
-    viewDetailTitle: "点击查看详情",
     uninstallAria: "卸载 {{name}}",
     sourceKept: "市场源保留",
     sourceKeptMarket: "市场源 {{marketplace}} 保留",
@@ -141,7 +139,6 @@ export default {
     disabled: "已禁用",
     toggleLabel: "启用或禁用 {{name}}",
     action: {
-      upgrade: "升级",
       upgradeTitle: "升级到 v{{version}}（升级后重启 Claude Code 会话生效）",
       upgradeTo: "升级到 v{{version}}",
       uninstall: "卸载",

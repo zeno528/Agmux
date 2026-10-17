@@ -1,6 +1,6 @@
 import type { MarketplacePlugin, PluginMarketplace, PluginSummary } from "../../types";
 
-export type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
+type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
 
 /** 插件清单 contains / capabilities 的数据键 → 展示标签的 i18n 键（数据键本身不是界面文案）。 */
 export const containsLabels: Partial<Record<string, ContainsLabelKey>> = {

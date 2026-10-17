@@ -89,8 +89,6 @@ export default {
     empty: "No plugins installed yet. Click \"Marketplaces\" in the top right to add a third-party marketplace",
     searchPlaceholder: "Search plugins...",
     noMatch: "No matching plugins",
-    viewDetailAria: "View {{name}} details",
-    viewDetailTitle: "Click to view details",
     uninstallAria: "Uninstall {{name}}",
     sourceKept: "the marketplace source is kept",
     sourceKeptMarket: "the marketplace source {{marketplace}} is kept",
@@ -141,7 +139,6 @@ export default {
     disabled: "Disabled",
     toggleLabel: "Enable or disable {{name}}",
     action: {
-      upgrade: "Upgrade",
       upgradeTitle: "Upgrade to v{{version}} (restart the Claude Code session to apply)",
       upgradeTo: "Upgrade to v{{version}}",
       uninstall: "Uninstall",
