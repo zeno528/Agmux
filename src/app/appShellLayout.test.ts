@@ -396,13 +396,14 @@ describe("AppShell 布局", () => {
     expect(styles).not.toContain(".cm-horizontal-scrollbar");
   });
 
-  it("通用模板复用 Skill 预览的视口高度，保留自己的宽度及其他编辑器限高", () => {
+  it("通用模板弹窗按窗口宽高固定占比，编辑器占满正文剩余高度", () => {
     const skillsSource = readFileSync(new URL("../features/skills/SkillsView.tsx", import.meta.url), "utf8");
     const templateRule = styles.match(/\.claude-template-dialog \{([^}]+)\}/)?.[1];
     expect(styles.includes("--dialog-preview-height: 60vh;")).toBe(true);
     expect(skillsSource.match(/h-\[var\(--dialog-preview-height\)\]/g)).toHaveLength(4);
-    expect(templateRule).toContain("width: min(clamp(720px, 70vw, 900px), calc(100vw - 2rem));");
-    expect(templateRule).toContain("--editor-max-height: var(--dialog-preview-height);");
+    expect(templateRule).toContain("width: 80vw;");
+    expect(templateRule).toContain("height: 80vh;");
+    expect(templateRule).toContain("--editor-max-height: 100%;");
     expect(styles.includes("--editor-max-height: min(34rem, 60vh);")).toBe(true);
   });
 

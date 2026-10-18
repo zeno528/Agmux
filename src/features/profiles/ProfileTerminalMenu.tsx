@@ -29,7 +29,7 @@ export function nextDirs(current: string[], dir: string) {
  *
  * 列表只在首次展开时读取，不进冷启动路径。
  */
-export default function ProfileTerminalMenu({ profileId }: { profileId: string }) {
+export default function ProfileTerminalMenu({ profileId, active }: { profileId: string; active: boolean }) {
   const { t } = useTranslation("profiles");
   const feedback = useFeedback();
   const [open, setOpen] = useState(false);
@@ -95,10 +95,7 @@ export default function ProfileTerminalMenu({ profileId }: { profileId: string }
 
   const menu = open ? createPortal(
     <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("terminal.menuLabel")} style={{ ...menuStyle, minWidth: "14rem" }}>
-      <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => void pickAndLaunch()}>
-        <span className="flex items-center gap-2"><FolderPlus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("terminal.new")}</span>
-      </button>
-      {dirs.length === 0 ? <p className="muted meta-xs px-2 py-1.5">{t("terminal.empty")}</p> : dirs.map((dir) => (
+      {dirs.map((dir) => (
         <div key={dir} className="app-select-option app-selection-state min-w-0 gap-0.5! p-0! focus-within:bg-(--hover-bg)">
           <button type="button" role="menuitem" className="app-select-option min-w-0 flex-1 justify-start! gap-2!" title={dir} onClick={() => void launch(dir)}>
             <Folder className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
@@ -109,6 +106,12 @@ export default function ProfileTerminalMenu({ profileId }: { profileId: string }
           </button>
         </div>
       ))}
+      <div className={dirs.length > 0 ? "mt-1 border-t border-(--panel-divider) pt-1" : undefined}>
+        <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => void pickAndLaunch()}>
+          <span className="flex items-center gap-2"><FolderPlus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("terminal.new")}</span>
+        </button>
+        <p className="muted meta-xs px-2 pt-0.5 pb-1.5">{t(active ? "terminal.globalConfig" : "terminal.profileConfig")}</p>
+      </div>
     </div>,
     document.body,
   ) : null;

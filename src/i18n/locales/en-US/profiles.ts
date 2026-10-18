@@ -116,8 +116,9 @@ export default {
   terminal: {
     open: "Open terminal",
     menuLabel: "Terminal working directory",
+    globalConfig: "Start with the currently active configuration",
+    profileConfig: "Use this provider's configuration only in this terminal",
     new: "Add project",
-    empty: "No directory yet — use Add project to pick one",
     remove: "Remove this directory",
     pickDir: "Choose a working directory",
     desktopOnly: "Launching a terminal needs the desktop app; the browser preview can't do it",

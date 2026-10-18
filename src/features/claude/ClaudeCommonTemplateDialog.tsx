@@ -80,7 +80,7 @@ export default function ClaudeCommonTemplateDialog({ sourceText, onClose }: {
 
   return (
     <AppDialog
-      open
+      open={!loading}
       onOpenChange={(open) => { if (!open && !saving) onClose(); }}
       title={t("commonTemplate.title")}
       description={t("commonTemplate.description")}

@@ -116,8 +116,9 @@ export default {
   terminal: {
     open: "打开终端",
     menuLabel: "终端工作目录",
+    globalConfig: "使用当前已激活的配置启动",
+    profileConfig: "仅此终端使用该供应商配置",
     new: "添加项目",
-    empty: "还没有目录，点「添加项目」选一个",
     remove: "移除该目录",
     pickDir: "选择工作目录",
     desktopOnly: "启动终端需要桌面版，浏览器预览不支持",

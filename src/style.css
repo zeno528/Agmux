@@ -86,7 +86,7 @@
   --input-min-height: calc(1.6em + 1rem + 2px);
   /* 弹窗沿用原限高；编辑页由共享编辑器按正文可用高度覆盖。 */
   --editor-max-height: min(34rem, 60vh);
-  /* Skill 内容预览与通用模板编辑器共用随窗口变化的高度预算。 */
+  /* Skill 内容预览随窗口变化的高度预算。 */
   --dialog-preview-height: 60vh;
   --icon-button-size: 2rem;
   --radius-control: 0.75rem;
@@ -1316,6 +1316,11 @@ body.drag-active * {
   overscroll-behavior: contain;
 }
 
+/* 代码编辑页底部留白减半，让编辑器更贴近操作栏。 */
+.apple-edit-page > .apple-edit-content:has(.apple-editor-shell) {
+  padding-bottom: calc(var(--gap-section) * 0.5);
+}
+
 /* 滚动容器的直接子项永不压缩：overflow:hidden 的卡片 flex 自动最小高度为 0，
    默认 shrink 会让超高内容被压扁裁切、容器永不溢出——表现就是"滚不动" */
 .apple-edit-content > * {
@@ -2324,10 +2329,30 @@ button:focus-visible {
   width: min(clamp(600px, 61.8vw, 680px), calc(100vw - 2rem));
 }
 
-/* Claude 通用模板编辑：宽度在 720～900px 间随窗口变化，小窗口仍保留两侧边距。 */
+/* 通用模板占窗口宽高的 80%，标题与操作栏之外的空间全部留给编辑器。 */
 .claude-template-dialog {
-  width: min(clamp(720px, 70vw, 900px), calc(100vw - 2rem));
-  --editor-max-height: var(--dialog-preview-height);
+  width: 80vw;
+  height: 80vh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  --editor-max-height: 100%;
+}
+
+.claude-template-dialog .app-dialog-body {
+  min-height: 0;
+}
+
+.claude-template-dialog .editor-attach-group {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+.claude-template-dialog .apple-editor-shell,
+.claude-template-dialog .apple-editor-surface,
+.claude-template-dialog .apple-editor-surface > div,
+.claude-template-dialog .cm-editor {
+  height: 100%;
 }
 
 .app-dialog-content--confirm .app-dialog-description {
