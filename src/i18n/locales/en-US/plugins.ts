@@ -1,18 +1,15 @@
 /** Plugins page strings. */
 export default {
   title: "Plugins",
+  inventory: {
+    label: "Codex content type",
+    apps: "Apps",
+    loadingApps: "Loading installed Codex apps…",
+    noApps: "No matching installed apps",
+  },
   marketplace: "Marketplace",
   nav: {
     backToPlugins: "Back to plugins",
-  },
-  // Data keys from the plugin manifest (contains / capabilities) → display labels (the keys themselves are not UI text)
-  contains: {
-    skills: "Skills",
-    mcp: "MCP",
-    app: "App",
-    hooks: "Hook",
-    agents: "Agent",
-    commands: "Command",
   },
   // Data values for plugin origin / marketplace kind → display labels
   origin: {
@@ -26,20 +23,21 @@ export default {
   },
   action: {
     install: "Install",
+    toggleLabel: "Enable or disable {{name}}",
+    managed: "Managed by Codex",
+    managedHelp: "This plugin cannot be toggled here. Manage it in the Codex desktop app, then reopen this page to refresh.",
     uninstall: "Uninstall",
     checkUpdates: "Check for updates",
     upgradeAll: "Update all",
     removeMarket: "Remove marketplace",
   },
+  status: {
+    on: "Enabled",
+    off: "Disabled",
+  },
   detail: {
-    disabled: "Disabled",
-    category: "Category: {{category}}",
-    origin: "Source",
     marketplace: "Marketplace",
-    local: "Local",
     installPath: "Install location",
-    composition: "Plugin contents",
-    compositionEmpty: "No contents detected",
     skillCount: "Skills: {{count}}",
     loadingSkills: "Loading Skill details...",
     skillsEmpty: "This plugin has no readable Skill details",
@@ -66,7 +64,6 @@ export default {
     marketPlaceholder: "owner/repo, https://...git, or a local marketplace folder",
   },
   list: {
-    loading: "Loading plugins...",
     empty: "No plugins installed yet. Click \"Marketplaces\" in the top right to add a third-party marketplace",
     searchPlaceholder: "Search plugins...",
     noMatch: "No matching plugins",
@@ -92,8 +89,8 @@ export default {
   },
   // Board hierarchy: engine dimension → full-width search → filter chips → section grids (shared by Codex / Claude)
   board: {
-    codexInstalledHelp: "Plugins installed in Codex remain installed when switching providers. Codex manages built-in plugins; plugins that can be uninstalled show an uninstall button.",
-    codexAvailableHelp: "Plugins from marketplaces that are not yet installed. Restart Codex after installation to use them. Complete any required authorization in the Codex desktop app.",
+    codexInstalledHelp: "This page reloads state from Codex when opened. Both clients must use the same account and configuration directory. Local plugin toggles update user settings; project or managed settings may override them, and existing sessions may need a restart. Manage remote plugin toggles in Codex. An uninstall button appears when supported through official commands.",
+    codexAvailableHelp: "Reads the Codex account directory and configured marketplaces, excluding runtime components, entries without installation permission, and installed plugins. Desktop's private hiding and recommendation rules are not fully synchronized. Complete authorization in Codex Desktop when required.",
     filterAll: "All",
     filterInstalled: "Installed",
     filterAvailable: "Available",
@@ -120,7 +117,6 @@ export default {
     scopeProject: "Project",
     scopeLocal: "Local",
     refreshMarketAria: "Refresh plugin marketplace {{name}}",
-    loading: "Loading Claude Code plugins...",
     empty: "No Claude Code plugins installed yet. Pick one in the Available section, or install the CLI in Agent Tools first",
     disabled: "Disabled",
     toggleLabel: "Enable or disable {{name}}",

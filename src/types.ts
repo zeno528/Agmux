@@ -266,9 +266,6 @@ export interface MarketplacePlugin {
   source: string | null;
   display_name: string | null;
   description: string | null;
-  category: string | null;
-  capabilities: string[];
-  contains: string[];
   /** 市场物化目录内的本地图标（未安装插件同样有本地 checkout 文件）。 */
   icon_path?: string | null;
 }
@@ -398,15 +395,23 @@ export interface SkillCandidate {
   modified_at: number;
 }
 
+export interface CodexAppSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  icon_path: string | null;
+}
+
 export interface PluginSummary {
+  desktop_visible: boolean;
   name: string;
   version: string | null;
   display_name: string | null;
   description: string | null;
-  category: string | null;
-  capabilities: string[];
-  contains: string[];
   enabled: boolean;
+  can_toggle: boolean;
+  can_uninstall: boolean;
   /** official=官方市场；codex=第三方市场。 */
   origin: "official" | "codex";
   marketplace: string | null;

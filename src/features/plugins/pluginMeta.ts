@@ -1,25 +1,21 @@
-import type { MarketplacePlugin, PluginSummary } from "../../types";
+import type { CodexAppSummary, MarketplacePlugin, PluginSummary } from "../../types";
 
-type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
-
-/** 插件清单 contains / capabilities 的数据键 → 展示标签的 i18n 键（数据键本身不是界面文案）。 */
-export const containsLabels: Partial<Record<string, ContainsLabelKey>> = {
-  skills: "contains.skills",
-  mcp: "contains.mcp",
-  app: "contains.app",
-  hooks: "contains.hooks",
-  agents: "contains.agents",
-  commands: "contains.commands",
-};
+/** 同一服务优先复用官方插件图标，避免应用目录的图片地址失效或缺省。 */
+export function resolveAppIcon(
+  app: Pick<CodexAppSummary, "name" | "icon_path">,
+  plugins: readonly Pick<PluginSummary, "name" | "display_name" | "origin" | "icon_path">[],
+): string | null {
+  const name = app.name.trim().toLowerCase();
+  return plugins.find((plugin) => plugin.origin === "official" && plugin.icon_path
+    && [plugin.name, plugin.display_name].some((label) => label?.trim().toLowerCase() === name))?.icon_path
+    ?? app.icon_path;
+}
 
 /** 插件来源数据值（official / codex）→ 展示标签的 i18n 键。 */
 export const originLabels: Partial<Record<PluginSummary["origin"], "origin.official" | "origin.thirdParty">> = {
   official: "origin.official",
   codex: "origin.thirdParty",
 };
-
-/** 可卸载的来源（官方市场与 Skill 注册表除外） */
-export const removableOrigins: readonly PluginSummary["origin"][] = ["codex"];
 
 export const recommendedMarketplaces = [
   {
@@ -64,14 +60,15 @@ export function findConfiguredMarketplace<T extends { name: string }>(
 }
 
 /// 别名市场纠正：Codex 给同一目录挂镜像/远程双身份，安装记录只落在其中一个；
-/// 条目标记未安装但同名插件已在任意市场安装时视为已装（名单来自已安装列表，无需额外 CLI 查询）。
+/// 保留远程目录的安装标记，并补齐本地安装名单；同名但不同市场的插件不合并。
 export function resolveAliasInstalled(
   plugins: MarketplacePlugin[],
-  installedNames: ReadonlySet<string>,
+  installedIds: ReadonlySet<string>,
 ): MarketplacePlugin[] {
-  return plugins.map((plugin) =>
-    !plugin.installed && installedNames.has(plugin.name) ? { ...plugin, installed: true } : plugin,
-  );
+  return plugins.map((plugin) => {
+    const installed = plugin.installed || installedIds.has(plugin.plugin_id) || installedIds.has(`${plugin.plugin_id}-remote`);
+    return plugin.installed === installed ? plugin : { ...plugin, installed };
+  });
 }
 
 /// 市场明细排序：已安装在前，组内按名称。

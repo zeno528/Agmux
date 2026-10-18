@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -31,7 +31,7 @@ export function AppSearchInput({ value, onChange, placeholder, className = "w-44
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => onChange("")}
       >
-        <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+        {t("search.clearText")}
       </button>
     ) : null}
   </div>;

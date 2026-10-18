@@ -144,10 +144,10 @@ let webPlugins: PluginSummary[] = [
     version: "1.2.0",
     display_name: "Memory Bank",
     description: "跨会话的记忆管理插件（浏览器调试 fixture）",
-    category: "memory",
-    capabilities: ["read", "write"],
-    contains: ["skills", "mcp"],
     enabled: true,
+    can_toggle: true,
+    desktop_visible: true,
+    can_uninstall: true,
     origin: "codex",
     marketplace: "example-plugins",
     store_path: "C:\\Users\\<user>\\.codex\\plugins\\cache\\example-plugins\\memory-bank\\1.2.0",
@@ -158,10 +158,10 @@ let webPlugins: PluginSummary[] = [
     version: "0.4.1",
     display_name: null,
     description: "代码审查工作流（已禁用示例）",
-    category: null,
-    capabilities: [],
-    contains: ["skills"],
     enabled: false,
+    can_toggle: true,
+    desktop_visible: true,
+    can_uninstall: true,
     origin: "codex",
     marketplace: "example-plugins",
     store_path: "C:\\Users\\<user>\\.codex\\plugins\\cache\\example-plugins\\code-reviewer\\0.4.1",
@@ -172,10 +172,10 @@ let webPlugins: PluginSummary[] = [
     version: "26.819.11345",
     display_name: "Documents",
     description: "官方市场里的已装插件（只读示例）",
-    category: null,
-    capabilities: [],
-    contains: ["skills"],
     enabled: true,
+    can_toggle: true,
+    desktop_visible: false,
+    can_uninstall: false,
     origin: "official",
     marketplace: "openai-primary-runtime",
     store_path: "C:\\Users\\<user>\\.cache\\codex-runtimes\\plugins\\documents",
@@ -186,10 +186,10 @@ let webPlugins: PluginSummary[] = [
     version: "4.9.0",
     display_name: "Ponytail",
     description: "用户自装的第三方市场插件（经 codex CLI 卸载）",
-    category: null,
-    capabilities: [],
-    contains: ["skills"],
     enabled: true,
+    can_toggle: true,
+    desktop_visible: true,
+    can_uninstall: true,
     origin: "codex",
     marketplace: "ponytail",
     store_path: "C:\\Users\\<user>\\.codex\\plugins\\cache\\ponytail\\ponytail\\4.9.0",
@@ -338,9 +338,6 @@ let webMarketplacePlugins: Record<string, MarketplacePlugin[]> = {
       source: "https://github.com/DietrichGebert/ponytail.git",
       display_name: "Ponytail",
       description: "Prefer YAGNI, the standard library, native platform features, and the smallest correct implementation",
-      category: "Productivity",
-      capabilities: ["Instructions", "Lifecycle hooks"],
-      contains: ["skills", "hooks"],
     },
   ],
 };
@@ -358,9 +355,6 @@ const webRecommendedMarketplacePlugins: Record<string, MarketplacePlugin[]> = {
       source: "https://github.com/xiaolai/grill-for-claude.git",
       display_name: "Grill",
       description: "用于代码工作流与开发辅助的第三方插件",
-      category: "Development",
-      capabilities: ["Instructions"],
-      contains: ["skills"],
     },
     {
       plugin_id: "xros@xiaolai",
@@ -371,9 +365,6 @@ const webRecommendedMarketplacePlugins: Record<string, MarketplacePlugin[]> = {
       source: "https://github.com/xiaolai/xros.git",
       display_name: "XROS",
       description: "面向终端工作流的第三方插件",
-      category: "Productivity",
-      capabilities: ["Instructions"],
-      contains: ["skills"],
     },
   ],
   youmind: [
@@ -386,9 +377,6 @@ const webRecommendedMarketplacePlugins: Record<string, MarketplacePlugin[]> = {
       source: "./plugins/hyperframes",
       display_name: "HyperFrames by HeyGen",
       description: "Write HTML, render video, and create interactive motion graphics with HeyGen's HyperFrames",
-      category: "Design",
-      capabilities: ["Read", "Write"],
-      contains: ["app"],
     },
   ],
 };
@@ -1215,6 +1203,10 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       ) as T;
     case "list_plugins":
       return webPlugins.map((plugin) => ({ ...plugin })) as T;
+    case "list_plugin_catalog":
+      return Object.values(webMarketplacePlugins).flat().map((plugin) => ({ ...plugin })) as T;
+    case "list_codex_apps":
+      throw new Error("浏览器模式无法读取 Codex 账号的已安装应用，请使用桌面版");
     case "list_skills":
       return webSkills.map((skill) => ({ ...skill })) as T;
     case "get_skill_content":
@@ -1421,8 +1413,6 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       return [...webMarketplaces]
         .sort((left, right) => Number(left.kind !== "official") - Number(right.kind !== "official") || left.name.localeCompare(right.name))
         .map((marketplace) => ({ ...marketplace })) as T;
-    case "list_marketplace_plugins":
-      return (webMarketplacePlugins[String(args?.marketplace ?? "")] ?? []).map((plugin) => ({ ...plugin })) as T;
     case "add_plugin_marketplace": {
       const source = String(args?.url ?? "");
       const name = source.includes("ponytail") ? "ponytail" : source.includes("xiaolai") ? "xiaolai" : "third-party-marketplace";
@@ -1439,6 +1429,12 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       webMarketplaces = [...webMarketplaces.filter((item) => item.name !== name), marketplace];
       webMarketplacePlugins[name] ??= (webRecommendedMarketplacePlugins[name] ?? []).map((plugin) => ({ ...plugin }));
       return marketplace as T;
+    }
+    case "set_plugin_enabled": {
+      const target = webPlugins.find((plugin) => `${plugin.name}@${plugin.marketplace}` === args?.pluginId);
+      if (!target?.can_toggle) throw new Error("该插件的启停由 Codex 管理");
+      target.enabled = Boolean(args?.enabled);
+      return webPlugins.map((plugin) => ({ ...plugin })) as T;
     }
     case "refresh_plugin_marketplace": {
       const marketplace = webMarketplaces.find((item) => item.name === args?.name);
@@ -1460,21 +1456,21 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       if (!item) throw new Error("没有找到可安装的插件");
       item.installed = true;
       const summary: PluginSummary = {
+        desktop_visible: true,
         name: item.name,
         version: item.version,
         display_name: item.display_name,
         description: item.description ?? `来自 ${marketplace} 市场的插件`,
-        category: item.category,
-        capabilities: item.capabilities,
-        contains: item.contains,
         enabled: true,
+        can_toggle: true,
+        can_uninstall: !marketplace.startsWith("openai"),
         origin: "codex",
         marketplace,
         store_path: `C:\\Users\\<user>\\.codex\\plugins\\cache\\${marketplace}\\${item.name}\\${item.version ?? "latest"}`,
         source_url: item.source,
       };
       webPlugins = [...webPlugins.filter((plugin) => plugin.name !== name), summary].sort((a, b) => a.name.localeCompare(b.name));
-      return summary as T;
+      return webPlugins.map((plugin) => ({ ...plugin })) as T;
     }
     case "check_plugin_updates":
       return webPluginUpdates.filter((update) => {
@@ -1497,23 +1493,22 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       return undefined as T;
     }
     case "uninstall_plugin": {
-      // 与后端一致：官方市场拒绝卸载；Skill 在独立页面展示
-      const target = webPlugins.find((plugin) => plugin.name === args?.name);
+      const target = webPlugins.find((plugin) => plugin.name === args?.name && plugin.marketplace === args?.marketplace);
       if (webSkills.some((skill) => skill.name === args?.name)) {
         throw new Error("该 Skill 属于 Codex Skill 注册表，请在 Codex 内管理它");
       }
-      if (target?.origin === "official") {
-        throw new Error("该插件属于 Codex 官方市场，请在 Codex 内管理它");
+      if (!target?.can_uninstall) {
+        throw new Error("该插件不支持在这里卸载，请在 Codex 内管理它");
       }
-      webPlugins = webPlugins.filter((plugin) => plugin.name !== args?.name);
-      Object.values(webMarketplacePlugins).forEach((plugins) => {
+      webPlugins = webPlugins.filter((plugin) => plugin !== target);
+      Object.entries(webMarketplacePlugins).forEach(([market, plugins]) => {
         plugins.forEach((plugin) => {
-          if (plugin.name === args?.name) {
+          if (market === args?.marketplace && plugin.name === args?.name) {
             plugin.installed = false;
           }
         });
       });
-      return undefined as T;
+      return webPlugins.map((plugin) => ({ ...plugin })) as T;
     }
     // ==================== Claude Code 插件管理 ====================
     case "claude_list_plugins":

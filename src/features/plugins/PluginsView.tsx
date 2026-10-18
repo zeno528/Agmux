@@ -10,7 +10,7 @@ export type PluginHeaderState = { title: ReactNode; editing?: boolean };
 
 /// 与 MCP 一样把页头留在父层，切换客户端时保留滑块实例。
 /// 搜索框通栏放在正文首行（照看板层级：客户端维度 → 搜索 → 过滤 chips → 分区），作用于当前客户端的看板。
-export default function PluginsView({ state, popEpoch }: { state: AppState; popEpoch: number }) {
+export default function PluginsView({ state, activationEpoch, popEpoch }: { state: AppState; activationEpoch: number; popEpoch: number }) {
   const { t } = useTranslation("plugins");
   const [target, setTarget] = useState<ClientTarget>("codex");
   const [query, setQuery] = useState("");
@@ -40,7 +40,7 @@ export default function PluginsView({ state, popEpoch }: { state: AppState; popE
         {/* 搜索只属于看板：详情/添加等子页（editing）不挂载 */}
         {header?.editing ? null : <PluginSearchInput value={query} onChange={setQuery} className="mb-4 w-full" />}
         {target === "codex"
-          ? <CodexPluginsView state={state} popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
+          ? <CodexPluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
           : <ClaudePluginsView popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />}
       </div>
     </section>

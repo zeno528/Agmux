@@ -1834,6 +1834,12 @@ body.drag-active * {
   gap: var(--gap-section);
 }
 
+/* 可安装分区底部的「显示更多」：Claude/Codex 插件页共用，底部居中与统一上距。 */
+.plugin-show-more {
+  display: flex;
+  margin: 0.75rem auto 0;
+}
+
 .plugin-card {
   display: flex;
   flex-direction: column;
@@ -1858,15 +1864,6 @@ body.drag-active * {
 @media (prefers-reduced-motion: reduce) {
   .plugin-card { transition: none; }
   .plugin-card:hover { transform: none; }
-}
-
-/* 插件卡状态灯：禁用 = 灰色（与 MCP 页离线灯同语义），标题/aria 提供文字说明 */
-.plugin-status-dot {
-  width: 0.375rem;
-  height: 0.375rem;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--text-secondary);
 }
 
 .plugin-card-head {
@@ -1903,6 +1900,8 @@ body.drag-active * {
 .plugin-card-name {
   font-weight: 600;
   letter-spacing: -0.01em;
+  /* 收紧默认 1.6 行高：否则名称行的上半行距把「名称+来源」两行整体下坠，与 34px 图标容器失衡 */
+  line-height: 1.25;
 }
 
 button.plugin-card-name {
@@ -3351,23 +3350,26 @@ button:focus-visible {
 /* 搜索框灰色描边画在内部，避免缩放后边框外侧出现浅色细线。 */
 .app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border), 0 0 0 3px transparent; }
 
-/* 搜索框统一隐藏浏览器原生清空键，由 AppSearchInput 的清空按钮接管（lucide 图标 + 悬停反馈）。 */
+/* 搜索框统一隐藏浏览器原生清空键，由 AppSearchInput 的清空按钮接管（文本胶囊 + 悬停反馈）。 */
 .app-input--pill::-webkit-search-cancel-button { display: none; }
 
-/* 有内容时右侧给清空按钮让位，文本不滑到按钮底下。 */
-.app-input--pill--clearable { padding-right: 1.75rem; }
+/* 有内容时右侧给清空胶囊让位，文本不滑到按钮底下（按最宽语言英文 Clear 预留）。 */
+.app-input--pill--clearable { padding-right: 3.25rem; }
 
-/* 搜索清空按钮：小圆形热区、悬停底色反馈，与图标按钮同一套交互语言。 */
+/* 搜索清空按钮：文本胶囊热区（比例对齐 apple-chip），悬停底色反馈。 */
 .app-search-clear {
   position: absolute;
   right: 0.375rem;
   top: 50%;
   transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 1.25rem;
+  display: inline-flex;
+  align-items: center;
   height: 1.25rem;
+  padding: 0 0.5rem;
   border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  background: var(--chip-bg);
   color: var(--text-secondary);
   transition:
     background-color var(--motion-fast) ease-out,

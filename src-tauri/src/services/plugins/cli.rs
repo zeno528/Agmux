@@ -38,7 +38,7 @@ pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
 
 // ==================== CLI 超时 ====================
 
-/// codex CLI 子进程按操作类型分档限时：本地操作（remove 等）正常亚秒完成，
+/// codex CLI 子进程按操作类型分档限时：本地市场查询正常亚秒完成，
 /// 卡住即异常，快速失败；联网操作（add/upgrade = git clone）给慢代理留足时间，
 /// 但也不允许无限等待把 UI 卡死。
 /// `plugin list` 实测并非纯本地读（2026-10-17 直跑 appserver CLI：闲置后首跑 34.7s
@@ -47,9 +47,9 @@ pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
 pub(super) const PLUGIN_CLI_TIMEOUT_FAST_SECS: u64 = 20;
 pub(super) const PLUGIN_CLI_TIMEOUT_NETWORK_SECS: u64 = 60;
 
-/// 是否联网操作（list 出结果前探测远端；add/upgrade/update 底层走 git，慢网/代理下耗时长）。
+/// list/add/remove 可访问远程账号，upgrade/update 拉取 Git。
 pub(super) fn is_network_plugin_op(args: &[&str]) -> bool {
-    args == ["list"]
+    matches!(args, ["list", ..] | ["remove", ..])
         || args
             .iter()
             .any(|arg| matches!(*arg, "add" | "upgrade" | "update"))
@@ -63,8 +63,8 @@ pub(super) fn plugin_cli_timeout(args: &[&str]) -> Duration {
     })
 }
 
-/// 超时报错按档位区分：联网操作大概率是 GitHub 连通问题；
-/// 本地操作（list/remove）卡住与网络无关，不能误导用户去查代理。
+/// 超时报错按档位区分：远程账号请求与 Git 市场拉取均可能受网络影响；
+/// 本地操作卡住与网络无关，不能误导用户去查代理。
 /// `is_network` 由调用方按各自引擎的动词表判定（codex 用 add/upgrade/update，Claude 用 install/update）。
 pub(super) fn plugin_timeout_message(
     is_network: bool,
@@ -73,8 +73,8 @@ pub(super) fn plugin_timeout_message(
 ) -> String {
     if is_network {
         format!(
-            "插件操作超时（{} 秒）：无法连通 GitHub。\
-             请确认网络可访问 github.com，或在代理软件中开启系统代理 / TUN 模式后重试",
+            "插件操作超时（{} 秒）：无法完成远程请求。\
+             请检查 Codex 服务或插件市场的网络连接与应用代理设置后重试",
             timeout.as_secs()
         )
     } else {
@@ -187,7 +187,7 @@ pub(crate) fn wait_child_with_timeout(
 
 fn plugin_cli_action(args: &[&str]) -> &'static str {
     match args {
-        ["list"] => "读取已安装插件列表",
+        ["list", ..] => "读取已安装插件列表",
         ["marketplace", "list"] => "读取插件市场列表",
         ["marketplace", "add", ..] => "添加插件市场",
         ["marketplace", "remove", ..] => "移除插件市场",
@@ -274,14 +274,13 @@ fn log_plugin_cli_run(
 /// 插件 CLI 子进程共享内芯：进程构建、代理注入、限时与错误呈现。
 /// CLI 定位、超时分档与动作标签由两端各自的包装负责（动词表不同：codex add/remove，Claude install/uninstall）。
 fn run_plugin_cli_process(
-    cli: &Path,
+    mut command: std::process::Command,
     args: &[&str],
     timeout: Duration,
     is_network: bool,
     client_cli: &str,
     cwd: Option<&Path>,
 ) -> AppResult<String> {
-    let mut command = super::super::cli::command(cli);
     command.arg("plugin").args(args);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
@@ -337,13 +336,15 @@ fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<String> {
             "未找到 codex CLI（已尝试 ~/.codex/bin、PATH 与桌面版 appserver 目录），无法管理插件"
         )
     })?;
+    let mut command = super::super::cli::command(&cli);
+    command.env("CODEX_HOME", home.join(".codex"));
     run_plugin_cli_process(
-        &cli,
+        command,
         args,
         plugin_cli_timeout(args),
         is_network_plugin_op(args),
         "codex CLI",
-        None,
+        Some(home),
     )
 }
 
@@ -370,7 +371,7 @@ fn run_claude_plugin_inner(home: &Path, args: &[&str], cwd: Option<&Path>) -> Ap
         app_err!("未找到 Claude Code CLI（已尝试 ~/.local/bin 与 PATH），无法管理插件")
     })?;
     run_plugin_cli_process(
-        &cli,
+        super::super::cli::command(&cli),
         args,
         claude_plugin_timeout(args),
         is_claude_network_plugin_op(args),
@@ -390,7 +391,7 @@ mod tests {
         let cli = project.path().join("fixture.cmd");
         std::fs::write(&cli, "@echo off\r\necho %CD%\r\n").unwrap();
         let output = run_plugin_cli_process(
-            &cli,
+            crate::services::cli::command(&cli),
             &["uninstall", "fixture"],
             Duration::from_secs(5),
             false,
@@ -435,6 +436,12 @@ mod tests {
             PLUGIN_CLI_TIMEOUT_NETWORK_SECS,
             "plugin list 出结果前有网络探测，冷跑可超 20s，不能按本地档误杀"
         );
+        for args in [&["list", "--json"][..], &["remove", "sample@market"][..]] {
+            assert_eq!(
+                plugin_cli_timeout(args).as_secs(),
+                PLUGIN_CLI_TIMEOUT_NETWORK_SECS
+            );
+        }
         assert!(looks_like_network_error(
             "fatal: unable to access 'https://github.com/': Failed to connect"
         ));
@@ -458,7 +465,7 @@ mod tests {
             Duration::from_secs(PLUGIN_CLI_TIMEOUT_NETWORK_SECS),
             "codex CLI",
         );
-        assert!(network.contains("GitHub"));
+        assert!(network.contains("远程请求"));
         let local = plugin_timeout_message(
             false,
             Duration::from_secs(PLUGIN_CLI_TIMEOUT_FAST_SECS),

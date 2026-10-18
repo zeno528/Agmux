@@ -22,6 +22,7 @@ export default {
   },
   search: {
     clear: "清空搜索",
+    clearText: "清空",
   },
   select: {
     placeholder: "请选择",

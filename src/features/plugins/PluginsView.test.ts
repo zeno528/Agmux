@@ -106,7 +106,7 @@ it("切换插件引擎保留父层页头和滑块，并将正文滚动归零", a
   const state = await webInvoke<AppState>("get_state");
   const frames: ReactElement<Parameters<typeof ClientTargetSwitch>[0]>[] = [];
   function Capture() {
-    const tree = PluginsView({ state, popEpoch: 0 });
+    const tree = PluginsView({ state, activationEpoch: 0, popEpoch: 0 });
     const header = Children.toArray(tree.props.children)[0] as ReactElement<{ children: ReactNode }>;
     const headerChildren = Children.toArray(header.props.children);
     const toolbar = headerChildren[headerChildren.length - 1] as ReactElement<{ children: ReactNode }>;
@@ -168,17 +168,6 @@ describe("一级列表共用定义", () => {
 
 // 看板契约：市场子页已被拼平的可安装区 + 市场源弹层取代。
 describe("Codex 看板", () => {
-  it("全市场清单拼平进可安装区：别名纠正 + 过滤已装，不经过市场子页", () => {
-    expect(source).toContain("refreshMarketplacePlugins(marketplace.name, marketplace.root)");
-    expect(source).toContain("resolveAliasInstalled(items, installedNames)");
-    expect(source).not.toContain("MarketplaceDetailView");
-  });
-
-  it("安装/卸载同步回写市场缓存，避免可安装区闪回旧状态", () => {
-    expect(source).toContain("setCachedMarketplacePlugins(");
-    expect(source).toContain("markInstalledEverywhere");
-  });
-
   it("市场源管理共用弹层表单，不再提供仓库安装子页", () => {
     expect(source).toContain("<AppDialog");
     expect(source).toContain("<PluginMarketplaceSources");

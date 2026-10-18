@@ -1,17 +1,11 @@
-//! 插件存储：CLI 缺席时的缓存扫描、安装路径解析与 contains/skills 读取。
+//! 插件安装路径解析与图标、Skills 读取。
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::catalog::{derive_contains, read_manifest, resolve_local_path};
+use super::catalog::{read_manifest, resolve_local_path};
 use super::skills::{read_skill_description, walk_files};
-use super::{PluginSkill, PluginSummary, PLUGIN_CACHE_RELATIVE_PATH};
-
-pub(super) fn store_contains(plugin_dir: &Path) -> Vec<String> {
-    let files = walk_files(plugin_dir);
-    let relative: Vec<&str> = files.iter().map(|path| path.as_str()).collect();
-    derive_contains(&relative)
-}
+use super::{PluginSkill, PLUGIN_CACHE_RELATIVE_PATH};
 
 /// 图标文件扩展名（与后端图标读取 command 的白名单一致）。
 const ICON_EXTENSIONS: [&str; 5] = ["png", "svg", "jpg", "jpeg", "webp"];
@@ -154,55 +148,6 @@ pub(super) fn store_skills(plugin_dir: &Path) -> Vec<PluginSkill> {
             })
         })
         .collect()
-}
-
-/// CLI 缺席时的回退：扫 `~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`。
-pub(super) fn scan_codex_plugin_cache(codex_home: &Path) -> Vec<PluginSummary> {
-    let cache_root = codex_home.join(PLUGIN_CACHE_RELATIVE_PATH);
-    let Ok(marketplaces) = std::fs::read_dir(&cache_root) else {
-        return Vec::new();
-    };
-    let mut summaries = Vec::new();
-    for marketplace in marketplaces.flatten() {
-        let marketplace_name = marketplace.file_name().to_string_lossy().to_string();
-        let Ok(plugins) = std::fs::read_dir(marketplace.path()) else {
-            continue;
-        };
-        for plugin in plugins.flatten() {
-            let Ok(versions) = std::fs::read_dir(plugin.path()) else {
-                continue;
-            };
-            let Some((version_dir_name, version_dir)) = versions
-                .flatten()
-                .filter(|entry| entry.path().is_dir())
-                .map(|entry| {
-                    (
-                        entry.file_name().to_string_lossy().to_string(),
-                        entry.path(),
-                    )
-                })
-                .max_by(|(left, _), (right, _)| left.cmp(right))
-            else {
-                continue;
-            };
-            let manifest = read_manifest(&version_dir);
-            let plugin_dir_name = plugin.file_name().to_string_lossy().to_string();
-            let mut summary = PluginSummary::from_parts(
-                &plugin_dir_name,
-                manifest.as_ref(),
-                store_contains(&version_dir),
-                "codex",
-                &version_dir,
-            );
-            // 版本以 manifest 为准：目录名是安装时定死的兜底值，升级后僵死
-            // （实测 ponytail 目录名 1.0.0、manifest 4.10.3）；manifest 缺才回落。
-            summary.version = summary.version.or(Some(version_dir_name));
-            summary.marketplace = Some(marketplace_name.clone());
-            summary.enabled = true;
-            summaries.push(summary);
-        }
-    }
-    summaries
 }
 
 /// Codex 有时在列表中返回 Git 源而非已物化的插件目录；此时读取实际缓存。
@@ -444,50 +389,5 @@ mod tests {
                 cached
             );
         }
-    }
-
-    #[tokio::test]
-    async fn scan_codex_plugin_cache_reads_manifest_and_version() {
-        // 直接测底层 cache 扫描函数，避开 list_plugins 的 CLI 探测链。
-        // 本机 PATH 装了真 codex CLI 会劫持 list_plugins 走 CLI 路径，与 cache fixture 无关；
-        // 这里直调 scan_codex_plugin_cache，本机环境跟它零耦合。
-        // fixture 用抽象名（sample-marketplace / sample-plugin / v1.0.0），不撞现实插件。
-        // 目录名是安装时定死的兜底值，升级后可能僵死：sample-plugin 的 manifest
-        // 缺 version 回落目录名，stale-plugin 的 manifest version 优先于目录名。
-        let home = tempfile::tempdir().unwrap();
-        let codex_home = home.path().join(".codex");
-        let write_plugin = |name: &str, dir_version: &str, manifest: &str| {
-            let dir = codex_home
-                .join("plugins")
-                .join("cache")
-                .join("sample-marketplace")
-                .join(name)
-                .join(dir_version)
-                .join(".codex-plugin");
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("plugin.json"), manifest).unwrap();
-        };
-        write_plugin("sample-plugin", "v1.0.0", r#"{"name":"sample-plugin"}"#);
-        write_plugin(
-            "stale-plugin",
-            "0.9.0",
-            r#"{"name":"stale-plugin","version":"1.2.0"}"#,
-        );
-
-        let plugins = scan_codex_plugin_cache(&codex_home);
-        assert_eq!(plugins.len(), 2);
-        let plugin = plugins
-            .iter()
-            .find(|item| item.name == "sample-plugin")
-            .unwrap();
-        assert_eq!(plugin.marketplace.as_deref(), Some("sample-marketplace"));
-        assert_eq!(plugin.version.as_deref(), Some("v1.0.0"));
-        assert_eq!(plugin.origin, "codex");
-        assert!(plugin.enabled);
-        let stale = plugins
-            .iter()
-            .find(|item| item.name == "stale-plugin")
-            .unwrap();
-        assert_eq!(stale.version.as_deref(), Some("1.2.0"));
     }
 }

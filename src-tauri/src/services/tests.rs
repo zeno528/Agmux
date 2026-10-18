@@ -3005,6 +3005,22 @@ fn apply_raw_profile_carries_live_mcp_section() {
     assert!(!config.contains("marketplaces.stale"), "{config}");
     assert!(!config.contains("stale@stale"), "{config}");
     assert!(config.contains("model = \"glm-5.3\""), "{config}");
+    let second = context
+        .codex_add_custom_profile("第二配置", None, raw, None, None, None, None, None)
+        .unwrap();
+    for enabled in [false, true] {
+        let mut live = codex_config::parse_document(&read_config_text(&context)).unwrap();
+        live["plugins"]["ponytail@ponytail"]["enabled"] = toml_edit::value(enabled);
+        std::fs::write(context.paths.codex_config(), live.to_string()).unwrap();
+        for id in [&second.id, &profile.id] {
+            context.codex_apply_profile(id).unwrap();
+            let config = codex_config::parse_document(&read_config_text(&context)).unwrap();
+            assert_eq!(
+                config["plugins"]["ponytail@ponytail"]["enabled"].as_bool(),
+                Some(enabled)
+            );
+        }
+    }
 }
 
 #[test]

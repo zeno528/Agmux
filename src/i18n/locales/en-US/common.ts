@@ -23,6 +23,7 @@ export default {
   },
   search: {
     clear: "Clear search",
+    clearText: "Clear",
   },
   select: {
     placeholder: "Select...",

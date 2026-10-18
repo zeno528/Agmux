@@ -180,11 +180,11 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     <div className="space-y-4">
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {loaded ? <PluginFilterChips value={filter} onChange={setFilter} counts={{
+        <PluginFilterChips value={filter} onChange={setFilter} counts={loaded ? {
           all: visibleInstalled.length + available.length,
           installed: visibleInstalled.length,
           available: available.length,
-        }} /> : null}
+        } : { all: null, installed: null, available: null }} />
         <div className="ml-auto flex items-center gap-2">
           <button type="button" className="apple-action-button" disabled={checking} onClick={() => void checkUpdates()}>
             <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
@@ -196,11 +196,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
           </button>
         </div>
       </div>
-      {!loaded ? (
-        <EmptyStateCard loading icon={<Blocks className="h-5 w-5" strokeWidth={1.8} />}>
-          <p className="muted">{t("claudePlugin.loading")}</p>
-        </EmptyStateCard>
-      ) : (
+      {!loaded ? null : (
         <>
           {filter !== "available" && visibleInstalled.length ? (
             <section className="plugin-section">
@@ -288,7 +284,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
                 ))}
               </div>
               {available.length > visibleCount ? (
-                <button type="button" className="apple-action-button mt-3" onClick={() => setVisibleCount((count) => count + 40)}>
+                <button type="button" className="apple-action-button plugin-show-more" onClick={() => setVisibleCount((count) => count + 40)}>
                   {t("claudePlugin.showMore")}
                 </button>
               ) : null}

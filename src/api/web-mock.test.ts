@@ -330,7 +330,7 @@ describe("web mock", () => {
     const skills = await webInvoke<SkillSummary[]>("list_skills");
     const pluginSkills = await webInvoke<PluginSkill[]>("list_plugin_skills", { name: "memory-bank", storePath: "C:\\Users\\<user>\\.codex\\plugins\\cache\\memory-bank" });
     const marketplaces = await webInvoke<PluginMarketplace[]>("list_plugin_marketplaces");
-    const marketplacePlugins = await webInvoke<MarketplacePlugin[]>("list_marketplace_plugins", { marketplace: "ponytail" });
+    const marketplacePlugins = await webInvoke<MarketplacePlugin[]>("list_plugin_catalog");
 
     expect(plugins.every((plugin) => plugin.name !== "lark-base")).toBe(true);
     expect(plugins.find((plugin) => plugin.name === "ponytail")?.source_url).toBe("https://github.com/DietrichGebert/ponytail.git");

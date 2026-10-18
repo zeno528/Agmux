@@ -152,6 +152,13 @@ pub async fn list_plugins(state: State<'_, AppContext>) -> AppResult<Vec<PluginS
 }
 
 #[tauri::command]
+pub async fn list_codex_apps(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<crate::services::CodexAppSummary>> {
+    state.list_codex_apps().await
+}
+
+#[tauri::command]
 pub async fn get_plugin_icon(
     path: String,
     state: State<'_, AppContext>,
@@ -377,14 +384,10 @@ pub async fn list_plugin_marketplaces(
 }
 
 #[tauri::command]
-pub async fn list_marketplace_plugins(
-    marketplace: String,
-    root: Option<String>,
+pub async fn list_plugin_catalog(
     state: State<'_, AppContext>,
 ) -> AppResult<Vec<MarketplacePlugin>> {
-    state
-        .list_marketplace_plugins(&marketplace, root.as_deref())
-        .await
+    state.list_plugin_catalog().await
 }
 
 #[tauri::command]
@@ -393,6 +396,15 @@ pub async fn add_plugin_marketplace(
     state: State<'_, AppContext>,
 ) -> AppResult<PluginMarketplace> {
     state.add_plugin_marketplace(&url).await
+}
+
+#[tauri::command]
+pub async fn set_plugin_enabled(
+    plugin_id: String,
+    enabled: bool,
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<PluginSummary>> {
+    state.set_plugin_enabled(&plugin_id, enabled).await
 }
 
 #[tauri::command]
@@ -416,7 +428,7 @@ pub async fn install_marketplace_plugin(
     marketplace: String,
     name: String,
     state: State<'_, AppContext>,
-) -> AppResult<PluginSummary> {
+) -> AppResult<Vec<PluginSummary>> {
     state.install_marketplace_plugin(&marketplace, &name).await
 }
 
@@ -435,8 +447,12 @@ pub async fn upgrade_marketplace_plugin(
 }
 
 #[tauri::command]
-pub async fn uninstall_plugin(name: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.uninstall_plugin(&name).await
+pub async fn uninstall_plugin(
+    name: String,
+    marketplace: String,
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<PluginSummary>> {
+    state.uninstall_plugin(&name, &marketplace).await
 }
 
 // ==================== Claude Code 插件管理 ====================

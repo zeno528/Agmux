@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CliStatus } from "../types";
 
-const { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
+const { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
   codexListMcpServers: vi.fn(),
   claudeListMcpServers: vi.fn(),
   claudeListProfiles: vi.fn(),
   claudeListPlugins: vi.fn(),
-  listMarketplacePlugins: vi.fn(),
+  listPluginCatalog: vi.fn(),
   listPlugins: vi.fn(),
   listDatabaseBackups: vi.fn(),
   getProxyStatus: vi.fn(),
@@ -21,7 +21,7 @@ const localStorageMock = {
   setItem: (key: string, value: string) => persistedStorage.set(key, value),
 };
 
-vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listMarketplacePlugins, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
+vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
 
 describe("managementDataCache", () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe("managementDataCache", () => {
     finish(before);
     expect(await pending).toEqual(after);
     expect(cache.getCachedClaudePlugins()).toEqual(after);
-    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!)).toEqual(after);
+    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!).items).toEqual(after);
     claudeListPlugins.mockResolvedValueOnce(before);
     expect(await cache.loadClaudePlugins(true)).toEqual(before);
   });
@@ -310,10 +310,10 @@ describe("managementDataCache", () => {
   });
 });
 
-describe("marketplace plugin catalog cache", () => {
+describe("Codex account plugin catalog cache", () => {
   beforeEach(() => {
     vi.resetModules();
-    listMarketplacePlugins.mockReset();
+    listPluginCatalog.mockReset();
     persistedStorage.clear();
     vi.stubGlobal("localStorage", localStorageMock);
   });
@@ -329,53 +329,77 @@ describe("marketplace plugin catalog cache", () => {
     source: null,
     display_name: null,
     description: null,
-    category: null,
-    capabilities: [],
-    contains: [],
   });
 
-  it("caches the catalog after a refresh and serves later reads from cache", async () => {
+  it("caches the account directory and deduplicates requests", async () => {
     const catalog = [plugin("a")];
-    listMarketplacePlugins.mockResolvedValue(catalog);
+    listPluginCatalog.mockResolvedValue(catalog);
     const cache = await import("./managementDataCache");
 
-    expect(cache.getCachedMarketplacePlugins("market-a")).toBeNull();
-    const items = await cache.refreshMarketplacePlugins("market-a");
-    expect(cache.getCachedMarketplacePlugins("market-a")).toBe(items);
-    expect(listMarketplacePlugins).toHaveBeenCalledWith("market-a", undefined);
+    expect(cache.getCachedPluginCatalog()).toBeNull();
+    const request = cache.loadPluginCatalog(true);
+    expect(cache.loadPluginCatalog(true)).toBe(request);
+    expect(await request).toEqual(catalog);
+    expect(cache.getCachedPluginCatalog()).toEqual(catalog);
+    await cache.loadPluginCatalog();
+    expect(listPluginCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it("persists marketplace catalogs and restores them after a reload", async () => {
-    listMarketplacePlugins.mockResolvedValue([plugin("a")]);
+  it("persists the catalog and restores it after a reload so the board renders without a loading flash", async () => {
+    const catalog = [plugin("a")];
+    listPluginCatalog.mockResolvedValue(catalog);
     const cache = await import("./managementDataCache");
-    await cache.refreshMarketplacePlugins("market-persist");
-    expect(persistedStorage.get("agmux.marketplace-plugins-cache-v1")).toContain("market-persist");
+    await cache.loadPluginCatalog();
+    expect(persistedStorage.get("agmux.plugin-catalog-cache-v1")).toContain("plugin_id");
 
     vi.resetModules();
     const reloaded = await import("./managementDataCache");
-    expect(reloaded.getCachedMarketplacePlugins("market-persist")).toEqual([plugin("a")]);
-    expect(listMarketplacePlugins).toHaveBeenCalledTimes(1); // 重载后命中持久化缓存，不再发请求
+    expect(reloaded.getCachedPluginCatalog()).toEqual(catalog); // 缓存命中即直出，进页不闪「正在加载」
+    await expect(reloaded.loadPluginCatalog()).resolves.toEqual(catalog);
+    expect(listPluginCatalog).toHaveBeenCalledTimes(1); // 只有首次加载发过请求，重载命中持久化缓存
   });
 
-  it("deduplicates concurrent refreshes for the same marketplace", async () => {
-    listMarketplacePlugins.mockReturnValue(new Promise(() => {}));
+  it.each([
+    ["stale snapshot older than 24h", { at: Date.now() - 25 * 60 * 60 * 1000, items: [plugin("old")] }],
+    ["envelope without a timestamp", { items: [plugin("old")] }],
+    ["legacy bare array", [plugin("old")]],
+  ])("does not restore a %s so a wrong board state never flashes", async (_label, stored) => {
+    persistedStorage.set("agmux.plugin-catalog-cache-v1", JSON.stringify(stored));
+    listPluginCatalog.mockResolvedValue([plugin("fresh")]);
     const cache = await import("./managementDataCache");
 
-    const first = cache.refreshMarketplacePlugins("market-dup");
-    const second = cache.refreshMarketplacePlugins("market-dup");
-    expect(first).toBe(second);
-    expect(listMarketplacePlugins).toHaveBeenCalledTimes(1);
+    expect(cache.getCachedPluginCatalog()).toBeNull(); // 陈旧/来历不明的快照不直出
+    await expect(cache.loadPluginCatalog()).resolves.toEqual([plugin("fresh")]);
+  });
+
+  it("does not restore the obsolete local marketplace snapshot after a reload", async () => {
+    persistedStorage.set("agmux.marketplace-plugins-cache-v1", JSON.stringify({"old-market":[plugin("old")]}));
+    listPluginCatalog.mockResolvedValue([plugin("remote")]);
+    const cache = await import("./managementDataCache");
+    expect(cache.getCachedPluginCatalog()).toBeNull();
+    await expect(cache.loadPluginCatalog()).resolves.toEqual([plugin("remote")]);
+  });
+
+  it("keeps a verified mutation when an older directory request finishes", async () => {
+    let complete!: (items: ReturnType<typeof plugin>[]) => void;
+    listPluginCatalog.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    const cache = await import("./managementDataCache");
+    const request = cache.loadPluginCatalog();
+    const updated = [{...plugin("a"), installed:true}];
+    cache.setCachedPluginCatalog(updated);
+    complete([plugin("a")]);
+    await expect(request).resolves.toEqual(updated);
   });
 
   it("clears the in-flight request on failure so the next entry can retry", async () => {
-    listMarketplacePlugins.mockRejectedValueOnce(new Error("cli failed"));
+    listPluginCatalog.mockRejectedValueOnce(new Error("directory failed"));
     const cache = await import("./managementDataCache");
 
-    await expect(cache.refreshMarketplacePlugins("market-err")).rejects.toThrow("cli failed");
-    expect(cache.getCachedMarketplacePlugins("market-err")).toBeNull();
+    await expect(cache.loadPluginCatalog()).rejects.toThrow("directory failed");
+    expect(cache.getCachedPluginCatalog()).toBeNull();
 
-    listMarketplacePlugins.mockResolvedValueOnce([]);
-    await expect(cache.refreshMarketplacePlugins("market-err")).resolves.toEqual([]);
+    listPluginCatalog.mockResolvedValueOnce([]);
+    await expect(cache.loadPluginCatalog()).resolves.toEqual([]);
   });
 });
 
@@ -395,7 +419,7 @@ describe("list cache persistence", () => {
     listPlugins.mockResolvedValue([plugin]);
     const cache = await import("./managementDataCache");
     await cache.loadPlugins();
-    expect(persistedStorage.get("agmux.plugins-cache-v1")).toContain("ponytail");
+    expect(persistedStorage.get("agmux.plugins-cache-v2")).toContain("ponytail");
 
     vi.resetModules();
     const reloaded = await import("./managementDataCache");
@@ -404,7 +428,7 @@ describe("list cache persistence", () => {
   });
 
   it("ignores corrupt persisted caches and falls back to a fresh load", async () => {
-    persistedStorage.set("agmux.plugins-cache-v1", "{not-json");
+    persistedStorage.set("agmux.plugins-cache-v2", "{not-json");
     const cache = await import("./managementDataCache");
     listPlugins.mockResolvedValue([plugin]);
 
@@ -413,7 +437,7 @@ describe("list cache persistence", () => {
   });
 
   it("rejects persisted snapshots whose entries lack a string name", async () => {
-    persistedStorage.set("agmux.plugins-cache-v1", JSON.stringify([{ version: "1.0.0" }]));
+    persistedStorage.set("agmux.plugins-cache-v2", JSON.stringify([{ version: "1.0.0" }]));
     const cache = await import("./managementDataCache");
     listPlugins.mockResolvedValue([plugin]);
 

@@ -1,5 +1,5 @@
 import { api } from "../api";
-import type { ClaudeMarketplace, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
+import type { ClaudeMarketplace, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
 
 export type McpProbeCacheEntry = {
   fingerprint: string;
@@ -41,7 +41,7 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: string; restore: (raw: unknown) => T | null }) {
+function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: string; restore: (raw: unknown) => T | null; maxAgeMs?: number }) {
   let cache: T | null = null;
   let request: Promise<T> | null = null;
   let restored = false;
@@ -50,13 +50,21 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
   const restoreFromStorage = () => {
     if (restored || !persist) return;
     restored = true;
-    const raw = readJson(persist.key);
-    if (raw !== null) cache = persist.restore(raw);
+    let raw = readJson(persist.key);
+    if (raw === null) return;
+    if (persist.maxAgeMs !== undefined) {
+      // 包络 { at, items }：快照带写入时间，超龄不直出——陈旧快照会展示错误状态
+      // （数量、开关与现状不符），宁可进页转一圈也不给错数据。裸数组/缺 at 视为来历不明。
+      const envelope = raw as { at?: unknown; items?: unknown };
+      if (typeof envelope.at !== "number" || Date.now() - envelope.at > persist.maxAgeMs) return;
+      raw = envelope.items;
+    }
+    cache = persist.restore(raw);
   };
 
   const saveToStorage = (items: T) => {
     if (!persist) return;
-    writeJson(persist.key, items);
+    writeJson(persist.key, persist.maxAgeMs !== undefined ? { at: Date.now(), items } : items);
   };
 
   return {
@@ -94,9 +102,56 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
   };
 }
 
+// 图标按需恢复，卡片首帧即可读取；不在启动阶段读取图片缓存。
+const pluginIcons = new Map<string, ReturnType<typeof createManagementCache<string | null>>>();
+
+function pluginIconCache(path: string) {
+  let cache = pluginIcons.get(path);
+  if (!cache) {
+    let imageKey = path;
+    if (path.startsWith("https://")) {
+      try {
+        const url = new URL(path);
+        const id = url.searchParams.get("id");
+        url.search = "";
+        url.hash = "";
+        if (id !== null) url.searchParams.set("id", id);
+        imageKey = url.href; // 与后端一致：签名轮换不改变图片身份。
+      } catch { /* 无效地址由图标读取接口处理。 */ }
+    }
+    cache = createManagementCache(() => api.pluginIcon(path), {
+      key: `agmux.plugin-icon-v1:${imageKey}`,
+      restore: (raw) => typeof raw === "string" && raw.startsWith("data:image/") ? raw : null,
+    });
+    pluginIcons.set(path, cache);
+  }
+  return cache;
+}
+
+export function getCachedPluginIcon(path?: string | null): string | null {
+  return path ? pluginIconCache(path).get() : null;
+}
+
+export function loadPluginIcon(path: string): Promise<string | null> {
+  return pluginIconCache(path).load();
+}
+
+// 插件快照的直出年龄上限：超龄不直出（陈旧快照的数量/开关与现状不符，属错误状态）。
+const PLUGIN_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const plugins = createManagementCache<PluginSummary[]>(api.listPlugins, {
-  key: "agmux.plugins-cache-v1",
+  key: "agmux.plugins-cache-v2",
   restore: restoreNamedList<PluginSummary>,
+  maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
+});
+const codexApps = createManagementCache(api.listCodexApps, {
+  key: "agmux.codex-apps-cache-v1",
+  restore: restoreNamedList<CodexAppSummary>,
+  maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
+});
+const pluginCatalog = createManagementCache(api.listPluginCatalog, {
+  key: "agmux.plugin-catalog-cache-v1",
+  restore: restoreNamedList<MarketplacePlugin>,
+  maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
 });
 const skills = createManagementCache<SkillSummary[]>(api.listSkills, {
   key: "agmux.skills-cache-v2", // v2：SkillSummary 增加 claude_enabled，旧缓存缺字段直接弃用
@@ -130,6 +185,7 @@ function restoreClaudePluginInventory(raw: unknown): ClaudePluginInventory | nul
 const claudePlugins = createManagementCache<ClaudePluginInventory>(() => api.claudeListPlugins(true), {
   key: "agmux.claude-plugin-catalog-cache-v1",
   restore: restoreClaudePluginInventory,
+  maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
 });
 const claudePluginMarketplaces = createManagementCache<ClaudeMarketplace[]>(api.claudeListPluginMarketplaces, {
   key: "agmux.claude-plugin-marketplaces-cache-v1",
@@ -217,8 +273,18 @@ export function loadPlugins(force = false): Promise<PluginSummary[]> {
   return plugins.load(force);
 }
 
+export const loadCodexApps = (force = false) => codexApps.load(force);
+export const getCachedCodexApps = () => codexApps.get();
+export const getCachedPluginCatalog = () => pluginCatalog.get();
+export const loadPluginCatalog = (force = false) => pluginCatalog.load(force);
+export const setCachedPluginCatalog = (items: MarketplacePlugin[]) => pluginCatalog.set(items);
+
 export function getCachedPlugins(): PluginSummary[] | null {
   return plugins.get();
+}
+
+export function setCachedPlugins(items: PluginSummary[]): void {
+  plugins.set(items);
 }
 
 export function getCachedPluginMarketplaces(): PluginMarketplace[] | null {
@@ -515,58 +581,4 @@ export function setCachedMcpProbe(name: string, entry: McpProbeCacheEntry, scope
 export function deleteCachedMcpProbe(name: string, scope: McpProbeScope = "codex"): void {
   loadMcpProbeStorage();
   if (mcpProbes.delete(mcpProbeCacheKey(name, scope))) persistMcpProbeStorage();
-}
-
-// ==================== 市场插件目录缓存 ====================
-
-/// 按市场名缓存目录快照：进入页面先显缓存，再静默刷新回填；请求按市场名去重。
-/// 快照持久化到 localStorage（模式同 MCP 探测缓存：会话加载一次、写入即落盘），
-/// 重启后首次进入市场页/目录详情才能直出，不用每个市场重新转圈；超配额时
-/// writeJson 静默降级为纯内存缓存。
-const MARKETPLACE_PLUGINS_STORAGE_KEY = "agmux.marketplace-plugins-cache-v1";
-const marketplacePlugins = new Map<string, MarketplacePlugin[]>();
-const marketplaceRequests = new Map<string, Promise<MarketplacePlugin[]>>();
-let marketplacePluginsStorageLoaded = false;
-
-function loadMarketplacePluginsStorage(): void {
-  if (marketplacePluginsStorageLoaded) return;
-  marketplacePluginsStorageLoaded = true;
-  const stored = readJson(MARKETPLACE_PLUGINS_STORAGE_KEY);
-  if (stored === null || typeof stored !== "object") return;
-  for (const [name, items] of Object.entries(stored as Record<string, unknown>)) {
-    const restored = restoreNamedList<MarketplacePlugin>(items);
-    if (restored) marketplacePlugins.set(name, restored);
-  }
-}
-
-function persistMarketplacePluginsStorage(): void {
-  writeJson(MARKETPLACE_PLUGINS_STORAGE_KEY, Object.fromEntries(marketplacePlugins));
-}
-
-export function getCachedMarketplacePlugins(name: string): MarketplacePlugin[] | null {
-  loadMarketplacePluginsStorage();
-  return marketplacePlugins.get(name) ?? null;
-}
-
-export function setCachedMarketplacePlugins(name: string, items: MarketplacePlugin[]): void {
-  loadMarketplacePluginsStorage();
-  marketplacePlugins.set(name, items);
-  persistMarketplacePluginsStorage();
-}
-
-export function refreshMarketplacePlugins(name: string, root?: string): Promise<MarketplacePlugin[]> {
-  loadMarketplacePluginsStorage();
-  const pending = marketplaceRequests.get(name);
-  if (pending) return pending;
-  const request = api
-    .listMarketplacePlugins(name, root)
-    .then((items) => {
-      setCachedMarketplacePlugins(name, items);
-      return items;
-    })
-    .finally(() => {
-      marketplaceRequests.delete(name);
-    });
-  marketplaceRequests.set(name, request);
-  return request;
 }

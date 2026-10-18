@@ -4,32 +4,37 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import {
-  getCachedMarketplacePlugins,
+  getCachedPluginCatalog,
   getCachedPluginMarketplaces,
   getCachedPlugins,
+  getCachedCodexApps,
+  loadCodexApps,
   loadPluginMarketplaces,
   loadPlugins,
-  refreshMarketplacePlugins,
-  setCachedMarketplacePlugins,
+  loadPluginCatalog,
+  setCachedPluginCatalog,
+  setCachedPlugins,
 } from "../../app/managementDataCache";
 import { AppDialog } from "../../components/AppDialog";
 import { AppTooltip } from "../../components/AppTooltip";
+import { AppSwitch } from "../../components/AppSwitch";
+import { AppTabBar } from "../../components/AppTabBar";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { TrashIcon } from "../../components/TrashIcon";
 import PluginDetailView from "./PluginDetailView";
-import ContainsChips from "./components/ContainsChips";
 import PluginFilterChips, { type PluginFilter } from "./components/PluginFilterChips";
 import { PluginCard } from "./components/PluginCard";
+import { PluginStatusDot } from "./components/PluginStatusDot";
 import PluginMarketplaceSources, { PluginMarketplaceRow } from "./components/PluginMarketplaceSources";
 import {
   compareMarketplacePlugins,
   comparePlugins,
   matchesQuery,
   originLabels,
-  removableOrigins,
   resolveAliasInstalled,
+  resolveAppIcon,
 } from "./pluginMeta";
 import type { PluginHeaderState } from "./PluginsView";
 import type { AppState, MarketplacePlugin, PluginMarketplace, PluginSummary, PluginUpdate } from "../../types";
@@ -38,11 +43,13 @@ type AvailablePlugin = MarketplacePlugin & { marketplaceName: string };
 
 export default function CodexPluginsView({
   state,
+  activationEpoch,
   popEpoch,
   query,
   onHeaderChange,
 }: {
   state: AppState;
+  activationEpoch: number;
   popEpoch: number;
   query: string;
   onHeaderChange: (header: PluginHeaderState) => void;
@@ -53,17 +60,16 @@ export default function CodexPluginsView({
   const [plugins, setPlugins] = useState<PluginSummary[]>(() => getCachedPlugins() ?? []);
   const [loaded, setLoaded] = useState(() => getCachedPlugins() !== null);
   const [loadError, setLoadError] = useState("");
+  const [section, setSection] = useState<"plugins" | "apps">("plugins");
+  const [apps, setApps] = useState(() => getCachedCodexApps() ?? []);
+  const [appsLoaded, setAppsLoaded] = useState(() => getCachedCodexApps() !== null);
+  const [appsError, setAppsError] = useState("");
   const [marketplaces, setMarketplaces] = useState<PluginMarketplace[]>(() => getCachedPluginMarketplaces() ?? []);
   const [marketsLoaded, setMarketsLoaded] = useState(() => getCachedPluginMarketplaces() !== null);
-  const [marketplacePlugins, setMarketplacePlugins] = useState<Record<string, MarketplacePlugin[]>>(() => {
-    // 市场清单缓存直出：拼平进「可安装」区不再经过市场子页，无缓存的市场留给静默刷新回填
-    const cached = getCachedPluginMarketplaces() ?? [];
-    return Object.fromEntries(
-      cached
-        .map((marketplace) => [marketplace.name, getCachedMarketplacePlugins(marketplace.name)] as const)
-        .filter((entry): entry is readonly [string, MarketplacePlugin[]] => entry[1] !== null),
-    );
-  });
+  const [catalog, setCatalog] = useState(() => getCachedPluginCatalog() ?? []);
+  const [catalogLoaded, setCatalogLoaded] = useState(() => getCachedPluginCatalog() !== null);
+  const [catalogError, setCatalogError] = useState("");
+  const [visibleCount, setVisibleCount] = useState(40);
   const [updates, setUpdates] = useState<PluginUpdate[]>([]);
   const [checking, setChecking] = useState(false);
   const [upgradingAll, setUpgradingAll] = useState(false);
@@ -76,9 +82,28 @@ export default function CodexPluginsView({
   const thirdPartyProfile =
     state.codex_profiles.find((profile) => profile.id === state.active_codex_profile_id)?.kind === "third_party";
 
+  const refreshCatalog = async (changed?: { id: string; installed: boolean }) => {
+    try {
+      const items = await loadPluginCatalog(true);
+      const next = changed ? items.map((item) => item.plugin_id === changed.id ? { ...item, installed: changed.installed } : item) : items;
+      if (changed) setCachedPluginCatalog(next);
+      setCatalog(next);
+      setCatalogError("");
+    } catch (error) {
+      setCatalogError(String(error));
+      throw error;
+    } finally {
+      setCatalogLoaded(true);
+    }
+  };
+
   const refresh = async (force = false) => {
     try {
-      setPlugins(await loadPlugins(force));
+      const items = await loadPlugins(force);
+      setPlugins(items);
+      setSelectedPlugin((previous) => previous
+        ? items.find((item) => item.desktop_visible && item.name === previous.name && item.marketplace === previous.marketplace) ?? null
+        : null);
       setLoadError("");
     } catch (error) {
       setLoadError(String(error));
@@ -90,35 +115,24 @@ export default function CodexPluginsView({
     // 先显缓存（命中即回），后台再强制取一次最新，保证外部变更能浮上来
     void refresh();
     void refresh(true);
+    void refreshCatalog().catch(() => undefined);
+  }, [activationEpoch]);
+  useEffect(() => {
+    let cancelled = false;
+    void loadCodexApps(true).then((items) => {
+      if (!cancelled) { setApps(items); setAppsError(""); }
+    }).catch((error: unknown) => {
+      if (!cancelled) setAppsError(String(error));
+    }).finally(() => {
+      if (!cancelled) setAppsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [activationEpoch]);
+  useEffect(() => {
     void refreshMarketplaces(true);
   }, []);
 
-  // 各市场插件清单拼平：与旧市场页的数量刷新同构，只是把列表留下来进「可安装」区
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all(
-      marketplaces.map(async (marketplace) => {
-        try {
-          return [marketplace.name, await refreshMarketplacePlugins(marketplace.name, marketplace.root)] as const;
-        } catch {
-          // 单个市场加载失败只缺该市场的条目，不拖垮整个看板
-          return null;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setMarketplacePlugins((previous) => {
-        const next = { ...previous };
-        for (const entry of entries) {
-          if (entry) next[entry[0]] = entry[1];
-        }
-        return next;
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [marketplaces]);
+  useEffect(() => { setVisibleCount(40); }, [query]);
 
   // 侧栏重复点击本视图 = 弹回一级；只清子页与弹层状态，不刷新（安装/卸载流程自带刷新）。
   useEffect(() => {
@@ -143,23 +157,18 @@ export default function CodexPluginsView({
     </span>
   ) : null;
 
-  const installedNames = useMemo(() => new Set(plugins.map((plugin) => plugin.name)), [plugins]);
-  const orderedPlugins = useMemo(() => [...plugins].sort(comparePlugins), [plugins]);
+  const installedIds = useMemo(() => new Set(plugins.map((plugin) => `${plugin.name}@${plugin.marketplace}`)), [plugins]);
+  const orderedPlugins = useMemo(() => plugins.filter((plugin) => plugin.desktop_visible).sort(comparePlugins), [plugins]);
   const visibleInstalled = orderedPlugins.filter((plugin) => matchesQuery(plugin, query));
 
-  // 全市场可安装清单：别名纠正 → 过滤已装与当前搜索 → 按 plugin_id 去重（多市场同插件取先出现的市场）
+  // 使用同一份远程目录；安装结果优先于目录的旧快照，搜索覆盖未渲染的条目。
+  // 宽搜索（名+显示名+描述）与 Claude 可安装区同一模式：拼串复用 matchesQuery。
   const available = useMemo<AvailablePlugin[]>(() => {
-    const byId = new Map<string, AvailablePlugin>();
-    for (const marketplace of marketplaces) {
-      const items = marketplacePlugins[marketplace.name];
-      if (!items) continue;
-      for (const plugin of resolveAliasInstalled(items, installedNames)) {
-        if (plugin.installed || byId.has(plugin.plugin_id) || !matchesQuery(plugin, query)) continue;
-        byId.set(plugin.plugin_id, { ...plugin, marketplaceName: marketplace.name });
-      }
-    }
-    return [...byId.values()].sort(compareMarketplacePlugins);
-  }, [marketplaces, marketplacePlugins, installedNames, query]);
+    return resolveAliasInstalled(catalog, installedIds).filter((plugin) => !plugin.installed
+      && matchesQuery({ name: `${plugin.name} ${plugin.display_name ?? ""} ${plugin.description ?? ""}` }, query))
+      .map((plugin) => ({ ...plugin, marketplaceName: plugin.plugin_id.slice(plugin.plugin_id.lastIndexOf("@") + 1) }))
+      .sort(compareMarketplacePlugins);
+  }, [catalog, installedIds, query]);
 
   const visibleUpdates = useMemo(
     () => updates.filter((update) => visibleInstalled.some((plugin) => plugin.name === update.name)),
@@ -172,28 +181,14 @@ export default function CodexPluginsView({
     updates: visibleUpdates.length,
   };
 
-  /// 本地与全局市场缓存同步打补丁，避免卸载/安装后「可安装」区闪回旧状态。
-  const markInstalledEverywhere = (name: string, installed: boolean) => {
-    const next: Record<string, MarketplacePlugin[]> = {};
-    for (const [market, items] of Object.entries(marketplacePlugins)) {
-      next[market] = items.some((item) => item.name === name)
-        ? items.map((item) => (item.name === name ? { ...item, installed } : item))
-        : items;
-      if (next[market] !== items) setCachedMarketplacePlugins(market, next[market]);
-    }
-    setMarketplacePlugins(next);
-  };
-
   const install = async (plugin: AvailablePlugin) => {
-    if (installing) return;
+    if (installing || checking || upgradingAll) return;
     setInstalling(plugin.plugin_id);
     try {
-      await api.installMarketplacePlugin(plugin.marketplaceName, plugin.name);
-      const next = (marketplacePlugins[plugin.marketplaceName] ?? []).map((item) =>
-        item.plugin_id === plugin.plugin_id ? { ...item, installed: true } : item,
-      );
-      setMarketplacePlugins((previous) => ({ ...previous, [plugin.marketplaceName]: next }));
-      setCachedMarketplacePlugins(plugin.marketplaceName, next);
+      const items = await api.installMarketplacePlugin(plugin.marketplaceName, plugin.name);
+      setCachedPlugins(items);
+      setPlugins(items);
+      void refreshCatalog({ id: plugin.plugin_id, installed: true }).catch(() => undefined);
       // ON_INSTALL 插件的 OAuth 弹窗是桌面端 app-server 私有能力，CLI 无法触发；
       // 安装成功后明确引导用户去桌面端完成授权，避免「装了但不可用」的静默缺失。
       if (plugin.auth_policy === "ON_INSTALL") {
@@ -201,7 +196,6 @@ export default function CodexPluginsView({
       } else {
         feedback.success(t("toast.installed", { name: plugin.name }));
       }
-      await refresh(true);
     } catch (reason) {
       feedback.error(String(reason));
     } finally {
@@ -210,6 +204,7 @@ export default function CodexPluginsView({
   };
 
   const remove = async (plugin: PluginSummary) => {
+    if (installing || checking || upgradingAll || !plugin.can_uninstall || !plugin.marketplace) return;
     const confirmed = await feedback.confirm({
       title: t("confirm.uninstallPluginTitle"),
       description: t("list.removeConfirm", {
@@ -220,18 +215,23 @@ export default function CodexPluginsView({
       destructive: true,
     });
     if (!confirmed) return;
+    setInstalling(`${plugin.name}@${plugin.marketplace}`);
     try {
-      await api.uninstallPlugin(plugin.name);
-      markInstalledEverywhere(plugin.name, false);
+      const items = await api.uninstallPlugin(plugin.name, plugin.marketplace);
+      setCachedPlugins(items);
+      setPlugins(items);
+      void refreshCatalog({ id: `${plugin.name}@${plugin.marketplace}`, installed: false }).catch(() => undefined);
       feedback.success(t("toast.uninstalled", { name: plugin.display_name ?? plugin.name }));
-      await refresh(true);
     } catch (error) {
       feedback.error(String(error));
+      await refresh(true);
+    } finally {
+      setInstalling("");
     }
   };
 
   const checkUpdates = async () => {
-    if (checking || upgradingAll) return;
+    if (checking || upgradingAll || installing) return;
     setChecking(true);
     try {
       const items = await api.checkPluginUpdates();
@@ -250,7 +250,7 @@ export default function CodexPluginsView({
   };
 
   const upgradeAll = async () => {
-    if (!updates.length || upgradingAll || checking) return;
+    if (!updates.length || upgradingAll || checking || installing) return;
     setUpgradingAll(true);
     try {
       for (const update of updates) await upgrade(update);
@@ -277,6 +277,7 @@ export default function CodexPluginsView({
       await api.removePluginMarketplace(marketplace.name);
       feedback.success(t("market.removedToast", { name: marketplace.name }));
       await refreshMarketplaces(true);
+      void refreshCatalog().catch(() => undefined);
     } catch (error) {
       feedback.error(String(error));
     } finally {
@@ -288,7 +289,24 @@ export default function CodexPluginsView({
     const marketplace = await api.addPluginMarketplace(source);
     setMarketplaces(await loadPluginMarketplaces(true));
     setMarketsLoaded(true);
+    void refreshCatalog().catch(() => undefined);
     return marketplace;
+  };
+
+  const toggleEnabled = async (plugin: PluginSummary, enabled: boolean) => {
+    if (installing || checking || upgradingAll || !plugin.can_toggle || !plugin.marketplace) return;
+    const pluginId = `${plugin.name}@${plugin.marketplace}`;
+    setInstalling(pluginId);
+    try {
+      const items = await api.setPluginEnabled(pluginId, enabled);
+      setCachedPlugins(items);
+      setPlugins(items);
+    } catch (error) {
+      feedback.error(String(error));
+      await refresh(true);
+    } finally {
+      setInstalling("");
+    }
   };
 
   const updateMarketplace = async (marketplace: PluginMarketplace) => {
@@ -296,8 +314,7 @@ export default function CodexPluginsView({
     setRefreshingMarket(marketplace.name);
     try {
       await api.refreshPluginMarketplace(marketplace.name);
-      const plugins = await refreshMarketplacePlugins(marketplace.name, marketplace.root);
-      setMarketplacePlugins((previous) => ({ ...previous, [marketplace.name]: plugins }));
+      await refreshCatalog();
       await refresh(true);
       feedback.success(t("claudePlugin.toast.marketsRefreshed", { count: 1 }));
     } catch (error) {
@@ -325,7 +342,7 @@ export default function CodexPluginsView({
   const showUpdates = filter === "all" || filter === "updates";
   const showInstalled = filter === "all" || filter === "installed";
   const showAvailable = filter === "all" || filter === "available";
-  const boardEmpty = loaded && !visibleInstalled.length && !available.length && !visibleUpdates.length;
+  const boardEmpty = loaded && catalogLoaded && !catalogError && !visibleInstalled.length && !available.length && !visibleUpdates.length;
 
   const renderSourceRow = (marketplace: PluginMarketplace) => (
     <PluginMarketplaceRow key={marketplace.name} name={marketplace.display_name ?? marketplace.name} source={marketplace.source_url ?? marketplace.root}>
@@ -349,9 +366,39 @@ export default function CodexPluginsView({
     </PluginMarketplaceRow>
   );
 
+  const sections = (
+    <AppTabBar<"plugins" | "apps"> selected={section} onSelect={setSection} label={t("inventory.label")} items={[
+      { id: "plugins", label: t("title"), count: <span className="muted meta-xs">{!loaded ? <LoadingSpinner /> : loadError ? "—" : orderedPlugins.length}</span> },
+      { id: "apps", label: t("inventory.apps"), count: <span className="muted meta-xs">{!appsLoaded ? <LoadingSpinner /> : appsError ? "—" : apps.length}</span> },
+    ]} />
+  );
+
+  if (section === "apps") {
+    const needle = query.trim().toLowerCase();
+    const visible = apps.filter((app) => `${app.name} ${app.description ?? ""}`.toLowerCase().includes(needle));
+    return <div className="space-y-4">
+      {sections}
+      {appsError ? <p className="muted text-sm">{appsError}</p> : null}
+      {!appsLoaded ? <EmptyStateCard loading icon={<Blocks size={18} />}><p>{t("inventory.loadingApps")}</p></EmptyStateCard> : (
+        <div className="plugin-board">
+          {visible.map((app) => <PluginCard key={app.id} name={app.name} description={app.description}
+            iconPath={resolveAppIcon(app, plugins)}
+            action={<div className="flex shrink-0 items-center gap-2">
+              <PluginStatusDot enabled={app.enabled} />
+              <span className="muted meta-xs">{t("action.managed")}</span>
+            </div>}
+          />)}
+        </div>
+      )}
+      {appsLoaded && !appsError && !visible.length ? <p className="muted text-sm">{t("inventory.noApps")}</p> : null}
+    </div>;
+  }
+
   return (
     <div className="space-y-4">
+      {sections}
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
+      {catalogError ? <p className="muted text-sm">{catalogError}</p> : null}
       {thirdPartyProfile ? (
         <div className="apple-edit-surface">
           <div className="apple-panel-section">
@@ -360,9 +407,9 @@ export default function CodexPluginsView({
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {loaded ? <PluginFilterChips value={filter} onChange={setFilter} counts={counts} /> : null}
+        <PluginFilterChips value={filter} onChange={setFilter} counts={loaded && catalogLoaded ? counts : { all: null, installed: null, available: null }} />
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checking || upgradingAll} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
+          <button type="button" className="apple-action-button" disabled={checking || upgradingAll || Boolean(installing)} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
             <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
             {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
           </button>
@@ -372,11 +419,7 @@ export default function CodexPluginsView({
           </button>
         </div>
       </div>
-      {!loaded ? (
-        <EmptyStateCard loading icon={<Blocks className="h-5 w-5" strokeWidth={1.8} />}>
-          <p className="muted">{t("list.loading")}</p>
-        </EmptyStateCard>
-      ) : (
+      {!loaded ? null : (
         <>
           {showUpdates && visibleUpdates.length ? (
             <section className="plugin-section">
@@ -422,31 +465,35 @@ export default function CodexPluginsView({
               <div className="plugin-board">
                 {visibleInstalled.map((plugin) => (
                   <PluginCard
-                    key={plugin.name}
+                    key={`${plugin.name}@${plugin.marketplace}`}
                     name={plugin.display_name ?? plugin.name}
                     source={plugin.marketplace ? `@${plugin.marketplace}` : undefined}
                     description={plugin.description}
                     iconPath={plugin.icon_path}
-                    status={plugin.enabled ? null : (
-                      <span className="plugin-status-dot" role="img" aria-label={t("detail.disabled")} title={t("detail.disabled")} />
-                    )}
                     onOpen={() => setSelectedPlugin(plugin)}
-                    action={removableOrigins.includes(plugin.origin) ? (
+                    action={<div className="flex shrink-0 items-center gap-2">
+                      <PluginStatusDot enabled={plugin.enabled} />
+                      {plugin.can_toggle ? <AppSwitch
+                        size="sm"
+                        checked={plugin.enabled}
+                        disabled={Boolean(installing) || checking || upgradingAll}
+                        label={t("action.toggleLabel", { name: plugin.display_name ?? plugin.name })}
+                        onCheckedChange={(next) => void toggleEnabled(plugin, next)}
+                      /> : <span className="muted meta-xs" title={t("action.managedHelp")}>{t("action.managed")}</span>}
+                    </div>}
+                    foot={plugin.can_uninstall ? (
                       <button
                         type="button"
                         className="apple-icon-button text-[var(--danger)]/70 hover:bg-(--danger)/10 hover:text-[var(--danger)]"
                         title={t("action.uninstall")}
+                        disabled={Boolean(installing) || checking || upgradingAll}
                         aria-label={t("list.uninstallAria", { name: plugin.name })}
                         onClick={() => void remove(plugin)}
                       >
-                        <TrashIcon />
+                        {installing === `${plugin.name}@${plugin.marketplace}` ? <LoadingSpinner /> : <TrashIcon />}
                       </button>
                     ) : null}
-                    meta={<>
-                      {plugin.version ? <span className="plan-badge max-w-24 truncate" title={plugin.version}>v{plugin.version}</span> : null}
-                      {originChip(plugin)}
-                      <ContainsChips items={plugin.contains} />
-                    </>}
+                    meta={originChip(plugin)}
                   />
                 ))}
               </div>
@@ -462,7 +509,7 @@ export default function CodexPluginsView({
                 </AppTooltip>
               </div>
               <div className="plugin-board">
-                {available.map((plugin) => (
+                {available.slice(0, visibleCount).map((plugin) => (
                   <PluginCard
                     key={plugin.plugin_id}
                     name={plugin.display_name ?? plugin.name}
@@ -470,14 +517,16 @@ export default function CodexPluginsView({
                     description={plugin.description}
                     iconPath={plugin.icon_path}
                     action={
-                      <button type="button" className="apple-icon-button shrink-0 text-accent hover:bg-(--accent)/10" disabled={Boolean(installing)} title={t("action.install")} aria-label={t("action.install")} onClick={() => void install(plugin)}>
+                      <button type="button" className="apple-icon-button shrink-0 text-accent hover:bg-(--accent)/10" disabled={Boolean(installing) || checking || upgradingAll} title={t("action.install")} aria-label={t("action.install")} onClick={() => void install(plugin)}>
                         {installing === plugin.plugin_id ? <LoadingSpinner /> : <Download className="h-4 w-4" strokeWidth={2} />}
                       </button>
                     }
-                    meta={<ContainsChips items={plugin.contains} />}
                   />
                 ))}
               </div>
+              {available.length > visibleCount ? <button type="button" className="apple-action-button plugin-show-more" onClick={() => setVisibleCount((count) => count + 40)}>
+                {t("claudePlugin.showMore")}
+              </button> : null}
             </section>
           ) : null}
           {boardEmpty ? (
@@ -490,7 +539,7 @@ export default function CodexPluginsView({
             <>
               {filter === "updates" && !visibleUpdates.length ? <p className="muted text-sm">{t("market.upToDate")}</p> : null}
               {filter === "installed" && !visibleInstalled.length ? <p className="muted text-sm">{t("list.empty")}</p> : null}
-              {filter === "available" && !available.length ? <p className="muted text-sm">{t("claudePlugin.noMarkets")}</p> : null}
+              {filter === "available" && catalogLoaded && !catalogError && !available.length ? <p className="muted text-sm">{t("list.noMatch")}</p> : null}
             </>
           ) : null}
         </>

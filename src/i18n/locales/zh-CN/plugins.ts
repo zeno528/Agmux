@@ -1,18 +1,15 @@
 /** 插件页文案。 */
 export default {
   title: "插件",
+  inventory: {
+    label: "Codex 内容类型",
+    apps: "应用",
+    loadingApps: "正在读取 Codex 已安装应用…",
+    noApps: "没有匹配的已安装应用",
+  },
   marketplace: "插件市场",
   nav: {
     backToPlugins: "返回插件",
-  },
-  // 插件清单 contains / capabilities 的数据键 → 展示标签（数据键本身不是界面文案）
-  contains: {
-    skills: "Skills",
-    mcp: "MCP",
-    app: "App",
-    hooks: "Hook",
-    agents: "Agent",
-    commands: "命令",
   },
   // 插件来源 / 市场类型的数据值 → 展示标签
   origin: {
@@ -26,20 +23,21 @@ export default {
   },
   action: {
     install: "安装",
+    toggleLabel: "启用或禁用 {{name}}",
+    managed: "由 Codex 管理",
+    managedHelp: "此插件的启停暂不支持在这里修改，请在 Codex 桌面端操作后重新进入此页刷新。",
     uninstall: "卸载",
     checkUpdates: "检查更新",
     upgradeAll: "全部更新",
     removeMarket: "卸载市场",
   },
+  status: {
+    on: "已启用",
+    off: "已禁用",
+  },
   detail: {
-    disabled: "已禁用",
-    category: "分类：{{category}}",
-    origin: "来源",
     marketplace: "市场",
-    local: "本地",
     installPath: "安装位置",
-    composition: "插件组成",
-    compositionEmpty: "未识别到组成内容",
     skillCount: "{{count}} 个 Skill",
     loadingSkills: "加载 Skill 明细…",
     skillsEmpty: "这个插件没有可读取的 Skill 明细",
@@ -66,7 +64,6 @@ export default {
     marketPlaceholder: "owner/repo、https://...git 或本地市场目录",
   },
   list: {
-    loading: "正在加载插件…",
     empty: "还没有安装插件。点击右上角「市场源」添加第三方市场",
     searchPlaceholder: "搜索插件…",
     noMatch: "没有匹配的插件",
@@ -92,8 +89,8 @@ export default {
   },
   // 看板层级：客户端维度 → 通栏搜索 → 一级过滤 chips → 分区网格（Codex / Claude 两端共用）
   board: {
-    codexInstalledHelp: "已安装到 Codex 的插件，切换供应商不会卸载。官方内置插件由 Codex 管理，支持卸载的插件会显示卸载按钮。",
-    codexAvailableHelp: "来自插件市场中尚未安装的插件。点击安装后，重启 Codex 生效；需要授权的插件请在 Codex 桌面端完成授权。",
+    codexInstalledHelp: "进入此页会从 Codex 重新读取状态。两端需使用相同的账号和配置目录。本地插件开关写入用户级配置，项目或管理员设置可覆盖；已有会话可能需重启。远程插件启停请在 Codex 桌面端管理，支持通过官方命令卸载的插件会显示卸载按钮。",
+    codexAvailableHelp: "来自 Codex 账号远程目录及已配置市场，已排除内置运行时、无安装权限和已安装的条目。客户端私有的隐藏与推荐规则暂不能完全同步。需要授权的插件请在 Codex 桌面端完成授权。",
     filterAll: "全部",
     filterInstalled: "已安装",
     filterAvailable: "可安装",
@@ -120,7 +117,6 @@ export default {
     scopeProject: "项目级",
     scopeLocal: "本地",
     refreshMarketAria: "刷新插件市场 {{name}}",
-    loading: "正在加载 Claude Code 插件…",
     empty: "还没有安装 Claude Code 插件，可从「可安装」区选择安装；尚未安装 CLI 时，请先到「Agent 工具」安装",
     disabled: "已禁用",
     toggleLabel: "启用或禁用 {{name}}",
