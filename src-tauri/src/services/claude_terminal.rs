@@ -643,11 +643,13 @@ mod tests {
     #[cfg(target_os = "windows")]
     fn active_terminal_enters_project_and_starts_claude_without_arguments() {
         let project = tempfile::tempdir().unwrap();
+        // 用目录内标记文件判断位置：CI 的 TEMP 可能是 8.3 短路径，直接比字符串不可靠。
+        std::fs::write(project.path().join("agmux-terminal-marker.txt"), "here").unwrap();
         let fixture = r#"
 $ErrorActionPreference = 'Stop'
 function claude {
     if ($args.Count -ne 0) { throw 'Active profile must use default settings' }
-    if ((Get-Location).Path -ne $env:AGMUX_TEST_PROJECT) { throw 'Wrong project directory' }
+    if (-not (Test-Path -LiteralPath '.\agmux-terminal-marker.txt')) { throw 'Wrong project directory' }
     Write-Output 'default claude verified'
 }
 "#;
@@ -657,7 +659,6 @@ function claude {
         );
         let output = Command::new(find_windows_shell().unwrap())
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .env("AGMUX_TEST_PROJECT", project.path())
             .output()
             .unwrap();
         assert!(
