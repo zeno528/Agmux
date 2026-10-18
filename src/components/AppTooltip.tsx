@@ -59,9 +59,11 @@ export function AppTooltip({ label, children }: AppTooltipProps) {
     // 清掉会把刚解算好的位置抹成 null，而定位 effect 依赖 [open] 不会重跑，
     // 卡片就永远停在 visibility: hidden。旧位置由定位 effect 每次打开时覆盖。
     if (open) { setExiting(false); return; }
+    // 首次挂载或 Activity 恢复时没有面板，不应凭空播放退出动画。
+    if (!panelRef.current) return;
     setExiting(true);
     const timer = setTimeout(() => setExiting(false), POPOVER_EXIT_MS);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); setExiting(false); };
   }, [open]);
 
   useLayoutEffect(() => {

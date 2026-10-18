@@ -6,6 +6,7 @@ import { useFeedback } from "../../app/Feedback";
 import { getCachedClaudePlugins, loadClaudePlugins, setClaudePluginsCache } from "../../app/managementDataCache";
 import { AppDialog } from "../../components/AppDialog";
 import { AppSwitch } from "../../components/AppSwitch";
+import { AppTooltip } from "../../components/AppTooltip";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
@@ -172,38 +173,43 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
           title={t("title")}
           count={null}
       />,
-      actions: <>
-        <button type="button" className="apple-action-button" disabled={checking} onClick={() => void checkUpdates()}>
-          <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
-          {t("action.checkUpdates")}
-        </button>
-        <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
-          <Store className="h-4 w-4" strokeWidth={2} />
-          {t("sources.title")}
-        </button>
-      </>,
     });
-  }, [onHeaderChange, checking, t]);
+  }, [onHeaderChange, t]);
 
   return (
     <div className="space-y-4">
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {loaded ? <PluginFilterChips value={filter} onChange={setFilter} counts={{
+          all: visibleInstalled.length + available.length,
+          installed: visibleInstalled.length,
+          available: available.length,
+        }} /> : null}
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" className="apple-action-button" disabled={checking} onClick={() => void checkUpdates()}>
+            <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
+            {t("action.checkUpdates")}
+          </button>
+          <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
+            <Store className="h-4 w-4" strokeWidth={2} />
+            {t("sources.title")}
+          </button>
+        </div>
+      </div>
       {!loaded ? (
         <EmptyStateCard loading icon={<Blocks className="h-5 w-5" strokeWidth={1.8} />}>
           <p className="muted">{t("claudePlugin.loading")}</p>
         </EmptyStateCard>
       ) : (
         <>
-          <PluginFilterChips value={filter} onChange={setFilter} counts={{
-            all: visibleInstalled.length + available.length,
-            installed: visibleInstalled.length,
-            available: available.length,
-          }} />
           {filter !== "available" && visibleInstalled.length ? (
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionInstalled")}
                 <span className="apple-chip">{visibleInstalled.length}</span>
+                <AppTooltip label={t("board.sectionInstalled")}>
+                  <p>{t("claudePlugin.installedHelp")}</p>
+                </AppTooltip>
               </div>
               <div className="plugin-board">
                 {visibleInstalled.map((entry) => {
@@ -218,9 +224,6 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
                       source={marketplace ? `@${marketplace}` : undefined}
                       description={null}
                       iconPath={entry.iconPath}
-                      status={entry.enabled ? null : (
-                        <span className="plugin-status-dot" role="img" aria-label={t("claudePlugin.disabled")} title={t("claudePlugin.disabled")} />
-                      )}
                       action={<AppSwitch
                         size="sm"
                         checked={entry.enabled}
@@ -229,7 +232,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
                       />}
                       meta={<>
                         {entry.version ? <span className="plan-badge max-w-24 truncate" title={entry.version}>v{entry.version}</span> : null}
-                        <span className="apple-chip apple-chip--badge">{t(scopeLabels[entry.scope] ?? "claudePlugin.scopeLocal")}</span>
+                        <span className="apple-chip apple-chip--usage">{t(scopeLabels[entry.scope] ?? "claudePlugin.scopeLocal")}</span>
                       </>}
                       foot={busy ? <LoadingSpinner /> : <>
                         {updateVersion && updateVersion !== entry.version ? (
@@ -264,6 +267,9 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
               <div className="field-label plugin-section-head">
                 {t("board.sectionAvailable")}
                 <span className="apple-chip">{available.length}</span>
+                <AppTooltip label={t("board.sectionAvailable")}>
+                  <p>{t("claudePlugin.availableHelp")}</p>
+                </AppTooltip>
               </div>
               <div className="plugin-board">
                 {available.slice(0, visibleCount).map((plugin) => (

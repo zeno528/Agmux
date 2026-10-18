@@ -16,8 +16,8 @@ use crate::models::{
 use crate::services::{
     AppContext, ClaudeMarketplace, ClaudePluginInventory, ClaudePluginUpdate,
     ClaudePluginUpdateResult, CliFailure, CliStatus, CliUpdate, CodexProfileConnectionResult,
-    DatabaseBackupInfo, MarketplacePlugin, PluginMarketplace, PluginPreview, PluginSkill,
-    PluginSummary, PluginUpdate, ProfileBalance, SkillSummary, SkillTool,
+    DatabaseBackupInfo, MarketplacePlugin, PluginMarketplace, PluginSkill, PluginSummary,
+    PluginUpdate, ProfileBalance, SkillSummary, SkillTool,
 };
 
 /// CLI 状态检测走阻塞线程池；两端命令共用壳，兜底文案只此一份。
@@ -396,6 +396,14 @@ pub async fn add_plugin_marketplace(
 }
 
 #[tauri::command]
+pub async fn refresh_plugin_marketplace(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.refresh_plugin_marketplace(&name).await
+}
+
+#[tauri::command]
 pub async fn remove_plugin_marketplace(
     name: String,
     state: State<'_, AppContext>,
@@ -424,20 +432,6 @@ pub async fn upgrade_marketplace_plugin(
     state: State<'_, AppContext>,
 ) -> AppResult<()> {
     state.upgrade_marketplace_plugin(&marketplace, &name).await
-}
-
-#[tauri::command]
-pub async fn preview_plugin(url: String, state: State<'_, AppContext>) -> AppResult<PluginPreview> {
-    state.preview_plugin(&url).await
-}
-
-#[tauri::command]
-pub async fn install_plugin(
-    url: String,
-    sub_path: Option<String>,
-    state: State<'_, AppContext>,
-) -> AppResult<PluginSummary> {
-    state.install_plugin(&url, sub_path.as_deref()).await
 }
 
 #[tauri::command]

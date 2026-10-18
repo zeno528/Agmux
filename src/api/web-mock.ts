@@ -9,7 +9,6 @@ import type {
   McpServerSpec,
   MarketplacePlugin,
   PluginMarketplace,
-  PluginPreview,
   PluginSkill,
   PluginSummary,
   ClaudeAvailablePlugin,
@@ -390,28 +389,6 @@ const webRecommendedMarketplacePlugins: Record<string, MarketplacePlugin[]> = {
       category: "Design",
       capabilities: ["Read", "Write"],
       contains: ["app"],
-    },
-  ],
-};
-
-const webPluginPreview: PluginPreview = {
-  repo: "openai/plugins",
-  reference: "main",
-  default_branch: "main",
-  candidates: [
-    {
-      sub_path: "plugins/memory-bank",
-      name: "memory-bank",
-      version: "1.2.0",
-      display_name: "Memory Bank",
-      description: "浏览器调试用的候选插件 fixture",
-      capabilities: ["read", "write"],
-      contains: ["skills", "mcp"],
-      files: [
-        "plugins/memory-bank/.codex-plugin/plugin.json",
-        "plugins/memory-bank/skills/session-summary/SKILL.md",
-        "plugins/memory-bank/.mcp.json",
-      ],
     },
   ],
 };
@@ -1463,6 +1440,12 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       webMarketplacePlugins[name] ??= (webRecommendedMarketplacePlugins[name] ?? []).map((plugin) => ({ ...plugin }));
       return marketplace as T;
     }
+    case "refresh_plugin_marketplace": {
+      const marketplace = webMarketplaces.find((item) => item.name === args?.name);
+      if (!marketplace || marketplace.kind !== "third-party") throw new Error("只能刷新已添加的外部插件市场");
+      // 浏览器不访问真实市场，目录继续使用 fixture。
+      return undefined as T;
+    }
     case "remove_plugin_marketplace": {
       const name = String(args?.name ?? "");
       if (name.startsWith("openai")) throw new Error("官方市场不能移除");
@@ -1512,31 +1495,6 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
         if (plugin.name === name) plugin.version = update.version;
       });
       return undefined as T;
-    }
-    case "preview_plugin": {
-      // 与后端一致：预览需要真实 GitHub 网络；浏览器环境仅对示例地址返回 fixture，其余抛错
-      const url = String(args?.url ?? "");
-      if (url.includes("openai/plugins")) return webPluginPreview as T;
-      throw new Error("浏览器调试无法访问 GitHub，插件预览请在 Tauri 窗口测试");
-    }
-    case "install_plugin": {
-      const candidate = webPluginPreview.candidates[0];
-      const summary: PluginSummary = {
-        name: candidate.name,
-        version: candidate.version,
-        display_name: candidate.display_name,
-        description: candidate.description,
-        category: null,
-        capabilities: candidate.capabilities,
-        contains: candidate.contains,
-        enabled: true,
-        origin: "codex",
-        marketplace: "openai-plugins",
-        store_path: `C:\\Users\\<user>\\.codex\\plugins\\cache\\openai-plugins\\${candidate.name}\\${candidate.version ?? "latest"}`,
-        source_url: "https://github.com/openai/plugins",
-      };
-      webPlugins = [...webPlugins.filter((plugin) => plugin.name !== summary.name), summary].sort((a, b) => a.name.localeCompare(b.name));
-      return summary as T;
     }
     case "uninstall_plugin": {
       // 与后端一致：官方市场拒绝卸载；Skill 在独立页面展示

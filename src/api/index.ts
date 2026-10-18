@@ -23,7 +23,6 @@ import type {
   PluginMarketplace,
   MarketplacePlugin,
   PluginSkill,
-  PluginPreview,
   PluginSummary,
   PluginUpdate,
   SkillSummary,
@@ -189,14 +188,12 @@ export const api = {
   listMarketplacePlugins: (marketplace: string, root?: string) => call<MarketplacePlugin[]>("list_marketplace_plugins", { marketplace, root }),
   addPluginMarketplace: (url: string) => call<PluginMarketplace>("add_plugin_marketplace", { url }),
   removePluginMarketplace: (name: string) => call<void>("remove_plugin_marketplace", { name }),
+  refreshPluginMarketplace: (name: string) => call<void>("refresh_plugin_marketplace", { name }),
   installMarketplacePlugin: (marketplace: string, name: string) =>
     call<PluginSummary>("install_marketplace_plugin", { marketplace, name }),
   checkPluginUpdates: () => call<PluginUpdate[]>("check_plugin_updates"),
   upgradeMarketplacePlugin: (marketplace: string, name: string) =>
     call<void>("upgrade_marketplace_plugin", { marketplace, name }),
-  previewPlugin: (url: string) => call<PluginPreview>("preview_plugin", { url }),
-  installPlugin: (url: string, subPath: string | null) =>
-    call<PluginSummary>("install_plugin", { url, subPath }),
   uninstallPlugin: (name: string) => call<void>("uninstall_plugin", { name }),
   claudeListPlugins: (includeAvailable = false) => call<ClaudePluginInventory>("claude_list_plugins", { includeAvailable }),
   claudeCheckPluginUpdates: () => call<ClaudePluginUpdate[]>("claude_check_plugin_updates"),

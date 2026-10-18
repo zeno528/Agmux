@@ -1,4 +1,4 @@
-import type { MarketplacePlugin, PluginMarketplace, PluginSummary } from "../../types";
+import type { MarketplacePlugin, PluginSummary } from "../../types";
 
 type ContainsLabelKey = "contains.skills" | "contains.mcp" | "contains.app" | "contains.hooks" | "contains.agents" | "contains.commands";
 
@@ -21,14 +21,10 @@ export const originLabels: Partial<Record<PluginSummary["origin"], "origin.offic
 /** 可卸载的来源（官方市场与 Skill 注册表除外） */
 export const removableOrigins: readonly PluginSummary["origin"][] = ["codex"];
 
-export const marketplaceKindLabels: Record<PluginMarketplace["kind"], "origin.official" | "origin.thirdParty"> = {
-  official: "origin.official",
-  "third-party": "origin.thirdParty",
-};
-
 export const recommendedMarketplaces = [
   {
     name: "openai-curated",
+    clients: ["codex"],
     kind: "official",
     // Codex 桌面端在不同渠道下会把官方精选市场物化为 openai-api-curated（~/.codex/.tmp/plugins）
     aliases: ["openai-api-curated"],
@@ -38,6 +34,7 @@ export const recommendedMarketplaces = [
   },
   {
     name: "ponytail",
+    clients: ["codex", "claude"],
     kind: "third-party",
     aliases: [],
     displayName: "Ponytail",
@@ -57,10 +54,10 @@ export function comparePlugins(left: PluginSummary, right: PluginSummary): numbe
 }
 
 /// 推荐市场是否已配置：按市场名或别名匹配（官方市场在不同渠道下名称不同）。
-export function findConfiguredMarketplace(
+export function findConfiguredMarketplace<T extends { name: string }>(
   recommended: { name: string; aliases: readonly string[] },
-  marketplaces: PluginMarketplace[],
-): PluginMarketplace | undefined {
+  marketplaces: T[],
+): T | undefined {
   return marketplaces.find(
     (marketplace) => marketplace.name === recommended.name || recommended.aliases.includes(marketplace.name),
   );

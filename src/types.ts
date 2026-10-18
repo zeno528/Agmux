@@ -416,24 +416,6 @@ export interface PluginSummary {
   icon_path?: string | null;
 }
 
-export interface PluginCandidate {
-  sub_path: string;
-  name: string;
-  version: string | null;
-  display_name: string | null;
-  description: string | null;
-  capabilities: string[];
-  contains: string[];
-  files: string[];
-}
-
-export interface PluginPreview {
-  repo: string;
-  reference: string;
-  default_branch: string;
-  candidates: PluginCandidate[];
-}
-
 export interface CodexAppStatus {
   running: boolean;
   display_path: string;

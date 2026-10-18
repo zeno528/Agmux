@@ -1,4 +1,4 @@
-//! 插件生命周期操作：列表、市场管理、安装/卸载/升级与 GitHub 预览。
+//! 插件生命周期操作：列表、市场管理、安装/卸载/升级。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -7,17 +7,13 @@ use crate::codex::config as codex_config;
 use crate::error::{app_err, AppResult};
 use crate::fsutil::{atomic_write, backup_file};
 use crate::paths::now_ms;
-use crate::services::plugin_net::{
-    fetch_raw_file, fetch_repo_tree, parse_github_url, preview_file_limit,
-};
 use crate::services::AppContext;
 
 use super::catalog::{
-    derive_contains, enrich_marketplace_metadata, enrich_plugin_sources, files_under_root,
-    find_plugin_updates, manifest_description, marketplace_sources, parse_manifest_text,
-    parse_marketplace_identities, parse_marketplace_list_output, parse_marketplace_name,
-    parse_marketplace_plugins_output, parse_marketplace_source, parse_plugin_list_output,
-    plugin_roots, read_manifest, resolve_install_marketplace, root_within, sort_marketplaces,
+    enrich_marketplace_metadata, enrich_plugin_sources, find_plugin_updates, manifest_description,
+    marketplace_sources, parse_marketplace_identities, parse_marketplace_list_output,
+    parse_marketplace_name, parse_marketplace_plugins_output, parse_marketplace_source,
+    parse_plugin_list_output, read_manifest, resolve_install_marketplace, sort_marketplaces,
     validate_plugin_name,
 };
 use super::cli::{find_codex_cli, run_codex_plugin};
@@ -26,11 +22,7 @@ use super::store::{
     installed_icon_fallback, plugin_icon_from, plugin_store_path, scan_codex_plugin_cache,
     store_contains, store_skills, trusted_plugin_store_path,
 };
-use super::MANIFEST_RELATIVE_PATH;
-use super::{
-    MarketplacePlugin, PluginCandidate, PluginMarketplace, PluginPreview, PluginSkill,
-    PluginSummary, PluginUpdate,
-};
+use super::{MarketplacePlugin, PluginMarketplace, PluginSkill, PluginSummary, PluginUpdate};
 
 // ==================== AppContext 服务 ====================
 
@@ -350,6 +342,31 @@ impl AppContext {
         Ok(updates)
     }
 
+    /// 通过官方 CLI 刷新单个外部市场，不升级其中已安装的插件。
+    pub async fn refresh_plugin_marketplace(&self, name: &str) -> AppResult<()> {
+        validate_plugin_name(name)?;
+        if !self
+            .list_plugin_marketplaces()
+            .await?
+            .iter()
+            .any(|item| item.name == name && item.kind == "third-party")
+        {
+            return Err(app_err!("只能刷新已添加的外部插件市场"));
+        }
+        let home = self
+            .paths
+            .codex_home
+            .parent()
+            .ok_or_else(|| app_err!("无法定位用户主目录"))?
+            .to_path_buf();
+        let name = name.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            run_codex_plugin(&home, &["marketplace", "upgrade", &name]).map(|_| ())
+        })
+        .await
+        .map_err(|error| app_err!("刷新插件市场任务失败: {error}"))?
+    }
+
     /// 用已刷新的外部市场快照重新安装指定插件。
     pub async fn upgrade_marketplace_plugin(&self, marketplace: &str, name: &str) -> AppResult<()> {
         validate_plugin_name(marketplace)?;
@@ -460,163 +477,6 @@ impl AppContext {
             &now_ms().to_string(),
         );
         Ok(())
-    }
-
-    /// 预览：仓库元数据 + 每个插件根的清单与文件列表（不落盘）。
-    pub async fn preview_plugin(&self, url: &str) -> AppResult<PluginPreview> {
-        let source = parse_github_url(url)?;
-        let tree = fetch_repo_tree(&source).await?;
-        let roots: Vec<String> = plugin_roots(&tree.entries)
-            .into_iter()
-            .filter(|root| root_within(root, source.sub_path.as_deref().unwrap_or_default()))
-            .collect();
-        if roots.is_empty() {
-            return Err(app_err!(
-                "仓库里没有找到 {MANIFEST_RELATIVE_PATH}，请确认这是一个 Codex 插件仓库"
-            ));
-        }
-
-        let mut candidates = Vec::new();
-        for root in roots {
-            let files = files_under_root(&tree.entries, &root);
-            let relative_manifest = if root.is_empty() {
-                MANIFEST_RELATIVE_PATH.to_string()
-            } else {
-                format!("{root}/{MANIFEST_RELATIVE_PATH}")
-            };
-            let manifest_bytes =
-                fetch_raw_file(&source, &tree.reference, &relative_manifest).await?;
-            let manifest = parse_manifest_text(&String::from_utf8_lossy(&manifest_bytes))?;
-            validate_plugin_name(&manifest.name)?;
-            let contains = derive_contains(&files);
-            candidates.push(PluginCandidate {
-                sub_path: root,
-                name: manifest.name.clone(),
-                version: manifest.version.clone(),
-                display_name: manifest
-                    .interface
-                    .as_ref()
-                    .and_then(|item| item.display_name.clone()),
-                description: manifest_description(&manifest),
-                capabilities: manifest
-                    .interface
-                    .as_ref()
-                    .map(|item| item.capabilities.clone())
-                    .unwrap_or_default(),
-                contains,
-                files: files
-                    .iter()
-                    .map(|path| path.to_string())
-                    .take(preview_file_limit())
-                    .collect(),
-            });
-        }
-        Ok(PluginPreview {
-            repo: format!("{}/{}", source.owner, source.repo),
-            reference: tree.reference,
-            default_branch: tree.default_branch,
-            candidates,
-        })
-    }
-
-    /// 安装：预览拿到插件名 → `marketplace add <owner/repo[@ref]>` → `plugin add <名>@<市场>`。
-    /// 全程官方 CLI 路径，落盘与状态归 Codex 管。
-    pub async fn install_plugin(
-        &self,
-        url: &str,
-        sub_path: Option<&str>,
-    ) -> AppResult<PluginSummary> {
-        let source = parse_github_url(url)?;
-        let tree = fetch_repo_tree(&source).await?;
-        let target_sub = sub_path.or(source.sub_path.as_deref());
-        let roots: Vec<String> = plugin_roots(&tree.entries)
-            .into_iter()
-            .filter(|root| root_within(root, target_sub.unwrap_or_default()))
-            .collect();
-        let root = match roots.as_slice() {
-            [root] => root.clone(),
-            [] => {
-                return Err(app_err!(
-                    "仓库里没有找到 {MANIFEST_RELATIVE_PATH}，请确认地址指向 Codex 插件目录"
-                ))
-            }
-            _ => {
-                return Err(app_err!(
-                    "该地址下有 {} 个插件，请先预览并选择具体插件",
-                    roots.len()
-                ))
-            }
-        };
-        let relative_manifest = if root.is_empty() {
-            MANIFEST_RELATIVE_PATH.to_string()
-        } else {
-            format!("{root}/{MANIFEST_RELATIVE_PATH}")
-        };
-        let manifest_bytes = fetch_raw_file(&source, &tree.reference, &relative_manifest).await?;
-        let manifest = parse_manifest_text(&String::from_utf8_lossy(&manifest_bytes))?;
-        validate_plugin_name(&manifest.name)?;
-
-        let Some(home) = self.paths.codex_home.parent().map(Path::to_path_buf) else {
-            return Err(app_err!("无法定位用户主目录"));
-        };
-        let source_arg = match &source.ref_name {
-            Some(reference) => format!("{}/{}@{reference}", source.owner, source.repo),
-            None => format!("{}/{}", source.owner, source.repo),
-        };
-        let selector_name = manifest.name.clone();
-        // CLI 调用跑在 blocking 线程池（git 同步可能数十秒）
-        let marketplace_name = tauri::async_runtime::spawn_blocking({
-            let home = home.clone();
-            let source_arg = source_arg.clone();
-            move || {
-                let output = run_codex_plugin(&home, &["marketplace", "add", &source_arg]);
-                match output {
-                    Ok(text) => parse_marketplace_name(&text, ""),
-                    Err(error) => {
-                        // 源可能已添加过（重复安装/升级）：忽略 add 错误，让 plugin add 兜底
-                        let _ = error;
-                        String::new()
-                    }
-                }
-            }
-        })
-        .await
-        .map_err(|error| app_err!("安装任务失败: {error}"))?;
-        let marketplace_name = if marketplace_name.is_empty() {
-            source.repo.clone()
-        } else {
-            marketplace_name
-        };
-
-        let selector = format!("{selector_name}@{marketplace_name}");
-        tauri::async_runtime::spawn_blocking({
-            let home = home.clone();
-            let selector = selector.clone();
-            move || run_codex_plugin(&home, &["add", &selector])
-        })
-        .await
-        .map_err(|error| app_err!("安装任务失败: {error}"))??;
-        self.normalize_plugin_config_order()?;
-
-        let _ = self.database.record_event(
-            None,
-            "plugin",
-            "install",
-            Some(&format!("{selector}@{}", tree.reference)),
-            &now_ms().to_string(),
-        );
-
-        // 从列表里取回安装后的真实状态（版本/路径由 Codex 维护）
-        let plugins = self.list_plugins().await?;
-        plugins
-            .into_iter()
-            .find(|item| item.name == manifest.name)
-            .ok_or_else(|| {
-                app_err!(
-                    "安装命令已执行，但列表里没找到「{}」，请刷新查看",
-                    manifest.name
-                )
-            })
     }
 
     /// 卸载：由 Codex CLI 管理的第三方插件走 `codex plugin remove`。
@@ -979,6 +839,15 @@ mod tests {
     use super::*;
     use crate::services::codex_cli::file_name;
     use crate::services::plugins::test_context;
+
+    #[tokio::test]
+    async fn marketplace_refresh_rejects_invalid_selectors_before_running_cli() {
+        let (_home, context) = test_context();
+        for name in ["../market", ""] {
+            let error = context.refresh_plugin_marketplace(name).await.unwrap_err();
+            assert!(error.0.contains("非法字符"));
+        }
+    }
 
     #[tokio::test]
     async fn remote_icon_cache_keeps_image_ids_and_ignores_signatures() {

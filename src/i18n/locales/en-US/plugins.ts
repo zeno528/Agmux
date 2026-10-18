@@ -4,7 +4,6 @@ export default {
   marketplace: "Marketplace",
   nav: {
     backToPlugins: "Back to plugins",
-    backToMarketplace: "Back to marketplace",
   },
   // Data keys from the plugin manifest (contains / capabilities) → display labels (the keys themselves are not UI text)
   contains: {
@@ -30,7 +29,6 @@ export default {
     uninstall: "Uninstall",
     checkUpdates: "Check for updates",
     upgradeAll: "Update all",
-    fetchList: "Fetch plugin list",
     removeMarket: "Remove marketplace",
   },
   detail: {
@@ -64,25 +62,8 @@ export default {
     ponytail: "A development workflow biased toward minimal implementations, emphasizing YAGNI, the standard library, and native capabilities",
   },
   add: {
-    title: "Add plugin",
-    method: "Add method",
-    methodMarketplace: "Add plugin marketplace",
-    methodRepository: "Install a single plugin from a repository",
     marketSourceTitle: "Add marketplace source",
-    repoTitle: "GitHub plugin repository",
-    marketSourceHint: "Supports GitHub shorthand, Git/SSH URLs, and local marketplace folders; Codex detects and manages it after you add it",
-    repoHint: "Enter a single plugin repository URL. This does not add a marketplace source",
     marketPlaceholder: "owner/repo, https://...git, or a local marketplace folder",
-    repoPlaceholder: "https://github.com/<owner>/<repo> (optionally with /tree/<branch>/<subdir>)",
-    candidates: "Installable plugins",
-    repoSummary: "Repository <repo>{{repo}}</repo> · Branch <reference>{{reference}}</reference>",
-    defaultBranch: " (default branch: {{branch}})",
-    rootDir: "Repository root",
-    files: "Files ({{count}})",
-    filesMore: "…and {{count}} more",
-    missingMarketUrl: "Enter a third-party plugin marketplace URL first",
-    missingRepoUrl: "Enter a GitHub plugin repository URL first",
-    added: "Added and opened the plugin marketplace \"{{name}}\"",
   },
   list: {
     loading: "Loading plugins...",
@@ -111,6 +92,8 @@ export default {
   },
   // Board hierarchy: engine dimension → full-width search → filter chips → section grids (shared by Codex / Claude)
   board: {
+    codexInstalledHelp: "Plugins installed in Codex remain installed when switching providers. Codex manages built-in plugins; plugins that can be uninstalled show an uninstall button.",
+    codexAvailableHelp: "Plugins from marketplaces that are not yet installed. Restart Codex after installation to use them. Complete any required authorization in the Codex desktop app.",
     filterAll: "All",
     filterInstalled: "Installed",
     filterAvailable: "Available",
@@ -122,12 +105,15 @@ export default {
   },
   // Marketplace sources retreat to a dialog; browsing happens in the Available section
   sources: {
+    add: "Add",
     title: "Marketplaces",
     description: "Sources of plugin catalogs. Installable plugins are flattened into the Available section by source; the official marketplace is maintained by the app",
     addedToast: "Added plugin marketplace \"{{name}}\"",
   },
   // Claude Code plugin management (all through claude plugin subcommands, never touching CLI-internal files)
   claudePlugin: {
+    installedHelp: "User-level plugin toggles are shared across provider profiles and preserved when switching providers. Project and local toggles apply only to their project. Project settings can override user settings.",
+    availableHelp: "Plugins from added marketplaces that are not yet installed. Installation here defaults to the user scope, making them available across projects. Project settings can control whether they are enabled.",
     noMarkets: "No plugin marketplaces added yet",
     showMore: "Show more",
     scopeUser: "User",

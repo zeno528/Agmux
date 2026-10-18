@@ -4,7 +4,6 @@ export default {
   marketplace: "插件市场",
   nav: {
     backToPlugins: "返回插件",
-    backToMarketplace: "返回插件市场",
   },
   // 插件清单 contains / capabilities 的数据键 → 展示标签（数据键本身不是界面文案）
   contains: {
@@ -30,7 +29,6 @@ export default {
     uninstall: "卸载",
     checkUpdates: "检查更新",
     upgradeAll: "全部更新",
-    fetchList: "获取插件列表",
     removeMarket: "卸载市场",
   },
   detail: {
@@ -64,25 +62,8 @@ export default {
     ponytail: "偏向最小实现的开发工作流，强调 YAGNI、标准库和原生能力",
   },
   add: {
-    title: "添加插件",
-    method: "添加方式",
-    methodMarketplace: "添加插件市场",
-    methodRepository: "从仓库安装单个插件",
     marketSourceTitle: "添加市场来源",
-    repoTitle: "GitHub 插件仓库",
-    marketSourceHint: "支持 GitHub 简写、Git/SSH 地址和本地市场目录；添加后由 Codex 识别并管理",
-    repoHint: "输入单个插件仓库地址；这不会添加市场来源",
     marketPlaceholder: "owner/repo、https://...git 或本地市场目录",
-    repoPlaceholder: "https://github.com/<owner>/<repo>（可带 /tree/<分支>/<子目录>）",
-    candidates: "可安装插件",
-    repoSummary: "仓库 <repo>{{repo}}</repo> · 分支 <reference>{{reference}}</reference>",
-    defaultBranch: "（默认分支为 {{branch}}）",
-    rootDir: "仓库根目录",
-    files: "文件清单（{{count}} 项）",
-    filesMore: "…其余 {{count}} 个文件",
-    missingMarketUrl: "请先填写第三方插件市场地址",
-    missingRepoUrl: "请先填写 GitHub 插件仓库地址",
-    added: "已添加并进入插件市场「{{name}}」",
   },
   list: {
     loading: "正在加载插件…",
@@ -111,6 +92,8 @@ export default {
   },
   // 看板层级：客户端维度 → 通栏搜索 → 一级过滤 chips → 分区网格（Codex / Claude 两端共用）
   board: {
+    codexInstalledHelp: "已安装到 Codex 的插件，切换供应商不会卸载。官方内置插件由 Codex 管理，支持卸载的插件会显示卸载按钮。",
+    codexAvailableHelp: "来自插件市场中尚未安装的插件。点击安装后，重启 Codex 生效；需要授权的插件请在 Codex 桌面端完成授权。",
     filterAll: "全部",
     filterInstalled: "已安装",
     filterAvailable: "可安装",
@@ -122,12 +105,15 @@ export default {
   },
   // 市场源管理：从主流程退到弹层，浏览在「可安装」区完成
   sources: {
+    add: "添加",
     title: "市场源",
     description: "插件目录的来源。可安装的插件按来源拼进「可安装」区，官方市场由应用内置维护。",
     addedToast: "已添加插件市场「{{name}}」",
   },
   // Claude Code 插件管理（全部经 claude plugin 子命令，不读写 CLI 内部文件）
   claudePlugin: {
+    installedHelp: "用户级插件开关对所有供应商配置共用，切换供应商不会改变；项目级和本地级开关只作用于对应项目。项目设置可覆盖用户级设置。",
+    availableHelp: "来自已添加市场中尚未安装的插件。此处默认安装到用户级，可供所有项目使用；项目设置可单独控制是否启用。",
     noMarkets: "还没有添加插件市场",
     showMore: "显示更多",
     scopeUser: "用户级",

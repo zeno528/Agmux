@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::codex::config::parse_document;
-use crate::services::plugin_net::{parse_github_url, TreeEntry};
+use crate::services::plugin_net::parse_github_url;
 
 use super::store::store_contains;
 use super::{
@@ -507,41 +507,6 @@ pub(super) fn validate_plugin_name(name: &str) -> AppResult<()> {
     }
 }
 
-/// 从文件树里找插件根目录（.codex-plugin/plugin.json 的父目录），仓库根插件表示为空串。
-pub(super) fn plugin_roots(entries: &[TreeEntry]) -> Vec<String> {
-    let mut roots: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.kind == "blob" && entry.path.ends_with(MANIFEST_RELATIVE_PATH))
-        .map(|entry| {
-            entry
-                .path
-                .strip_suffix(&format!("/{MANIFEST_RELATIVE_PATH}"))
-                .unwrap_or_default()
-                .to_string()
-        })
-        .collect();
-    roots.sort();
-    roots.dedup();
-    roots
-}
-
-/// 判断 root 是否等于指定子路径或位于其下（子目录过滤用）。
-pub(super) fn root_within(root: &str, sub_path: &str) -> bool {
-    let sub = sub_path.trim_matches('/');
-    if sub.is_empty() {
-        return true;
-    }
-    root == sub || root.starts_with(&format!("{sub}/"))
-}
-
-pub(super) fn files_under_root<'a>(entries: &'a [TreeEntry], root: &str) -> Vec<&'a str> {
-    entries
-        .iter()
-        .filter(|entry| entry.kind == "blob" && root_within(&entry.path, root))
-        .map(|entry| entry.path.as_str())
-        .collect()
-}
-
 /// 从插件文件清单推导内容类型（白皮书的「包含内容」维度）。
 pub(super) fn derive_contains(files: &[&str]) -> Vec<String> {
     let mut contains = Vec::new();
@@ -570,44 +535,8 @@ pub(super) fn derive_contains(files: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::plugin_net::TreeEntry;
     use crate::services::plugins::*;
     use serde_json::json;
-
-    fn entry(path: &str) -> TreeEntry {
-        TreeEntry {
-            path: path.to_string(),
-            kind: "blob".into(),
-        }
-    }
-
-    #[test]
-    fn plugin_roots_find_nested_and_root_plugins() {
-        let entries = vec![
-            entry(".codex-plugin/plugin.json"),
-            entry("skills/a/SKILL.md"),
-            entry("plugins/foo/.codex-plugin/plugin.json"),
-            entry("plugins/foo/skills/b/SKILL.md"),
-            entry("plugins/foo/node_modules/x/.codex-plugin/plugin.json"),
-        ];
-        let roots = plugin_roots(&entries);
-        assert_eq!(
-            roots,
-            vec![
-                "".to_string(),
-                "plugins/foo".to_string(),
-                "plugins/foo/node_modules/x".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn root_within_matches_self_and_children_only() {
-        assert!(root_within("plugins/foo", "plugins"));
-        assert!(root_within("plugins/foo", "plugins/foo"));
-        assert!(!root_within("plugins/foobar", "plugins/foo"));
-        assert!(root_within("anything", ""));
-    }
 
     #[test]
     fn derive_contains_labels_content_types() {

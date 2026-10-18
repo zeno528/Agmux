@@ -123,27 +123,6 @@ pub struct SkillCandidate {
     pub modified_at: u64,
 }
 
-/// 预览阶段的候选插件（一个仓库可能包含多个插件根目录）。
-#[derive(Debug, Clone, Serialize)]
-pub struct PluginCandidate {
-    pub sub_path: String,
-    pub name: String,
-    pub version: Option<String>,
-    pub display_name: Option<String>,
-    pub description: Option<String>,
-    pub capabilities: Vec<String>,
-    pub contains: Vec<String>,
-    pub files: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct PluginPreview {
-    pub repo: String,
-    pub reference: String,
-    pub default_branch: String,
-    pub candidates: Vec<PluginCandidate>,
-}
-
 /// plugin.json 的解析子集（官方字段很多，这里只取列表与详情需要的）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

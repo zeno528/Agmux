@@ -78,9 +78,30 @@ describe("插件搜索", () => {
     expect(shell.indexOf("<PluginSearchInput")).toBeLessThan(shell.indexOf("<CodexPluginsView"));
     expect(source).toContain("matchesQuery(plugin, query)");
   });
+
+  it("Claude 推荐 Ponytail 市场，添加后不再显示推荐入口，也不推荐 Codex 专属市场", async () => {
+    setupI18n("zh-CN");
+    await webInvoke("claude_remove_plugin_marketplace", { name: "ponytail" });
+    await loadClaudePluginMarketplaces(true);
+    const render = () => renderToStaticMarkup(createElement(FeedbackProvider, null,
+      createElement(ClaudePluginMarketplaceView, { onChanged: async () => undefined }),
+    ));
+    expect(render()).toContain(">Ponytail</div>");
+    expect(render()).toContain("DietrichGebert/ponytail");
+    expect(render()).not.toContain(">OpenAI Plugins</div>");
+    try {
+      await webInvoke("claude_add_plugin_marketplace", { source: "DietrichGebert/ponytail" });
+      await loadClaudePluginMarketplaces(true);
+      expect(render()).not.toContain(">Ponytail</div>");
+      expect(render()).toContain(">ponytail</span>");
+    } finally {
+      await webInvoke("claude_remove_plugin_marketplace", { name: "ponytail" });
+      await loadClaudePluginMarketplaces(true);
+    }
+  });
 });
 
-it("切换插件引擎保留父层页头和同一个滑块位置", async () => {
+it("切换插件引擎保留父层页头和滑块，并将正文滚动归零", async () => {
   setupI18n("zh-CN");
   const state = await webInvoke<AppState>("get_state");
   const frames: ReactElement<Parameters<typeof ClientTargetSwitch>[0]>[] = [];
@@ -91,7 +112,15 @@ it("切换插件引擎保留父层页头和同一个滑块位置", async () => {
     const toolbar = headerChildren[headerChildren.length - 1] as ReactElement<{ children: ReactNode }>;
     const control = Children.toArray(toolbar.props.children).find((child) => isValidElement(child) && child.type === ClientTargetSwitch) as typeof frames[number];
     frames.push(control);
-    if (control.props.value === "codex") control.props.onChange("claude");
+    if (control.props.value === "codex") {
+      const content = Children.toArray(tree.props.children)[1] as ReactElement<{ ref: { current: { scrollTop: number } | null } }>;
+      const scrollContent = { scrollTop: 240 };
+      content.props.ref.current = scrollContent;
+      control.props.onChange("codex");
+      expect(scrollContent.scrollTop).toBe(240);
+      control.props.onChange("claude");
+      expect(scrollContent.scrollTop).toBe(0);
+    }
     return null;
   }
   renderToStaticMarkup(createElement(Capture));
@@ -150,9 +179,10 @@ describe("Codex 看板", () => {
     expect(source).toContain("markInstalledEverywhere");
   });
 
-  it("市场源管理退到弹层，添加插件走子页", () => {
+  it("市场源管理共用弹层表单，不再提供仓库安装子页", () => {
     expect(source).toContain("<AppDialog");
-    expect(source).toContain("<AddPluginView");
+    expect(source).toContain("<PluginMarketplaceSources");
+    expect(source).not.toContain("AddPluginView");
   });
 
   it("更新检查共用页头一个按钮，检查结果按当前搜索过滤进「有更新」区", () => {

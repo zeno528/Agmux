@@ -1,4 +1,4 @@
-import { ArrowUp, Blocks, Download, Plus, RefreshCw, Store } from "lucide-react";
+import { ArrowUp, Blocks, Download, RefreshCw, Store } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -13,24 +13,21 @@ import {
   setCachedMarketplacePlugins,
 } from "../../app/managementDataCache";
 import { AppDialog } from "../../components/AppDialog";
+import { AppTooltip } from "../../components/AppTooltip";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { TrashIcon } from "../../components/TrashIcon";
-import AddPluginView from "./AddPluginView";
 import PluginDetailView from "./PluginDetailView";
 import ContainsChips from "./components/ContainsChips";
 import PluginFilterChips, { type PluginFilter } from "./components/PluginFilterChips";
 import { PluginCard } from "./components/PluginCard";
-import SourceLink from "./components/SourceLink";
+import PluginMarketplaceSources, { PluginMarketplaceRow } from "./components/PluginMarketplaceSources";
 import {
   compareMarketplacePlugins,
   comparePlugins,
-  findConfiguredMarketplace,
-  marketplaceKindLabels,
   matchesQuery,
   originLabels,
-  recommendedMarketplaces,
   removableOrigins,
   resolveAliasInstalled,
 } from "./pluginMeta";
@@ -57,6 +54,7 @@ export default function CodexPluginsView({
   const [loaded, setLoaded] = useState(() => getCachedPlugins() !== null);
   const [loadError, setLoadError] = useState("");
   const [marketplaces, setMarketplaces] = useState<PluginMarketplace[]>(() => getCachedPluginMarketplaces() ?? []);
+  const [marketsLoaded, setMarketsLoaded] = useState(() => getCachedPluginMarketplaces() !== null);
   const [marketplacePlugins, setMarketplacePlugins] = useState<Record<string, MarketplacePlugin[]>>(() => {
     // 市场清单缓存直出：拼平进「可安装」区不再经过市场子页，无缓存的市场留给静默刷新回填
     const cached = getCachedPluginMarketplaces() ?? [];
@@ -70,11 +68,11 @@ export default function CodexPluginsView({
   const [checking, setChecking] = useState(false);
   const [upgradingAll, setUpgradingAll] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<PluginSummary | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [filter, setFilter] = useState<PluginFilter>("all");
   const [installing, setInstalling] = useState("");
   const [removingMarket, setRemovingMarket] = useState("");
+  const [refreshingMarket, setRefreshingMarket] = useState("");
   const thirdPartyProfile =
     state.codex_profiles.find((profile) => profile.id === state.active_codex_profile_id)?.kind === "third_party";
 
@@ -123,11 +121,9 @@ export default function CodexPluginsView({
   }, [marketplaces]);
 
   // 侧栏重复点击本视图 = 弹回一级；只清子页与弹层状态，不刷新（安装/卸载流程自带刷新）。
-  // showAdd 关闭即卸载添加页。
   useEffect(() => {
     if (!popEpoch) return;
     setSelectedPlugin(null);
-    setShowAdd(false);
     setShowSources(false);
   }, [popEpoch]);
 
@@ -136,6 +132,8 @@ export default function CodexPluginsView({
       setMarketplaces(await loadPluginMarketplaces(force));
     } catch {
       // 市场源刷新失败保留旧列表；看板仍可用已缓存内容
+    } finally {
+      setMarketsLoaded(true);
     }
   };
 
@@ -266,7 +264,7 @@ export default function CodexPluginsView({
   };
 
   const removeMarketplace = async (marketplace: PluginMarketplace) => {
-    if (removingMarket || marketplace.kind === "official") return;
+    if (removingMarket || refreshingMarket || marketplace.kind === "official") return;
     const confirmed = await feedback.confirm({
       title: t("market.removeConfirmTitle"),
       description: t("market.removeConfirm", { name: marketplace.name }),
@@ -286,55 +284,42 @@ export default function CodexPluginsView({
     }
   };
 
-  const addRecommended = async (recommended: (typeof recommendedMarketplaces)[number]) => {
-    if (installing || removingMarket) return;
-    setInstalling(recommended.name);
+  const addMarketplace = async (source: string) => {
+    const marketplace = await api.addPluginMarketplace(source);
+    setMarketplaces(await loadPluginMarketplaces(true));
+    setMarketsLoaded(true);
+    return marketplace;
+  };
+
+  const updateMarketplace = async (marketplace: PluginMarketplace) => {
+    if (refreshingMarket || removingMarket || installing) return;
+    setRefreshingMarket(marketplace.name);
     try {
-      const marketplace = await api.addPluginMarketplace(recommended.source);
-      feedback.success(t("sources.addedToast", { name: marketplace.name }));
-      await refreshMarketplaces(true);
+      await api.refreshPluginMarketplace(marketplace.name);
+      const plugins = await refreshMarketplacePlugins(marketplace.name, marketplace.root);
+      setMarketplacePlugins((previous) => ({ ...previous, [marketplace.name]: plugins }));
+      await refresh(true);
+      feedback.success(t("claudePlugin.toast.marketsRefreshed", { count: 1 }));
     } catch (error) {
       feedback.error(String(error));
     } finally {
-      setInstalling("");
+      setRefreshingMarket("");
     }
   };
 
   useLayoutEffect(() => {
     onHeaderChange({
-      editing: Boolean(selectedPlugin || showAdd),
+      editing: Boolean(selectedPlugin),
       title: <ManagementPageTitle
         icon={<span className="settings-icon-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-accent"><Blocks className="h-[18px] w-[18px]" strokeWidth={2} /></span>}
         title={t("title")}
         count={null}
       />,
-      actions: <>
-        <button type="button" className="apple-action-button" disabled={checking || upgradingAll} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
-          <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
-          {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
-        </button>
-        <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
-          <Store className="h-4 w-4" strokeWidth={2} />
-          {t("sources.title")}
-        </button>
-      </>,
     });
-  }, [onHeaderChange, loaded, plugins.length, updates.length, checking, upgradingAll, selectedPlugin, showAdd, t]);
+  }, [onHeaderChange, selectedPlugin, t]);
 
   if (selectedPlugin) {
     return <PluginDetailView plugin={selectedPlugin} onBack={() => setSelectedPlugin(null)} />;
-  }
-  if (showAdd) {
-    return (
-      <AddPluginView
-        onBack={() => setShowAdd(false)}
-        onMarketplaceAdded={async () => {
-          await refreshMarketplaces(true);
-          setShowAdd(false);
-        }}
-        onInstalled={() => refresh(true)}
-      />
-    );
   }
 
   const showUpdates = filter === "all" || filter === "updates";
@@ -343,22 +328,12 @@ export default function CodexPluginsView({
   const boardEmpty = loaded && !visibleInstalled.length && !available.length && !visibleUpdates.length;
 
   const renderSourceRow = (marketplace: PluginMarketplace) => (
-    <div key={marketplace.name} className="apple-list-row">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-semibold">{marketplace.display_name ?? marketplace.name}</span>
-          {/* 官方市场挂 Codex 标识，与 Claude 插件市场源同一套视觉 */}
-          {marketplace.kind === "official" ? <img src="/codex.svg" alt="" className="h-4 w-4 shrink-0" draggable="false" /> : null}
-          <span className={`shrink-0 rounded-md px-1.5 py-px font-medium tracking-wide meta-xs ${marketplace.kind === "official" ? "origin-chip--official" : "origin-chip--third-party"}`}>{t(marketplaceKindLabels[marketplace.kind])}</span>
-          {marketplacePlugins[marketplace.name]
-            ? <span className="apple-chip shrink-0">{t("market.pluginCount", { count: marketplacePlugins[marketplace.name].length })}</span>
-            : <LoadingSpinner />}
-        </div>
-        <div className="mono muted meta-xs mt-1 truncate">{marketplace.root}</div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {marketplace.source_url ? <SourceLink source={marketplace.source_url} /> : null}
-        {marketplace.kind === "third-party" ? (
+    <PluginMarketplaceRow key={marketplace.name} name={marketplace.display_name ?? marketplace.name} source={marketplace.source_url ?? marketplace.root}>
+      {marketplace.kind === "third-party" ? (
+        <>
+          <button type="button" className="apple-icon-button" title={t("claudePlugin.action.refreshMarkets")} aria-label={t("claudePlugin.refreshMarketAria", { name: marketplace.name })} onClick={() => void updateMarketplace(marketplace)}>
+            {refreshingMarket === marketplace.name ? <LoadingSpinner /> : <RefreshCw size={16} strokeWidth={2} />}
+          </button>
           <button
             type="button"
             className="apple-icon-button text-[var(--danger)]/70 hover:bg-(--danger)/10 hover:text-[var(--danger)]"
@@ -369,23 +344,9 @@ export default function CodexPluginsView({
           >
             {removingMarket === marketplace.name ? <LoadingSpinner /> : <TrashIcon />}
           </button>
-        ) : null}
-      </div>
-    </div>
-  );
-
-  const renderPendingRow = (recommended: (typeof recommendedMarketplaces)[number]) => (
-    <div key={recommended.name} className="apple-list-row">
-      <div className="min-w-0 flex-1">
-        <div className="font-semibold">{recommended.displayName}</div>
-        <div className="muted mt-0.5 break-words text-sm">{t(recommended.descriptionKey)}</div>
-        <div className="mono muted meta-xs mt-0.5 truncate">{recommended.source}</div>
-      </div>
-      <button type="button" className="apple-action-button app-button--primary shrink-0" disabled={Boolean(installing)} onClick={() => void addRecommended(recommended)}>
-        {installing === recommended.name ? <LoadingSpinner /> : <Plus className="h-4 w-4" strokeWidth={2} />}
-        {t("action.install")}
-      </button>
-    </div>
+        </>
+      ) : null}
+    </PluginMarketplaceRow>
   );
 
   return (
@@ -398,13 +359,25 @@ export default function CodexPluginsView({
           </div>
         </div>
       ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {loaded ? <PluginFilterChips value={filter} onChange={setFilter} counts={counts} /> : null}
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" className="apple-action-button" disabled={checking || upgradingAll} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
+            <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
+            {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
+          </button>
+          <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
+            <Store className="h-4 w-4" strokeWidth={2} />
+            {t("sources.title")}
+          </button>
+        </div>
+      </div>
       {!loaded ? (
         <EmptyStateCard loading icon={<Blocks className="h-5 w-5" strokeWidth={1.8} />}>
           <p className="muted">{t("list.loading")}</p>
         </EmptyStateCard>
       ) : (
         <>
-          <PluginFilterChips value={filter} onChange={setFilter} counts={counts} />
           {showUpdates && visibleUpdates.length ? (
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
@@ -442,6 +415,9 @@ export default function CodexPluginsView({
               <div className="field-label plugin-section-head">
                 {t("board.sectionInstalled")}
                 <span className="apple-chip">{visibleInstalled.length}</span>
+                <AppTooltip label={t("board.sectionInstalled")}>
+                  <p>{t("board.codexInstalledHelp")}</p>
+                </AppTooltip>
               </div>
               <div className="plugin-board">
                 {visibleInstalled.map((plugin) => (
@@ -481,6 +457,9 @@ export default function CodexPluginsView({
               <div className="field-label plugin-section-head">
                 {t("board.sectionAvailable")}
                 <span className="apple-chip">{available.length}</span>
+                <AppTooltip label={t("board.sectionAvailable")}>
+                  <p>{t("board.codexAvailableHelp")}</p>
+                </AppTooltip>
               </div>
               <div className="plugin-board">
                 {available.map((plugin) => (
@@ -522,19 +501,10 @@ export default function CodexPluginsView({
         onOpenChange={setShowSources}
         title={t("sources.title")}
         description={t("sources.description")}
-        footer={
-          <button type="button" className="apple-action-button app-button--primary" onClick={() => { setShowSources(false); setShowAdd(true); }}>
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            {t("add.title")}
-          </button>
-        }
       >
-        <div className="apple-group apple-list-card">
+        <PluginMarketplaceSources target="codex" marketplaces={marketplaces} loaded={marketsLoaded} busy={Boolean(removingMarket || refreshingMarket || installing)} onAdd={addMarketplace}>
           {marketplaces.map(renderSourceRow)}
-          {recommendedMarketplaces
-            .filter((recommended) => !findConfiguredMarketplace(recommended, marketplaces))
-            .map(renderPendingRow)}
-        </div>
+        </PluginMarketplaceSources>
       </AppDialog>
     </div>
   );
