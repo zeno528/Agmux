@@ -474,6 +474,106 @@ experimental_bearer_token = "old"
 }
 
 #[test]
+fn failed_codex_apply_restores_files_and_keeps_active_snapshot() {
+    for builtin in [false, true] {
+        for (table, operation) in [("app_state", "UPDATE"), ("switch_events", "INSERT")] {
+            let (home, context) = chatgpt_test_context();
+            let paths = &context.paths;
+            let database = &context.database;
+            let config_path = paths.codex_config();
+            let auth_path = context.paths.codex_home.join("auth.json");
+            let original_auth = r#"{"OPENAI_API_KEY":"fixture-old"}"#;
+            let active = context.codex_capture_profile("Active").unwrap();
+            context.codex_apply_profile(&active.id).unwrap();
+            std::fs::write(&auth_path, original_auth).unwrap();
+            context.get_state().unwrap();
+            let original_config = std::fs::read(&config_path).unwrap();
+            let original_payload = database.codex_profile(&active.id).unwrap().payload;
+            let catalog = if builtin {
+                paths.codex_home.join("models.json")
+            } else {
+                home.path().join("external-models.json")
+            };
+            if builtin {
+                std::fs::write(&catalog, r#"{"models":[],"fixture":"old"}"#).unwrap();
+            }
+            let original_catalog = std::fs::read(&catalog).ok();
+            let target = if builtin {
+                context
+                    .codex_add_builtin_profile(
+                        "deepseek",
+                        None,
+                        None,
+                        Some("fixture-key"),
+                        None,
+                        None,
+                    )
+                    .unwrap()
+            } else {
+                context.codex_capture_profile("Target").unwrap()
+            };
+            let mut stored = database.codex_profile(&target.id).unwrap();
+            stored.payload.raw_catalog = Some(r#"{"models":[]}"#.into());
+            stored.payload.raw_auth = Some(r#"{"OPENAI_API_KEY":"fixture-new"}"#.into());
+            stored.payload.auth_auto_sync = Some(false);
+            if !builtin {
+                let path = serde_json::to_string(&catalog.to_string_lossy()).unwrap();
+                stored
+                    .payload
+                    .model_values
+                    .insert("model_catalog_json".into(), path.clone());
+                stored.payload.raw_config = Some(format!(
+                    "model = \"fixture-new\"\nmodel_catalog_json = {path}\n"
+                ));
+            }
+            database
+                .codex_update_profile(&target.id, &stored.name, &stored.payload, "2")
+                .unwrap();
+            let connection = Connection::open(&paths.database).unwrap();
+            connection
+                .execute_batch(&format!(
+                    "CREATE TRIGGER reject_apply BEFORE {operation} ON {table}
+                 BEGIN SELECT RAISE(FAIL, 'fixture commit failure'); END;"
+                ))
+                .unwrap();
+
+            let error = context.codex_apply_profile(&target.id).unwrap_err();
+            assert!(error.0.contains("fixture commit failure"), "{error}");
+            assert_eq!(std::fs::read(&config_path).unwrap(), original_config);
+            assert_eq!(std::fs::read_to_string(&auth_path).unwrap(), original_auth);
+            assert_eq!(std::fs::read(&catalog).ok(), original_catalog);
+            let state = context.get_state().unwrap();
+            assert_eq!(state.active_codex_profile_id.as_ref(), Some(&active.id));
+            assert_eq!(
+                database.codex_profile(&active.id).unwrap().payload,
+                original_payload
+            );
+            assert_eq!(
+                database.codex_latest_applied_profile().unwrap().as_ref(),
+                Some(&active.id)
+            );
+
+            connection
+                .execute_batch("DROP TRIGGER reject_apply")
+                .unwrap();
+            context.codex_apply_profile(&target.id).unwrap();
+            assert_eq!(
+                database.app_state().unwrap().0.as_deref(),
+                Some(target.id.as_str())
+            );
+            assert_eq!(
+                std::fs::read_to_string(&auth_path).unwrap(),
+                r#"{"OPENAI_API_KEY":"fixture-new"}"#
+            );
+            assert_eq!(
+                std::fs::read_to_string(&catalog).unwrap(),
+                r#"{"models":[]}"#
+            );
+        }
+    }
+}
+
+#[test]
 fn apply_profile_autosyncs_accumulated_active_profile() {
     let home = tempfile::tempdir().unwrap();
     let paths = crate::paths::from_home(home.path()).unwrap();
@@ -1040,6 +1140,32 @@ async fn oauth_activation_and_account_switch_write_only_the_bound_account_snapsh
     oauth
         .seed_access_token_for_test("oauth-account", "fresh-oauth-access")
         .await;
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let auth_path = context.paths.codex_home.join("auth.json");
+        let original_auth = chatgpt_auth("external-account", "fixture-old");
+        std::fs::write(&auth_path, &original_auth).unwrap();
+        let original_config = std::fs::read(context.paths.codex_config()).unwrap();
+        let auth_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&auth_path)
+            .unwrap();
+        let error = context
+            .codex_apply_profile_with_auth(&profile.id, &oauth)
+            .await
+            .unwrap_err();
+        assert!(error.0.contains("无法替换"), "{error}");
+        drop(auth_lock);
+        assert_eq!(
+            std::fs::read(context.paths.codex_config()).unwrap(),
+            original_config
+        );
+        assert_eq!(std::fs::read_to_string(&auth_path).unwrap(), original_auth);
+        assert_eq!(context.get_state().unwrap().active_codex_profile_id, None);
+    }
 
     context
         .codex_apply_profile_with_auth(&profile.id, &oauth)

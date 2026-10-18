@@ -221,8 +221,8 @@ pub(super) fn plugin_store_path(
         .join(PLUGIN_CACHE_RELATIVE_PATH)
         .join(marketplace)
         .join(name);
-    if let Some(version) = version {
-        let version_dir = cache_root.join(version);
+    if let Some(version_dir) = version.and_then(|version| resolve_local_path(&cache_root, version))
+    {
         if version_dir.is_dir() {
             return version_dir;
         }
@@ -411,6 +411,39 @@ mod tests {
             ),
             cached
         );
+        for version in ["..", ".", "../.."] {
+            assert_eq!(
+                plugin_store_path(
+                    codex_home.path(),
+                    "ponytail",
+                    "ponytail",
+                    Some(version),
+                    "missing"
+                ),
+                cached
+            );
+        }
+        #[cfg(windows)]
+        {
+            let drive = codex_home
+                .path()
+                .components()
+                .next()
+                .unwrap()
+                .as_os_str()
+                .to_string_lossy();
+            let version = format!("{drive}.");
+            assert_eq!(
+                plugin_store_path(
+                    codex_home.path(),
+                    "ponytail",
+                    "ponytail",
+                    Some(&version),
+                    "missing"
+                ),
+                cached
+            );
+        }
     }
 
     #[tokio::test]

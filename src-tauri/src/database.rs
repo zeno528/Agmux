@@ -789,6 +789,36 @@ impl Database {
         Ok(())
     }
 
+    /// 激活位和成功记录一起提交，避免失败记录被用作激活供应商的回退来源。
+    pub(crate) fn commit_codex_profile_apply(
+        &self,
+        id: &str,
+        message: &str,
+        timestamp: &str,
+    ) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始配置切换事务: {error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO app_state(singleton, active_profile_id) VALUES(1, ?1)
+             ON CONFLICT(singleton) DO UPDATE SET active_profile_id=excluded.active_profile_id",
+                params![id],
+            )
+            .map_err(|error| app_err!("无法保存应用状态: {error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO switch_events(profile_id, action, status, message, created_at)
+             VALUES(?1, 'apply', 'success', ?2, ?3)",
+                params![id, message, timestamp],
+            )
+            .map_err(|error| app_err!("无法记录操作日志: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| app_err!("无法提交配置切换事务: {error}"))
+    }
+
     pub fn set_default_account(&self, id: Option<&str>) -> AppResult<()> {
         let connection = self.lock()?;
         connection

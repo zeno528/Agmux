@@ -14,7 +14,7 @@ impl AppContext {
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.codex_apply_profile_locked(id)
+        self.codex_apply_profile_locked(id, None)
     }
 
     /// 将配置切换和 OAuth 认证写入作为同一个串行事务，避免异步 token 刷新完成后覆盖较新的切换。
@@ -49,14 +49,10 @@ impl AppContext {
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.codex_apply_profile_locked(id)?;
-        if let Some(content) = oauth_auth {
-            self.write_auth_json(&content)?;
-        }
-        Ok(())
+        self.codex_apply_profile_locked(id, oauth_auth.as_deref())
     }
 
-    fn codex_apply_profile_locked(&self, id: &str) -> AppResult<()> {
+    fn codex_apply_profile_locked(&self, id: &str, oauth_auth: Option<&str>) -> AppResult<()> {
         let config_path = self.paths.codex_config();
         let original = std::fs::read_to_string(&config_path)
             .map_err(|error| app_err!("无法读取 {}: {error}", config_path.display()))?;
@@ -77,60 +73,65 @@ impl AppContext {
         let profile = self.database.codex_profile(id)?;
         let profile_kind = profile.kind;
         let payload = profile.payload;
-        if payload.effective_auth_source(profile_kind, profile.account_id.as_deref())
-            == Some(AuthSource::Oauth)
-            && profile.account_id.is_none()
-        {
+        let auth_source =
+            payload.effective_auth_source(profile_kind, profile.account_id.as_deref());
+        if auth_source == Some(AuthSource::Oauth) && profile.account_id.is_none() {
             return Err(app_err!("OAuth 配置必须绑定一个订阅账号"));
         }
-        if payload.builtin.is_some() {
-            self.apply_builtin_profile(
-                id,
-                &payload,
-                "apply",
-                &document,
-                profile_kind,
-                profile.account_id.as_deref(),
-            )?;
-        } else if let Some(raw) = &payload.raw_config {
-            // 完整快照供应商：回填完整原文（插件、注释等全部内容）；
-            // MCP 段跟随 live 携带（全局生效，不属于任何供应商）
-            let content = codex_config::merge_mcp_section(raw, &document);
-            backup_file(&config_path, &self.paths.config_backup, "config")?;
-            atomic_write(&config_path, content.as_bytes())?;
-            self.write_raw_catalog(&payload)?;
-            self.apply_profile_auth(&payload, profile_kind, profile.account_id.as_deref())?;
-            self.database.record_event(
-                Some(id),
-                "apply",
-                "success",
-                Some("configuration applied"),
-                &now_ms().to_string(),
-            )?;
+        let mut paths = vec![config_path.clone()];
+        let catalog_path = if let Some(kind) = payload.builtin.as_deref() {
+            codex_builtin::template(kind)?
+                .catalog
+                .map(|(target, _)| self.paths.codex_home.join(target))
+        } else if payload.raw_catalog.is_some() {
+            self.raw_catalog_destination(&payload)
         } else {
-            codex_config::apply_to_document(&mut document, &payload)?;
-            let updated = codex_config::normalize_global_section_order(&document.to_string());
-
-            backup_file(&config_path, &self.paths.config_backup, "config")?;
-            atomic_write(&config_path, updated.as_bytes())?;
-            self.write_raw_catalog(&payload)?;
-            self.apply_profile_auth(&payload, profile_kind, profile.account_id.as_deref())?;
-            self.database.record_event(
-                Some(id),
-                "apply",
-                "success",
-                Some("configuration applied"),
-                &now_ms().to_string(),
-            )?;
+            None
+        };
+        if let Some(path) = catalog_path {
+            paths.push(path);
         }
-        // 显式记录当前激活供应商，避免依赖应用日志反推
-        self.database.set_active_codex_profile(Some(id))?;
-        // 操作审计在数据库 record_event 里；文件日志留一行，只发 logs 目录也能重建切换史
-        let source_label =
-            match payload.effective_auth_source(profile_kind, profile.account_id.as_deref()) {
-                Some(AuthSource::Oauth) => "oauth",
-                _ => "desktop",
+        if oauth_auth.is_some()
+            || auth_source == Some(AuthSource::Desktop)
+            || (auth_source.is_none()
+                && normalize_auth_override(payload.raw_auth.as_deref()).is_some())
+        {
+            paths.push(self.paths.codex_home.join("auth.json"));
+        }
+        // 所有 live 写入（含 OAuth）成功后才提交激活位；任何失败都恢复切换前的文件。
+        crate::fsutil::with_file_rollback(&paths, || {
+            if payload.builtin.is_some() {
+                self.apply_builtin_profile(&payload, &document)?;
+            } else {
+                let content = if let Some(raw) = &payload.raw_config {
+                    // MCP 全局生效，完整快照里的 MCP 段仍跟随当前 live。
+                    codex_config::merge_mcp_section(raw, &document)
+                } else {
+                    codex_config::apply_to_document(&mut document, &payload)?;
+                    codex_config::normalize_global_section_order(&document.to_string())
+                };
+                backup_file(&config_path, &self.paths.config_backup, "config")?;
+                atomic_write(&config_path, content.as_bytes())?;
+                self.write_raw_catalog(&payload)?;
+            }
+            if let Some(content) = oauth_auth {
+                self.write_auth_json(content)?;
+            } else {
+                self.apply_profile_auth(&payload, profile_kind, profile.account_id.as_deref())?;
+            }
+            let message = if payload.builtin.is_some() {
+                "built-in configuration applied"
+            } else {
+                "configuration applied"
             };
+            self.database
+                .commit_codex_profile_apply(id, message, &now_ms().to_string())
+        })?;
+        // 操作审计与激活位一起提交；文件日志留一行，也能重建切换史。
+        let source_label = match auth_source {
+            Some(AuthSource::Oauth) => "oauth",
+            _ => "desktop",
+        };
         tauri_plugin_log::log::info!(
             "[apply.profile.switch] profile_id={id} profile_name={:?} source={source_label} outcome=success msg=\"配置切换成功\"",
             profile.name
@@ -143,12 +144,8 @@ impl AppContext {
     /// 写生产文件前都先备份旧文件。
     pub(super) fn apply_builtin_profile(
         &self,
-        profile_id: &str,
         payload: &CodexProfilePayload,
-        action: &str,
         live: &toml_edit::DocumentMut,
-        profile_kind: CodexProfileKind,
-        account_id: Option<&str>,
     ) -> AppResult<()> {
         let kind = payload
             .builtin
@@ -193,15 +190,16 @@ impl AppContext {
             }
         }
 
-        self.database.record_event(
-            Some(profile_id),
-            action,
-            "success",
-            Some("built-in configuration applied"),
-            &now_ms().to_string(),
-        )?;
-        self.apply_profile_auth(payload, profile_kind, account_id)?;
         Ok(())
+    }
+
+    /// model_catalog_json 指向的目录文件位置；raw_catalog 回写与切换回滚清单必须共用同一解析，
+    /// 否则解析一旦改动，回滚会静默漏掉目录文件。
+    fn raw_catalog_destination(&self, payload: &CodexProfilePayload) -> Option<PathBuf> {
+        payload
+            .model_values
+            .get("model_catalog_json")
+            .and_then(|raw| self.resolve_codex_path(raw))
     }
 
     /// 把供应商自己编辑保存的 models.json 原文写入 model_catalog_json 指向的位置。
@@ -209,10 +207,7 @@ impl AppContext {
         let Some(raw) = payload.raw_catalog.as_deref() else {
             return Ok(());
         };
-        let Some(raw_path) = payload.model_values.get("model_catalog_json") else {
-            return Ok(());
-        };
-        let Some(destination) = self.resolve_codex_path(raw_path) else {
+        let Some(destination) = self.raw_catalog_destination(payload) else {
             return Ok(());
         };
         if let Some(parent) = destination.parent() {
@@ -272,7 +267,7 @@ impl AppContext {
         self.write_auth_json(&snapshot)
     }
 
-    /// 官方配置的认证归属由创建时固定的来源决定；OAuth 的 live 写入由命令层负责。
+    /// 官方配置的认证归属由创建时固定的来源决定；OAuth 的 live 写入由切换流程负责。
     pub(super) fn apply_profile_auth(
         &self,
         payload: &CodexProfilePayload,
@@ -359,11 +354,8 @@ impl AppContext {
         live.fetched_model_efforts = profile.payload.fetched_model_efforts.clone();
         live.fetched_model_defaults = profile.payload.fetched_model_defaults.clone();
         // 使用中模型目录按 live 文件回写。
-        live.raw_catalog = profile
-            .payload
-            .model_values
-            .get("model_catalog_json")
-            .and_then(|raw| self.resolve_codex_path(raw))
+        live.raw_catalog = self
+            .raw_catalog_destination(&profile.payload)
             .and_then(|file| read_optional_text(&file))
             .or_else(|| profile.payload.raw_catalog.clone());
         match auth_source {
