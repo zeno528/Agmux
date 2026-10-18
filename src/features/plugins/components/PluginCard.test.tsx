@@ -5,7 +5,7 @@ import { PluginCard } from "./PluginCard";
 const { pluginIcon } = vi.hoisted(() => ({ pluginIcon: vi.fn() }));
 vi.mock("../../../api", () => ({ api: { pluginIcon } }));
 
-it("图标请求去重，重挂载首帧复用图片，刷新后同步恢复且失败允许重试", async () => {
+it("图标请求去重，重挂载首帧复用图片；缓存只在会话内，刷新后重新请求且失败允许重试", async () => {
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -25,21 +25,18 @@ it("图标请求去重，重挂载首帧复用图片，刷新后同步恢复且�
     }
     expect(icon).toHaveBeenCalledTimes(1);
 
+    // 持久层是后端磁盘缓存：刷新后会话缓存清空、不落 localStorage，重新请求一次。
     vi.resetModules();
     const refreshed = await import("../../../app/managementDataCache");
-    expect(refreshed.getCachedPluginIcon("/fixture/icon.png")).toBe(image);
+    expect(refreshed.getCachedPluginIcon("/fixture/icon.png")).toBeNull();
     await expect(refreshed.loadPluginIcon("/fixture/icon.png")).resolves.toBe(image);
-    expect(icon).toHaveBeenCalledTimes(1);
+    expect(icon).toHaveBeenCalledTimes(2);
+    expect(storage.size).toBe(0);
 
     icon.mockRejectedValueOnce(new Error("temporarily unavailable"));
     await expect(refreshed.loadPluginIcon("/fixture/retry.png")).rejects.toThrow("temporarily unavailable");
     expect(refreshed.getCachedPluginIcon("/fixture/retry.png")).toBeNull();
     await expect(refreshed.loadPluginIcon("/fixture/retry.png")).resolves.toBe(image);
-    expect(icon).toHaveBeenCalledTimes(3);
-
-    await refreshed.loadPluginIcon("https://example.test/content?id=one&sig=old");
-    expect(refreshed.getCachedPluginIcon("https://example.test/content?sig=new&id=one")).toBe(image);
-    expect(refreshed.getCachedPluginIcon("https://example.test/content?id=two&sig=new")).toBeNull();
     expect(icon).toHaveBeenCalledTimes(4);
   } finally {
     icon.mockReset();

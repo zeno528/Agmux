@@ -336,9 +336,14 @@ pub(super) fn installed_apps(home: &Path) -> AppResult<Vec<CodexAppSummary>> {
         .collect()
 }
 
+/// Codex 自管的系统市场：随运行时分发、不归用户安装卸载。可见性与可卸载共用此名单。
+pub(super) fn system_marketplace(marketplace: &str) -> bool {
+    matches!(marketplace, "openai-bundled" | "openai-primary-runtime")
+}
+
 pub(super) fn desktop_plugin(plugin: &InstalledPlugin, marketplace: &str) -> bool {
     // shortcut: 账号隐藏名单未公开，官方提供页面可见性字段后替换此处的来源分类。
-    !matches!(marketplace, "openai-bundled" | "openai-primary-runtime")
+    !system_marketplace(marketplace)
         && plugin.install_policy_source.as_deref() != Some("IMPLICIT_CANONICAL_APP")
 }
 

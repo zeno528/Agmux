@@ -151,11 +151,16 @@ export default function CodexPluginsView({
     }
   };
 
-  const originChip = (plugin: PluginSummary) => originLabels[plugin.origin] ? (
-    <span className={`shrink-0 rounded-md px-1.5 py-px font-medium tracking-wide meta-xs ${plugin.origin === "official" ? "origin-chip--official" : "origin-chip--third-party"}`}>
-      {t(originLabels[plugin.origin]!)}
+  const chip = (label: string, official: boolean) => (
+    <span className={`shrink-0 rounded-md px-1.5 py-px font-medium tracking-wide meta-xs ${official ? "origin-chip--official" : "origin-chip--third-party"}`}>
+      {label}
     </span>
-  ) : null;
+  );
+
+  const originChip = (plugin: PluginSummary) => {
+    const label = originLabels[plugin.origin];
+    return label ? chip(t(label), plugin.origin === "official") : null;
+  };
 
   const installedIds = useMemo(() => new Set(plugins.map((plugin) => `${plugin.name}@${plugin.marketplace}`)), [plugins]);
   const orderedPlugins = useMemo(() => plugins.filter((plugin) => plugin.desktop_visible).sort(comparePlugins), [plugins]);
@@ -345,7 +350,12 @@ export default function CodexPluginsView({
   const boardEmpty = loaded && catalogLoaded && !catalogError && !visibleInstalled.length && !available.length && !visibleUpdates.length;
 
   const renderSourceRow = (marketplace: PluginMarketplace) => (
-    <PluginMarketplaceRow key={marketplace.name} name={marketplace.display_name ?? marketplace.name} source={marketplace.source_url ?? marketplace.root}>
+    <PluginMarketplaceRow
+      key={marketplace.name}
+      name={marketplace.display_name ?? marketplace.name}
+      source={marketplace.source_url ?? marketplace.root}
+      icon={chip(t(marketplace.kind === "official" ? "origin.official" : "origin.thirdParty"), marketplace.kind === "official")}
+    >
       {marketplace.kind === "third-party" ? (
         <>
           <button type="button" className="apple-icon-button" title={t("claudePlugin.action.refreshMarkets")} aria-label={t("claudePlugin.refreshMarketAria", { name: marketplace.name })} onClick={() => void updateMarketplace(marketplace)}>

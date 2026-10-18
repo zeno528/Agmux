@@ -901,8 +901,11 @@ pub(super) fn list_plugins_sync(home: &Path, codex_home: &Path) -> AppResult<Vec
             enabled: entry.enabled,
             desktop_visible,
             can_toggle: local,
+            // 可卸载=策略允许且来源物化可清；只排除系统市场（bundled/runtime）。
+            // 不能用 origin 代理：openai-api-curated 官方出身但用户自装，必须可卸。
             can_uninstall: entry.install_policy == "AVAILABLE"
-                && (remote || (local && origin == "codex")),
+                && (remote || local)
+                && !super::appserver::system_marketplace(&marketplace),
             origin: origin.to_string(),
             marketplace: Some(marketplace),
             store_path: if plugin_path.is_dir() {
@@ -1201,13 +1204,15 @@ mod tests {
             serde_json::json!({"installed": [
                 {"pluginId":"sample@openai-curated-remote", "name":"sample", "marketplaceName":"openai-curated-remote", "enabled":false, "installPolicy":"AVAILABLE", "source":{"source":"remote", "id":"plugin_fixture"}},
                 {"pluginId":"managed@team", "name":"managed", "marketplaceName":"team", "enabled":true, "installPolicy":"INSTALLED_BY_DEFAULT", "source":{"source":"remote", "id":"plugin_managed"}},
-                {"pluginId":"unknown@market", "name":"unknown", "marketplaceName":"market", "enabled":true, "installPolicy":"AVAILABLE"}
+                {"pluginId":"unknown@market", "name":"unknown", "marketplaceName":"market", "enabled":true, "installPolicy":"AVAILABLE"},
+                {"pluginId":"notion@openai-api-curated", "name":"notion", "marketplaceName":"openai-api-curated", "enabled":true, "installPolicy":"AVAILABLE", "source":{"source":"local", "path":"C:\\tmp\\notion"}},
+                {"pluginId":"browser@openai-bundled", "name":"browser", "marketplaceName":"openai-bundled", "enabled":true, "installPolicy":"AVAILABLE", "source":{"source":"local", "path":"C:\\tmp\\browser"}}
             ]}),
         );
         let config = "[plugins.\"sample@openai-curated-remote\"]\nenabled = true\n";
         std::fs::write(context.paths.codex_config(), config).unwrap();
         let plugins = context.list_plugins().await.unwrap();
-        assert_eq!(plugins.len(), 3);
+        assert_eq!(plugins.len(), 5);
         let sample = plugins
             .iter()
             .find(|plugin| plugin.name == "sample")
@@ -1215,9 +1220,22 @@ mod tests {
         assert!(!sample.enabled);
         assert!(!sample.can_toggle);
         assert!(sample.can_uninstall);
+        // api-curated 是官方市场但用户自装的本地物化，必须可卸载；系统市场（bundled/runtime）才不可卸。
+        let notion = plugins
+            .iter()
+            .find(|plugin| plugin.name == "notion")
+            .unwrap();
+        assert!(notion.can_toggle);
+        assert!(notion.can_uninstall);
+        let browser = plugins
+            .iter()
+            .find(|plugin| plugin.name == "browser")
+            .unwrap();
+        assert!(browser.can_toggle);
+        assert!(!browser.can_uninstall);
         assert!(plugins
             .iter()
-            .filter(|plugin| plugin.name != "sample")
+            .filter(|plugin| plugin.name == "managed" || plugin.name == "unknown")
             .all(|plugin| !plugin.can_toggle && !plugin.can_uninstall));
         assert!(context
             .set_plugin_enabled("sample@openai-curated-remote", true)

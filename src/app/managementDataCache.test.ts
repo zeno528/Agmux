@@ -380,6 +380,31 @@ describe("Codex account plugin catalog cache", () => {
     await expect(cache.loadPluginCatalog()).resolves.toEqual([plugin("remote")]);
   });
 
+  it("lazily sweeps legacy plugin icon and catalog keys when a persisted cache is first read", async () => {
+    // 完整 localStorage 协议（length/key/removeItem），模拟历史上图标键挤爆配额的现场
+    persistedStorage.set("agmux.plugin-icon-v1:https://fixture/icon.png", "\"data:image/png;base64,fixture\"");
+    persistedStorage.set("agmux.marketplace-plugins-cache-v1", "{}");
+    persistedStorage.set("agmux.plugins-cache-v1", "[]");
+    persistedStorage.set("agmux.plugins-cache-v2", JSON.stringify({ at: Date.now(), items: [plugin("kept")] }));
+    persistedStorage.set("agmux.proxy-status-v1", JSON.stringify({ proxy: null, error: false }));
+    persistedStorage.set("agmux.plugin-catalog-cache-v1", JSON.stringify({ at: Date.now(), items: [plugin("kept")] }));
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => persistedStorage.get(key) ?? null,
+      setItem: (key: string, value: string) => persistedStorage.set(key, value),
+      removeItem: (key: string) => persistedStorage.delete(key),
+      get length() { return persistedStorage.size; },
+      key: (index: number) => [...persistedStorage.keys()][index] ?? null,
+    });
+    const cache = await import("./managementDataCache");
+
+    expect(cache.getCachedPluginCatalog()).toEqual([plugin("kept")]); // 清理不影响现役键照常直出
+    expect(persistedStorage.has("agmux.plugin-icon-v1:https://fixture/icon.png")).toBe(false);
+    expect(persistedStorage.has("agmux.marketplace-plugins-cache-v1")).toBe(false);
+    expect(persistedStorage.has("agmux.plugins-cache-v1")).toBe(false);
+    expect(persistedStorage.has("agmux.plugins-cache-v2")).toBe(true);
+    expect(persistedStorage.has("agmux.proxy-status-v1")).toBe(true);
+  });
+
   it("keeps a verified mutation when an older directory request finishes", async () => {
     let complete!: (items: ReturnType<typeof plugin>[]) => void;
     listPluginCatalog.mockReturnValue(new Promise((resolve) => { complete = resolve; }));

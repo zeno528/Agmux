@@ -50,6 +50,7 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
   const restoreFromStorage = () => {
     if (restored || !persist) return;
     restored = true;
+    sweepLegacyPluginStorage();
     let raw = readJson(persist.key);
     if (raw === null) return;
     if (persist.maxAgeMs !== undefined) {
@@ -102,27 +103,38 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
   };
 }
 
-// 图标按需恢复，卡片首帧即可读取；不在启动阶段读取图片缓存。
+/// 历史图标键把 localStorage 配额挤爆过（134 个 base64 ≈5MB，导致 2.89MB 的目录快照
+/// 一直写不进去）：图标不再落前端存储（远程/超重图标由后端磁盘缓存持久化），这里
+/// 一次性清掉存量垃圾键与两把旧目录键。懒触发（首次进管理页），不碰启动路径；
+/// 倒序遍历避免删键移位。
+const LEGACY_PLUGIN_STORAGE_PREFIXES = ["agmux.plugin-icon-v1:", "agmux.marketplace-plugins-cache-v1", "agmux.plugins-cache-v1"];
+let legacyPluginStorageSwept = false;
+
+function sweepLegacyPluginStorage(): void {
+  if (legacyPluginStorageSwept) return;
+  legacyPluginStorageSwept = true;
+  const storage: Storage | undefined = typeof localStorage === "undefined" || localStorage === null
+    ? undefined
+    : localStorage as Storage;
+  if (!storage || typeof storage.length !== "number" || typeof storage.key !== "function" || typeof storage.removeItem !== "function") return;
+  try {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index);
+      if (key && LEGACY_PLUGIN_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) storage.removeItem(key);
+    }
+  } catch {
+    // 清理失败不影响缓存本身，下次会话再试。
+  }
+}
+
+// 图标只做会话内去重（卡片首帧读取、失败重试）；本地小图标每会话经 IPC 重读，
+// 远程/超重图标走后端 ~/.agmux/plugin-icons 磁盘缓存。
 const pluginIcons = new Map<string, ReturnType<typeof createManagementCache<string | null>>>();
 
 function pluginIconCache(path: string) {
   let cache = pluginIcons.get(path);
   if (!cache) {
-    let imageKey = path;
-    if (path.startsWith("https://")) {
-      try {
-        const url = new URL(path);
-        const id = url.searchParams.get("id");
-        url.search = "";
-        url.hash = "";
-        if (id !== null) url.searchParams.set("id", id);
-        imageKey = url.href; // 与后端一致：签名轮换不改变图片身份。
-      } catch { /* 无效地址由图标读取接口处理。 */ }
-    }
-    cache = createManagementCache(() => api.pluginIcon(path), {
-      key: `agmux.plugin-icon-v1:${imageKey}`,
-      restore: (raw) => typeof raw === "string" && raw.startsWith("data:image/") ? raw : null,
-    });
+    cache = createManagementCache(() => api.pluginIcon(path));
     pluginIcons.set(path, cache);
   }
   return cache;

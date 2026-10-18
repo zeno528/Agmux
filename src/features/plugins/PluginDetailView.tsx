@@ -74,11 +74,13 @@ export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSum
             ) : skillsError ? (
               <p className="muted mt-2 text-sm">{skillsError}</p>
             ) : skills.length ? (
-              <div className="mt-3 space-y-2">
+              <div className="apple-list-card mt-3">
                 {skills.map((skill) => (
-                  <div key={skill.path} className="rounded-[var(--radius-control)] bg-black/3 p-3 shadow-[0_0_0_1px_var(--panel-ring)] dark:bg-white/4">
-                    <div className="font-semibold">{skill.name}</div>
-                    {skill.description ? <div className="muted mt-1.5 text-sm">{skill.description}</div> : null}
+                  <div key={skill.path} className="apple-list-row">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold">{skill.name}</div>
+                      {skill.description ? <div className="muted mt-0.5 break-words text-sm">{skill.description}</div> : null}
+                    </div>
                   </div>
                 ))}
               </div>
