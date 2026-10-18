@@ -110,7 +110,8 @@ it.each(["codex", "claude"] as const)("%s 静默和主动检查共用按钮检�
     expect(button.disabled).toBe(true);
     expect(renderToStaticMarkup(<>{button.children}</>)).toContain("cli.checkingUpdate");
     expect(renderToStaticMarkup(card).match(/cli.checkingUpdate/g)).toHaveLength(1);
-    expect(renderToStaticMarkup(card)).toContain("cli.working");
+    expect(renderToStaticMarkup(card)).not.toContain("cli.working");
+    expect(renderToStaticMarkup(card)).not.toContain("cliUpdate.upgrade");
   };
   assertChecking();
   await render().check();

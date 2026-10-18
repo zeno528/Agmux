@@ -137,10 +137,10 @@ export function CliCard({ client, management }: { client: Client; management: Re
               </span>
             ) : null}
             {status?.version ? <span className="plan-badge">{status.version}</span> : null}
-            {status?.installation === "native" ? (
+            {status?.installation === "native" && operation !== "check" ? (
               <CliUpgradePill
                 client={client}
-                busy={status.busy || (busy && operation !== "refresh")}
+                busy={status.busy || (busy && operation === "install")}
                 onUpdated={() => { void refresh(); }}
               />
             ) : null}

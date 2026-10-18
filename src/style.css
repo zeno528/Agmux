@@ -476,7 +476,7 @@ button.plan-badge:hover:not(:disabled) {
   line-height: 1.35;
 }
 
-/* 横条按选项宽度的 85% 居中，复用主题控件的滑动节奏。 */
+/* 横条按文字宽度的 85% 居中，复用主题控件的滑动节奏。 */
 .settings-tab-indicator {
   position: absolute;
   bottom: 6px;
@@ -484,20 +484,16 @@ button.plan-badge:hover:not(:disabled) {
   height: 3.5px;
   border-radius: 999px;
   pointer-events: none;
+  background: var(--text-primary);
   transition: transform var(--motion-segment-slide), width var(--motion-segment-slide);
 }
 
-.settings-tab-indicator::before {
-  content: "";
-  position: absolute;
-  inset: 0 7.5%;
-  border-radius: inherit;
-  background: var(--text-primary);
-}
-
-/* 设置页标签栏的基线使用全局分割线语义，但降低线宽与对比度，避免压过标签内容。 */
+/* 分割线画在标签栏内部，避开滚动正文边界的亚像素覆盖。 */
 .settings-tab-bar {
-  border-bottom: 0.5px solid color-mix(in srgb, var(--panel-divider) 72%, transparent);
+  flex-shrink: 0;
+  z-index: 1;
+  background: var(--main-surface-bg);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--panel-divider) 72%, transparent);
 }
 
 /* 最小元信息（卡片时间戳、备份记录摘要）：第五级字号，不属于正文层级。
@@ -1244,6 +1240,7 @@ body.drag-active * {
 .apple-page-bar {
   background: var(--main-surface-bg);
   flex-wrap: wrap;
+  align-content: center;
   margin-inline: calc(-1 * var(--gap-main));
   margin-top: calc(-1 * var(--main-top-inset));
   padding-inline: var(--gap-main);

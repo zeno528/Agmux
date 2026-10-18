@@ -372,7 +372,7 @@ function ClaudeProfileEditor({
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={tProfiles("edit.back")} onClick={create ? onChangeProvider : onBack}>
           <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
-          <span className="apple-title">{create ? tProfiles("edit.createTitle") : tProfiles("edit.editTitle")}</span>
+          <span className="apple-title">{create ? tProfiles("toolbar.addProvider") : tProfiles("edit.editTitle")}</span>
         </button>
       </div>
       <div className="apple-edit-content">

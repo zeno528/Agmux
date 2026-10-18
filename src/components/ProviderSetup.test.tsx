@@ -56,6 +56,23 @@ beforeEach(() => {
 });
 
 describe("供应商创建的两步流程", () => {
+  it("页签指示条居中占文字宽度的 85%，图标不计入宽度", () => {
+    const props = { items: [{ id: "general", icon: <svg />, label: "常规", count: "（20）" }], selected: "general", onSelect: vi.fn(), label: "设置分区" };
+    const page = AppTabBar(props);
+    const ref = page.props.ref as { current: unknown };
+    ref.current = { querySelector: () => ({ offsetLeft: 80, querySelector: () => ({ offsetLeft: 34, offsetWidth: 28 }) }) };
+    hooks.effects[hooks.effects.length - 1]();
+    hooks.cursor = 0;
+    const updated = AppTabBar(props);
+    const indicator = elements(updated).find((node) => node.props["aria-hidden"] === "true")!;
+    expect(indicator.props.style).toEqual({ transform: "translateX(116.1px)", width: 23.8 });
+    const button = elements(updated).find((node) => node.type === "button")!;
+    expect(elements(button).find((node) => node.type === "span")!.props.children).toBe("常规");
+    expect(renderToStaticMarkup(button)).toContain("</span>（20）");
+    click(button);
+    expect(props.onSelect).toHaveBeenCalledWith("general");
+  });
+
   it.each([{ presets: codexPresets }, { presets: claudePresets }])("页头搜索按名称、套餐与官网筛选，叠加分类且支持清空", ({ presets }) => {
     const render = () => {
       hooks.cursor = 0;
@@ -102,7 +119,7 @@ describe("供应商创建的两步流程", () => {
     const section = elements(page).find((node) => node.type === "section")!;
     expect(String(section.props.className)).toContain("apple-scroll-page");
     const header = elements(section).find((node) => node.type === "header")!;
-    expect(header.props.className).toBe("apple-page-bar");
+    expect(header.props.className).toBe("apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header");
     const siblings = Children.toArray(section.props.children) as ReactElement<Props>[];
     expect(siblings[1].type).toBe(AppTabBar);
     expect(siblings[2].props.className).toBe("apple-edit-content");
@@ -121,7 +138,7 @@ describe("供应商创建的两步流程", () => {
     expect(renderEditor).not.toHaveBeenCalled();
     expect(elements(tree).some((node) => node.type === PresetGrid)).toBe(true);
     expect(elements(tree).some((node) => String(node.props.className).includes("apple-edit-toolbar--footer"))).toBe(false);
-    click(elements(tree).find((node) => node.type === "button" && node.props["aria-label"] === "新建供应商")!);
+    click(elements(tree).find((node) => node.type === "button" && node.props["aria-label"] === "添加供应商")!);
     expect(onBack).toHaveBeenCalledOnce();
     onBack.mockClear();
     const pick = (kind: string) => {
@@ -140,7 +157,7 @@ describe("供应商创建的两步流程", () => {
     onBack.mockClear();
     tree = render();
     expect(elements(tree).some((node) => node.type === PresetGrid)).toBe(true);
-    expect(elements(tree).some((node) => node.props["aria-label"] === "新建供应商")).toBe(true);
+    expect(elements(tree).some((node) => node.props["aria-label"] === "添加供应商")).toBe(true);
     pick("kimi");
     click(elements(tree).find((node) => node.type === "button" && node.props.children === "kimi")!);
     tree = render();
@@ -189,19 +206,18 @@ describe("供应商创建的两步流程", () => {
     const selectCategory = (label: string) => {
       const bar = elements(tree).find((node) => node.type === AppTabBar)!;
       const navigation = AppTabBar(bar.props as Parameters<typeof AppTabBar>[0]);
-      click(elements(navigation).find((node) => node.type === "button" && node.props.children === label)!);
+      click(elements(navigation).find((node) => node.type === "button" && elements(node).some((child) => child.type === "span" && child.props.children === label))!);
       tree = render();
     };
     expect(names()).toHaveLength(total);
     expect(names()).toEqual(expect.arrayContaining(["自定义", account, "DeepSeek", plan]));
-    const allLabel = `全部（${total}）`;
-    expect(elements(tree).find((node) => node.type === AppTabBar)!.props.items).toEqual(expect.arrayContaining([{ id: "all", label: allLabel }]));
+    expect(elements(tree).find((node) => node.type === AppTabBar)!.props.items).toEqual(expect.arrayContaining([{ id: "all", label: "全部", count: `（${total}）` }]));
     expect((elements(tree).find((node) => node.type === AppTabBar)!.props.items as Array<{id: string}>).map((item) => item.id)).toEqual(["all", "accounts", "plans", "api"]);
-    expect(elements(tree).filter((node) => node.type === "h2").map((node) => node.props.children)).toEqual(["账号授权（1）", `订阅套餐（${planCount}）`, `按量付费（${apiCount}）`, "自定义（1）"]);
-    selectCategory("账号授权（1）");
+    expect(elements(tree).filter((node) => node.type === "h2").map((node) => renderToStaticMarkup(<>{node.props.children}</>))).toEqual(["账号授权（1）", `订阅套餐（${planCount}）`, `按量付费（${apiCount}）`, "自定义（1）"]);
+    selectCategory("账号授权");
     expect(names()).toEqual([account]);
     expect(elements(tree).some((node) => node.type === "h2")).toBe(false);
-    selectCategory(`按量付费（${apiCount}）`);
+    selectCategory("按量付费");
     const apiNames = names();
     expect(apiNames).toHaveLength(apiCount);
     expect(apiNames).toContain("DeepSeek");
@@ -209,7 +225,7 @@ describe("供应商创建的两步流程", () => {
     expect(apiNames).not.toContain(account);
     expect(apiNames).not.toContain(plan);
     expect(apiNames).not.toContain("小米 MiMo");
-    selectCategory(`订阅套餐（${planCount}）`);
+    selectCategory("订阅套餐");
     expect(names()).toHaveLength(planCount);
     expect(names()).toContain(plan);
     expect(names()).toContain("小米 MiMo");
@@ -219,7 +235,7 @@ describe("供应商创建的两步流程", () => {
     click(elements(tree).find((node) => node.type === "button" && elements(node).some((child) => child.props.children === plan))!);
     expect(onSelect).toHaveBeenCalledWith(planKey);
     expect(elements(tree).filter((node) => node.props["aria-pressed"] === true)).toHaveLength(1);
-    selectCategory(allLabel);
+    selectCategory("全部");
     expect(names()).toHaveLength(total);
     expect(names()).toEqual(expect.arrayContaining(["自定义", account]));
   });
