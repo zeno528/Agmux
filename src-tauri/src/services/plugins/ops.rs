@@ -395,10 +395,23 @@ impl AppContext {
     /// 刷新第三方 Git 市场快照，并找出版本变化的已安装插件。
     pub async fn check_plugin_updates(&self) -> AppResult<Vec<PluginUpdate>> {
         let marketplaces = self.list_plugin_marketplaces().await?;
-        let third_party: Vec<_> = marketplaces
+        let mut third_party: Vec<_> = marketplaces
             .into_iter()
             .filter(|marketplace| marketplace.kind == "third-party")
             .collect();
+        if third_party.is_empty() {
+            return Ok(Vec::new());
+        }
+        let installed = self.list_plugins().await?;
+        third_party.retain(|marketplace| {
+            installed.iter().any(|plugin| {
+                plugin.origin == "codex"
+                    && plugin.marketplace.as_deref() == Some(marketplace.name.as_str())
+            })
+        });
+        if third_party.is_empty() {
+            return Ok(Vec::new());
+        }
         let Some(home) = self.paths.codex_home.parent().map(Path::to_path_buf) else {
             return Ok(Vec::new());
         };
@@ -416,7 +429,6 @@ impl AppContext {
         .map_err(|error| app_err!("检查插件更新任务失败: {error}"))??;
         self.normalize_plugin_config_order()?;
 
-        let installed = self.list_plugins().await?;
         let mut updates = Vec::new();
         for marketplace in third_party {
             let available = self
@@ -940,8 +952,22 @@ mod tests {
         let source = home.join("plugin_cli_fixture.rs");
         std::fs::write(&source, r#"fn main() {
             use std::io::{BufRead, Write};
-            let root = std::path::PathBuf::from(std::env::var_os("CODEX_HOME").unwrap());
             let args: Vec<String> = std::env::args().collect();
+            let exe = std::env::current_exe().unwrap();
+            let claude = exe.file_stem().unwrap() == "claude";
+            let root = if claude { exe.parent().unwrap().parent().unwrap().parent().unwrap().join(".codex") }
+                else { std::path::PathBuf::from(std::env::var_os("CODEX_HOME").unwrap()) };
+            if args[2] == "marketplace" {
+                if args[3] == "list" {
+                    if claude { println!("[{{\"name\":\"unused\",\"source\":\"directory\"}},{{\"name\":\"used\",\"source\":\"directory\"}}]"); }
+                    else { println!("unused /unused\nused /used"); }
+                } else {
+                    std::fs::write(root.join("checked-market"), &args[4]).unwrap();
+                    std::process::exit(1);
+                }
+                return;
+            }
+            if claude { println!("{}", std::fs::read_to_string(root.join("listing.json")).unwrap()); return; }
             if args[1] == "app-server" {
                 for line in std::io::stdin().lock().lines() {
                     let line = line.unwrap();
@@ -1015,6 +1041,45 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    #[tokio::test]
+    async fn update_checks_skip_unused_markets_and_preserve_refresh_failures() {
+        for claude in [false, true] {
+            let (home, context) = test_context();
+            install_cli_fixture(home.path(), serde_json::json!({"installed": []}));
+            let root = home.path().join(".codex");
+            if claude {
+                let cli = crate::services::claude_cli::native_path(home.path());
+                std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+                std::fs::copy(root.join("bin").join(file_name()), cli).unwrap();
+                std::fs::write(root.join("listing.json"), "[]").unwrap();
+                assert!(context
+                    .claude_check_plugin_updates()
+                    .await
+                    .unwrap()
+                    .is_empty());
+            } else {
+                assert!(context.check_plugin_updates().await.unwrap().is_empty());
+            }
+            assert!(!root.join("checked-market").exists());
+            let entry = serde_json::json!({"id": "sample@used", "version": "1.0.0", "scope": "user", "enabled": true});
+            let listing = if claude {
+                serde_json::json!([entry])
+            } else {
+                serde_json::json!({"installed": [{"pluginId": "sample@used", "name": "sample", "version": "1.0.0", "enabled": true, "source": {"source": "git"}}]})
+            };
+            std::fs::write(root.join("listing.json"), listing.to_string()).unwrap();
+            if claude {
+                assert!(context.claude_check_plugin_updates().await.is_err());
+            } else {
+                assert!(context.check_plugin_updates().await.is_err());
+            }
+            assert_eq!(
+                std::fs::read_to_string(root.join("checked-market")).unwrap(),
+                "used"
+            );
+        }
     }
 
     #[tokio::test]

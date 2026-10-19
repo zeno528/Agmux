@@ -395,16 +395,30 @@ impl AppContext {
     /// 检查已装插件是否有更新：先刷新市场目录（CLI 没有 dry-run，刷新是唯一拿到最新目录的方式），
     /// 再按 CLI 自己的目录快照比对版本。返回需要升级的插件 id（按 id 去重，多 scope 共用）。
     pub async fn claude_check_plugin_updates(&self) -> AppResult<Vec<ClaudePluginUpdate>> {
-        for marketplace in self.claude_list_plugin_marketplaces().await? {
-            self.claude_update_plugin_marketplace(&marketplace.name)
-                .await?;
-        }
         let home = self.claude_home()?;
         tauri::async_runtime::spawn_blocking(move || {
             let output = run_claude_plugin(&home, &["list", "--json"], None)?;
             let installed = parse_claude_inventory(&output)?.installed;
             if installed.is_empty() {
                 return Ok(Vec::new());
+            }
+            let output = run_claude_plugin(&home, &["marketplace", "list", "--json"], None)?;
+            for marketplace in parse_claude_marketplaces(&output)?
+                .into_iter()
+                .filter(|market| {
+                    installed.iter().any(|entry| {
+                        entry.id.rsplit_once('@').map(|(_, name)| name)
+                            == Some(market.name.as_str())
+                    })
+                })
+            {
+                validate_claude_marketplace_name(&marketplace.name)?;
+                let output = run_claude_plugin(
+                    &home,
+                    &["marketplace", "update", &marketplace.name, "--json"],
+                    None,
+                )?;
+                parse_claude_op(&output)?;
             }
             let text =
                 std::fs::read_to_string(home.join(".claude/plugins/plugin-catalog-cache.json"))

@@ -48,7 +48,8 @@ export default {
   market: {
     pluginCount: "Plugins: {{count}}",
     removeAria: "Remove plugin marketplace {{name}}",
-    foundUpdates: "Plugin updates available: {{count}}",
+    foundUpdates: "{{client}}: {{count}} plugin updates available",
+    upToDateToast: "{{client}}: Plugins are up to date",
     upToDate: "All plugins are up to date",
     allUpgraded: "All third-party plugins updated",
     removedToast: "Removed the plugin marketplace \"{{name}}\"",

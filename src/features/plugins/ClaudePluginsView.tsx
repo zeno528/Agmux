@@ -108,7 +108,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     try {
       const updates = await api.claudeCheckPluginUpdates();
       setUpdatable(new Map(updates.map((update) => [update.id, update.version])));
-      feedback.success(updates.length ? t("market.foundUpdates", { count: updates.length }) : t("market.upToDate"));
+      feedback.success(updates.length ? t("market.foundUpdates", { client: "Claude Code", count: updates.length }) : t("market.upToDateToast", { client: "Claude Code" }));
     } catch (error) {
       feedback.error(String(error));
     } finally {

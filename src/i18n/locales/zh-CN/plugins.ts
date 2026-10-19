@@ -48,7 +48,8 @@ export default {
   market: {
     pluginCount: "{{count}} 个插件",
     removeAria: "卸载插件市场 {{name}}",
-    foundUpdates: "发现 {{count}} 个可更新插件",
+    foundUpdates: "{{client}}：{{count}} 个插件可更新",
+    upToDateToast: "{{client}}：插件已是最新",
     upToDate: "所有插件都已是最新版本",
     allUpgraded: "第三方插件已全部更新",
     removedToast: "已卸载插件市场「{{name}}」",

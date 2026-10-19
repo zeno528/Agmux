@@ -1,7 +1,7 @@
 // @ts-expect-error 测试运行于 Node，但应用的浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Activity, Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setupI18n } from "../../i18n";
 import { webInvoke } from "../../api/web-mock";
@@ -105,6 +105,7 @@ it("切换插件引擎保留父层页头和滑块，并将正文滚动归零", a
   setupI18n("zh-CN");
   const state = await webInvoke<AppState>("get_state");
   const frames: ReactElement<Parameters<typeof ClientTargetSwitch>[0]>[] = [];
+  const panels: ReactElement<{ mode: string; children: ReactNode }>[][] = [];
   function Capture() {
     const tree = PluginsView({ state, activationEpoch: 0, popEpoch: 0 });
     const header = Children.toArray(tree.props.children)[0] as ReactElement<{ children: ReactNode }>;
@@ -112,6 +113,8 @@ it("切换插件引擎保留父层页头和滑块，并将正文滚动归零", a
     const toolbar = headerChildren[headerChildren.length - 1] as ReactElement<{ children: ReactNode }>;
     const control = Children.toArray(toolbar.props.children).find((child) => isValidElement(child) && child.type === ClientTargetSwitch) as typeof frames[number];
     frames.push(control);
+    const content = Children.toArray(tree.props.children)[1] as ReactElement<{ children: ReactNode }>;
+    panels.push(Children.toArray(content.props.children).filter((child) => isValidElement(child) && child.type === Activity) as typeof panels[number]);
     if (control.props.value === "codex") {
       const content = Children.toArray(tree.props.children)[1] as ReactElement<{ ref: { current: { scrollTop: number } | null } }>;
       const scrollContent = { scrollTop: 240 };
@@ -127,6 +130,10 @@ it("切换插件引擎保留父层页头和滑块，并将正文滚动归零", a
   expect(frames.map((control) => control.props.value)).toEqual(["codex", "claude"]);
   expect(frames[1].type).toBe(frames[0].type);
   expect(frames[1].key).toBe(frames[0].key);
+  // 保活结构契约：切客户端不能卸载仍在检查的看板；未访问客户端不挂载。
+  expect(panels[0].map((panel) => panel.props.mode)).toEqual(["visible"]);
+  expect(panels[1].map((panel) => panel.props.mode)).toEqual(["hidden", "visible"]);
+  expect(panels[1][0].key).toBe(panels[0][0].key);
 });
 
 // 一级列表（MCP / Skill）共用一套行卡定义。页面各自复制结构、

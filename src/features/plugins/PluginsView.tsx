@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { Activity, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ClientTargetSwitch, type ClientTarget } from "../../components/ClientTargetSwitch";
 import ClaudePluginsView from "./ClaudePluginsView";
@@ -13,6 +13,7 @@ export type PluginHeaderState = { title: ReactNode; editing?: boolean };
 export default function PluginsView({ state, activationEpoch, popEpoch }: { state: AppState; activationEpoch: number; popEpoch: number }) {
   const { t } = useTranslation("plugins");
   const [target, setTarget] = useState<ClientTarget>("codex");
+  const [claudeVisited, setClaudeVisited] = useState(false);
   const [query, setQuery] = useState("");
   const [header, setHeader] = useState<PluginHeaderState | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -28,6 +29,7 @@ export default function PluginsView({ state, activationEpoch, popEpoch }: { stat
               onChange={(next) => {
                 if (next === target) return;
                 if (contentRef.current) contentRef.current.scrollTop = 0;
+                if (next === "claude") setClaudeVisited(true);
                 setTarget(next);
               }}
               label={t("target.label")}
@@ -39,9 +41,14 @@ export default function PluginsView({ state, activationEpoch, popEpoch }: { stat
       <div ref={contentRef} className={header?.editing ? "contents" : "apple-edit-content"}>
         {/* 搜索只属于看板：详情/添加等子页（editing）不挂载 */}
         {header?.editing ? null : <PluginSearchInput value={query} onChange={setQuery} className="mb-4 w-full" />}
-        {target === "codex"
-          ? <CodexPluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
-          : <ClaudePluginsView popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />}
+        <Activity mode={target === "codex" ? "visible" : "hidden"}>
+          <CodexPluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
+        </Activity>
+        {claudeVisited ? (
+          <Activity mode={target === "claude" ? "visible" : "hidden"}>
+            <ClaudePluginsView popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
+          </Activity>
+        ) : null}
       </div>
     </section>
   );

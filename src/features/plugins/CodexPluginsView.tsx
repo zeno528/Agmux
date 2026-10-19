@@ -241,7 +241,7 @@ export default function CodexPluginsView({
     try {
       const items = await api.checkPluginUpdates();
       setUpdates(items);
-      feedback.success(items.length ? t("market.foundUpdates", { count: items.length }) : t("market.upToDate"));
+      feedback.success(items.length ? t("market.foundUpdates", { client: "Codex", count: items.length }) : t("market.upToDateToast", { client: "Codex" }));
     } catch (error) {
       feedback.error(String(error));
     } finally {
