@@ -1738,7 +1738,7 @@ fn add_builtin_profile_creates_snapshot_without_activating() {
         .unwrap();
 
     assert_eq!(profile.name, "DeepSeek");
-    assert_eq!(profile.model, None);
+    assert_eq!(profile.model.as_deref(), Some("deepseek-flash"));
     assert_eq!(profile.provider.as_deref(), Some("deepseek"));
     assert_eq!(profile.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(profile.icon.as_deref(), Some("deepseek"));

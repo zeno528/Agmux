@@ -1,8 +1,10 @@
+model = "deepseek-flash"
 model_provider = "deepseek"
 preferred_auth_method = "apikey"
 forced_login_method = "api"
 model_reasoning_effort = "high"
 web_search = "disabled"
+show_raw_agent_reasoning = true
 model_catalog_json = "~/.codex/models.json"
 
 [model_providers.deepseek]
@@ -10,3 +12,6 @@ name = "deepseek"
 base_url = "https://api.deepseek.com/"
 wire_api = "responses"
 experimental_bearer_token = "<YOUR_API_KEY>"
+
+[desktop]
+enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "max"]

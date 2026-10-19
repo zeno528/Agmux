@@ -68,10 +68,12 @@ describe("供应商目录的客户端边界", () => {
     }
   });
 
-  it("支持获取模型列表的四个 Codex 预设不预填模型 ID", () => {
-    for (const kind of ["chatgpt", "deepseek", "zhipu", "minimax"]) {
+  it("Codex 预设遵循各供应商的默认模型", () => {
+    for (const kind of ["chatgpt", "zhipu"]) {
       expect(codexPresets.find((preset) => preset.kind === kind)?.model).toBe("");
     }
+    expect(codexPresets.find((preset) => preset.kind === "minimax")?.model).toBe("MiniMax-M3.1-Flash");
+    expect(codexPresets.find((preset) => preset.kind === "deepseek")?.model).toBe("deepseek-flash");
   });
 
   it("双客户端各用自己的配置，单客户端条目只出现在对应列表", () => {

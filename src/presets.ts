@@ -134,7 +134,7 @@ export const providerPresets: ProviderPreset[] = [
       provider: "deepseek",
       base_url: "https://api.deepseek.com/",
       admin_url: "https://platform.deepseek.com",
-      model: "",
+      model: "deepseek-flash",
     },
     claude: {
       provider: "deepseek",
@@ -150,7 +150,7 @@ export const providerPresets: ProviderPreset[] = [
       provider: "minimax",
       base_url: "https://api.minimax.cn/v1",
       admin_url: "https://platform.minimax.cn",
-      model: "",
+      model: "MiniMax-M3.1-Flash",
       endpoints: [
         { region: "cn", base_url: "https://api.minimax.cn/v1", admin_url: "https://platform.minimax.cn" },
         { region: "global", base_url: "https://api.minimax.io/v1", admin_url: "https://platform.minimax.io" },

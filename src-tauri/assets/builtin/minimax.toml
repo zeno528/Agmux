@@ -1,3 +1,4 @@
+model = "MiniMax-M3.1-Flash"
 model_provider = "minimax"
 model_context_window = 524288
 preferred_auth_method = "apikey"
