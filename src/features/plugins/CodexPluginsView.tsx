@@ -503,7 +503,10 @@ export default function CodexPluginsView({
                         {installing === `${plugin.name}@${plugin.marketplace}` ? <LoadingSpinner /> : <TrashIcon />}
                       </button>
                     ) : null}
-                    meta={originChip(plugin)}
+                    meta={<>
+                      {plugin.version ? <span className="plan-badge max-w-24 truncate" title={plugin.version}>v{plugin.version}</span> : null}
+                      {originChip(plugin)}
+                    </>}
                   />
                 ))}
               </div>

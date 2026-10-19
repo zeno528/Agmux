@@ -27,7 +27,7 @@ it("插件与应用分别计数，运行时不冒充已安装或可安装插件�
   setupI18n("zh-CN");
   const state = await webInvoke<AppState>("get_state");
   const installed = await webInvoke<PluginSummary[]>("list_plugins");
-  const plugin = { ...installed[0], name: "sample", display_name: "Sample", enabled: false };
+  const plugin = { ...installed[0], name: "sample", display_name: "Sample", version: "1.2.3", enabled: false };
   const runtime = { ...installed[0], name: "runtime", display_name: "Runtime", desktop_visible: false };
   setCachedPlugins([plugin, runtime]);
   vi.mocked(getCachedPluginCatalog).mockReturnValueOnce([{
@@ -41,6 +41,7 @@ it("插件与应用分别计数，运行时不冒充已安装或可安装插件�
     const text = html.replace(/<[^>]*>/g, "");
     expect(text).toContain("插件1");
     expect(text).toContain("应用1");
+    expect(text).toContain("v1.2.3");
     expect(html).not.toContain("Runtime");
     return null;
   }
