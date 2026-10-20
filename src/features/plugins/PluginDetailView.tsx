@@ -2,9 +2,9 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
-import ContainsChips from "./components/ContainsChips";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { originLabels } from "./pluginMeta";
+import { PluginStatusDot } from "./components/PluginStatusDot";
 import type { PluginSkill, PluginSummary } from "../../types";
 
 export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSummary; onBack: () => void }) {
@@ -31,7 +31,7 @@ export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSum
     return () => {
       cancelled = true;
     };
-  }, [plugin.name]);
+  }, [plugin.name, plugin.store_path]);
 
   return (
     <section className="apple-edit-page mx-auto flex w-full max-w-none flex-col">
@@ -47,33 +47,22 @@ export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSum
             <div className="flex flex-wrap items-center gap-2">
               <span className="title-md">{plugin.display_name ?? plugin.name}</span>
               {plugin.version ? <span className="apple-chip">v{plugin.version}</span> : null}
-              {plugin.enabled ? null : <span className="apple-chip chip-warn">{t("detail.disabled")}</span>}
+              <PluginStatusDot enabled={plugin.enabled} />
+              <span className="apple-chip">{originLabels[plugin.origin] ? t(originLabels[plugin.origin]!) : plugin.origin}</span>
             </div>
             {plugin.description ? <p className="muted mt-1.5 text-sm">{plugin.description}</p> : null}
-            {plugin.category || plugin.capabilities.length ? <div className="mt-2 flex flex-wrap items-center gap-2">
-              {plugin.category ? <span className="apple-chip">{t("detail.category", { category: plugin.category })}</span> : null}
-              {plugin.capabilities.length ? <ContainsChips items={plugin.capabilities} /> : null}
-            </div> : null}
-          </div>
-          <div className="apple-panel-section apple-panel-section--compact">
-            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-              <div className="flex items-baseline gap-2">
-                <span className="field-label shrink-0">{t("detail.origin")}</span>
-                <span className="text-sm">{originLabels[plugin.origin] ? t(originLabels[plugin.origin]!) : plugin.origin}</span>
+            {plugin.marketplace || plugin.store_path ? (
+              <div className="mt-3 space-y-2">
+                {plugin.marketplace ? <div className="flex items-baseline gap-2">
+                  <span className="field-label shrink-0">{t("detail.marketplace")}</span>
+                  <span className="mono muted text-sm">{plugin.marketplace}</span>
+                </div> : null}
+                {plugin.store_path ? <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="field-label shrink-0">{t("detail.installPath")}</span>
+                  <span className="mono muted min-w-0 break-all text-sm">{plugin.store_path}</span>
+                </div> : null}
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className="field-label shrink-0">{t("detail.marketplace")}</span>
-                <span className="mono text-sm">{plugin.marketplace ?? t("detail.local")}</span>
-              </div>
-            </div>
-            <div className="mt-2 flex min-w-0 items-baseline gap-2">
-              <span className="field-label shrink-0">{t("detail.installPath")}</span>
-              <span className="mono muted min-w-0 break-all text-sm">{plugin.store_path}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="field-label shrink-0">{t("detail.composition")}</span>
-              {plugin.contains.length ? <ContainsChips items={plugin.contains} /> : <span className="muted text-sm">{t("detail.compositionEmpty")}</span>}
-            </div>
+            ) : null}
           </div>
           <div className="apple-panel-section">
             <div className="flex items-center gap-2">
@@ -85,12 +74,13 @@ export default function PluginDetailView({ plugin, onBack }: { plugin: PluginSum
             ) : skillsError ? (
               <p className="muted mt-2 text-sm">{skillsError}</p>
             ) : skills.length ? (
-              <div className="mt-3 space-y-2">
+              <div className="apple-list-card mt-3">
                 {skills.map((skill) => (
-                  <div key={skill.path} className="rounded-[var(--radius-control)] bg-black/3 p-3 shadow-[0_0_0_1px_var(--panel-ring)] dark:bg-white/4">
-                    <div className="font-semibold">{skill.name}</div>
-                    <div className="mono muted meta-xs mt-1 break-all">{skill.path}</div>
-                    {skill.description ? <div className="muted mt-1.5 text-sm">{skill.description}</div> : null}
+                  <div key={skill.path} className="apple-list-row">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold">{skill.name}</div>
+                      {skill.description ? <div className="muted mt-0.5 break-words text-sm">{skill.description}</div> : null}
+                    </div>
                   </div>
                 ))}
               </div>

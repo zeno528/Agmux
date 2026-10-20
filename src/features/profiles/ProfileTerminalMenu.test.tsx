@@ -12,7 +12,7 @@ function renderMenu() {
   return renderToStaticMarkup(createElement(
     FeedbackProvider,
     null,
-    createElement(I18nextProvider, { i18n }, createElement(ProfileTerminalMenu, { profileId: "p1" })),
+    createElement(I18nextProvider, { i18n }, createElement(ProfileTerminalMenu, { profileId: "p1", active: false })),
   ));
 }
 
@@ -43,6 +43,6 @@ it("触发器沿用卡片既有图标按钮与 18px 尺寸，未展开时不渲�
   expect(html).toContain('aria-expanded="false"');
   expect(html).toContain("h-[18px] w-[18px]");
   expect(html).toContain("terminal.open");
-  // 列表只在展开时读，未展开不出现空态文案，避免冷启动多余 DOM
-  expect(html).not.toContain("terminal.empty");
+  // 列表只在展开时读，未展开不渲染菜单内容，避免冷启动多余 DOM
+  expect(html).not.toContain("terminal.new");
 });

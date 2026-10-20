@@ -135,7 +135,7 @@ export function ProfileCardActions({ active, busy, testing, allowInactiveDeleteW
           <span className={active ? "invisible" : ""} aria-hidden="true">{t("actions.switch")}</span>
           {active ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
         </button>
-        {terminalProfileId ? <ProfileTerminalMenu profileId={terminalProfileId} /> : null}
+        {terminalProfileId ? <ProfileTerminalMenu profileId={terminalProfileId} active={active} /> : null}
         <button ref={menuTriggerRef} type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("actions.more")} title={t("actions.more")} aria-busy={testing} onClick={() => setMenuOpen((open) => !open)}>{testing ? <LoadingSpinner size="md" /> : <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}</button>
         {menu}
       </div>

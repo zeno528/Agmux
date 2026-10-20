@@ -1259,7 +1259,7 @@ impl AppContext {
         self.write_claude_settings(next, &remove_extra_keys)
     }
 
-    /// 非平凡全文快照直接恢复原文；平凡快照与旧配置走 merge 只合并托管 env 键。
+    /// 用户级插件开关跟随现场，其余非平凡快照恢复原文；平凡快照只合并托管 env。
     /// values=None 表示纯撤下（删除激活配置）。
     /// 文件不存在则从空对象起建，存在但不是合法 JSON / 顶层不是对象时拒绝写入，绝不覆盖。
     fn write_claude_settings(
@@ -1268,11 +1268,26 @@ impl AppContext {
         remove_extra_keys: &[String],
     ) -> AppResult<()> {
         let path = self.claude_settings_path();
+        let live = read_json_object(&path, "settings.json")?;
+        let mut bytes = claude_settings_bytes(values, &path, remove_extra_keys)?;
+        let mut document: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| app_err!("settings.json 解析失败: {error}"))?;
+        // 只保留用户级现场开关，项目/local 文件继续由 Claude Code 按原生范围加载。
+        if document.get("enabledPlugins") != live.get("enabledPlugins") {
+            let object = document.as_object_mut().expect("顶层已校验为对象");
+            match live.get("enabledPlugins") {
+                Some(flags) => {
+                    object.insert("enabledPlugins".into(), flags.clone());
+                }
+                None => {
+                    object.remove("enabledPlugins");
+                }
+            }
+            bytes = serde_json::to_vec_pretty(&document)
+                .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
+        }
         backup_file(&path, &self.paths.config_backup, "claude-settings")?;
-        atomic_write(
-            &path,
-            &claude_settings_bytes(values, &path, remove_extra_keys)?,
-        )
+        atomic_write(&path, &bytes)
     }
 }
 
@@ -3222,7 +3237,71 @@ API_KEY = "secret"
         assert!(doc.get("apiKeyHelper").is_none());
     }
 
-    /// 非平凡快照（捕获/全文编辑过、带 env 之外的顶层键）维持整文件替换语义。
+    #[test]
+    fn provider_switch_preserves_user_plugin_flags_and_project_settings() {
+        use serde_json::json;
+
+        for flags in [
+            Some(json!({"fixture@market": true})),
+            Some(json!({"fixture@market": false})),
+            Some(json!({})),
+            None,
+        ] {
+            let (home, context) = test_context();
+            let settings = context.claude_settings_path();
+            std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+            let mut live = json!({"env": {}});
+            if let Some(flags) = &flags {
+                live["enabledPlugins"] = flags.clone();
+            }
+            std::fs::write(&settings, live.to_string()).unwrap();
+            let project = home.path().join("project/.claude");
+            std::fs::create_dir_all(&project).unwrap();
+            let project_settings = r#"{"enabledPlugins":{"fixture@market":false}}"#;
+            let local_settings = r#"{"enabledPlugins":{"local@market":true}}"#;
+            std::fs::write(project.join("settings.json"), project_settings).unwrap();
+            std::fs::write(project.join("settings.local.json"), local_settings).unwrap();
+            let profiles: Vec<_> = ["A", "B"]
+                .into_iter()
+                .map(|name| {
+                    context.claude_save(
+                        None,
+                        ClaudeProfileInput {
+                            name: name.into(),
+                            raw_settings: Some(json!({
+                                "model": name,
+                                "enabledPlugins": {"fixture@market": false, "stale@market": true}
+                            }).to_string()),
+                            ..Default::default()
+                        },
+                    ).unwrap()
+                })
+                .collect();
+            for profile in [&profiles[0], &profiles[1], &profiles[0]] {
+                context.claude_apply(&profile.id).unwrap();
+                let applied = read_settings(&home);
+                assert_eq!(applied.get("enabledPlugins"), flags.as_ref());
+                assert_eq!(applied["model"], profile.name);
+                assert_eq!(
+                    std::fs::read_to_string(project.join("settings.json")).unwrap(),
+                    project_settings
+                );
+                assert_eq!(
+                    std::fs::read_to_string(project.join("settings.local.json")).unwrap(),
+                    local_settings
+                );
+            }
+            std::fs::write(&settings, "{broken").unwrap();
+            assert!(context.claude_apply(&profiles[1].id).is_err());
+            assert_eq!(std::fs::read_to_string(&settings).unwrap(), "{broken");
+            assert_eq!(
+                context.database.active_claude_profile().unwrap().as_deref(),
+                Some(profiles[0].id.as_str())
+            );
+        }
+    }
+
+    /// 除用户级插件开关外，非平凡快照仍维持整文件替换语义。
     #[test]
     fn nontrivial_snapshot_still_replaces_whole_file() {
         let (home, context) = test_context();

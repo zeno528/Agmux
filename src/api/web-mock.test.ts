@@ -4,11 +4,15 @@ import { extractClaudeCommonSettings, fillClaudeCommonSettings } from "../featur
 import type { AppState, ClaudeProfileDetail, ClaudeProfileSummary, MarketplacePlugin, McpServerSpec, PluginMarketplace, PluginSkill, PluginSummary, PluginUpdate, CodexProfileDetail, CodexProfileSummary, SkillSummary, CliStatus, CliUpdate } from "../types";
 
 describe("web mock", () => {
-  it("新建预设的配置文本不生成预填或空字符串模型 ID", async () => {
-    for (const kind of ["chatgpt", "deepseek", "zhipu", "minimax"]) {
+  it("新建预设的配置文本遵循各供应商的默认模型", async () => {
+    for (const kind of ["chatgpt", "zhipu"]) {
       const config = await webInvoke<string>("codex_get_builtin_config", { kind });
       expect(config).not.toMatch(/^model\s*=/m);
     }
+    const minimax = await webInvoke<string>("codex_get_builtin_config", { kind: "minimax" });
+    expect(minimax).toMatch(/^model = "MiniMax-M3.1-Flash"$/m);
+    const deepseek = await webInvoke<string>("codex_get_builtin_config", { kind: "deepseek" });
+    expect(deepseek).toMatch(/^model = "deepseek-flash"$/m);
   });
 
   it("自定义目录覆盖官方卡片的远程默认模型，Desktop 认证更新明确交给桌面版", async () => {
@@ -330,7 +334,7 @@ describe("web mock", () => {
     const skills = await webInvoke<SkillSummary[]>("list_skills");
     const pluginSkills = await webInvoke<PluginSkill[]>("list_plugin_skills", { name: "memory-bank", storePath: "C:\\Users\\<user>\\.codex\\plugins\\cache\\memory-bank" });
     const marketplaces = await webInvoke<PluginMarketplace[]>("list_plugin_marketplaces");
-    const marketplacePlugins = await webInvoke<MarketplacePlugin[]>("list_marketplace_plugins", { marketplace: "ponytail" });
+    const marketplacePlugins = await webInvoke<MarketplacePlugin[]>("list_plugin_catalog");
 
     expect(plugins.every((plugin) => plugin.name !== "lark-base")).toBe(true);
     expect(plugins.find((plugin) => plugin.name === "ponytail")?.source_url).toBe("https://github.com/DietrichGebert/ponytail.git");

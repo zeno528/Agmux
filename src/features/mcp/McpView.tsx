@@ -6,13 +6,12 @@ import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { deleteCachedMcpProbe, getCachedClaudeMcpServers, getCachedMcpProbe, getCachedMcpServers, getMcpDiffBadge, loadClaudeMcpServers, loadMcpServers, mcpDiffBadgeText, setCachedMcpProbe, setClaudeMcpServersCache, setMcpDiffBadge, setMcpServersCache, subscribeMcpDiffBadge, type McpProbeScope } from "../../app/managementDataCache";
 import { AppSwitch } from "../../components/AppSwitch";
-import { AppSegmentedControl } from "../../components/AppSegmentedControl";
+import { ClientTargetSwitch } from "../../components/ClientTargetSwitch";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { TrashIcon } from "../../components/TrashIcon";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { McpIcon } from "../../components/McpIcon";
-import { SkillTargetLogo } from "../../components/SkillTargetLogo";
 import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
 import { useMenuDismiss } from "../../components/useMenuDismiss";
 import type { McpDiffEntryAction, McpProbeResult, McpServerSpec, McpSyncDiffEntry, McpSyncPreview } from "../../types";
@@ -49,28 +48,14 @@ export function McpTargetSwitch({ value, onChange }: { value: McpTarget; onChang
   const claudeBadge = useSyncExternalStore(subscribeMcpDiffBadge, () => getMcpDiffBadge("claude"), () => getMcpDiffBadge("claude"));
   const badges = { codex: mcpDiffBadgeText(codexBadge), claude: mcpDiffBadgeText(claudeBadge) };
   return (
-    <AppSegmentedControl
-      className="mcp-target-switch h-[var(--toolbar-control-height)] shrink-0"
-      selectedIndex={value === "codex" ? 0 : 1}
-      role="tablist"
+    <ClientTargetSwitch
+      className="mcp-target-switch"
+      value={value}
+      onChange={onChange}
       label={t("target.label")}
-    >
-      {(["codex", "claude"] as const).map((target) => (
-        <button
-          key={target}
-          type="button"
-          role="tab"
-          aria-selected={value === target}
-          className="apple-action-button"
-          title={t("target.label")}
-          onClick={() => onChange(target)}
-        >
-          <SkillTargetLogo target={target} variant="title" />
-          {t(`target.${target}`)}
-          {badges[target] ? <span className="apple-count-badge" aria-hidden="true">{badges[target]}</span> : null}
-        </button>
-      ))}
-    </AppSegmentedControl>
+      labels={{ codex: t("target.codex"), claude: t("target.claude") }}
+      badges={badges}
+    />
   );
 }
 
@@ -329,7 +314,7 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span
-                className={`h-2 w-2 shrink-0 rounded-full ${server.enabled !== false && result?.ok ? "bg-success" : "bg-(--text-secondary)"}`}
+                className={`h-2 w-2 shrink-0 rounded-full ${server.enabled === false || !result ? "bg-(--text-secondary)" : result.ok ? "bg-success" : "bg-(--danger)"}`}
                 role="img"
                 aria-label={t(server.enabled === false ? "list.testConnectionDisabled" : probing ? "list.connectionStateChecking" : result?.ok ? "list.connectionStateConnected" : "list.connectionStateUnavailable")}
               />

@@ -52,10 +52,10 @@ export default function SettingsView({ state, onPreviewTheme, onRefresh, onSaved
       <h1 className="apple-title">{t("view.title")}</h1>
     </header>
     <AppTabBar<Section> selected={section} onSelect={setSection} label={t("view.sectionsLabel")} items={[
-      { id: "general", label: <><Cog className="h-4 w-4 shrink-0" strokeWidth={2} />{t("view.tabGeneral")}</> },
-      { id: "codex", label: <><AppWindow className="h-4 w-4 shrink-0" strokeWidth={2} />{t("view.tabApp")}</> },
-      { id: "advanced", label: <><Database className="h-4 w-4 shrink-0" strokeWidth={2} />{t("view.tabAdvanced")}</> },
-      { id: "about", label: <><Info className="h-4 w-4 shrink-0" strokeWidth={2} />{t("view.tabAbout")}</> },
+      { id: "general", icon: <Cog className="h-4 w-4 shrink-0" strokeWidth={2} />, label: t("view.tabGeneral") },
+      { id: "codex", icon: <AppWindow className="h-4 w-4 shrink-0" strokeWidth={2} />, label: t("view.tabApp") },
+      { id: "advanced", icon: <Database className="h-4 w-4 shrink-0" strokeWidth={2} />, label: t("view.tabAdvanced") },
+      { id: "about", icon: <Info className="h-4 w-4 shrink-0" strokeWidth={2} />, label: t("view.tabAbout") },
     ]} />
     <div key={section} className="apple-edit-content">
     {section === "general" ? (

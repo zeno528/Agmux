@@ -69,7 +69,7 @@ describe("AppShell 布局", () => {
       ["features/codex/CodexProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/claude/ClaudeProfilesView", "if (!popEpoch) return;\n    setEditingProfile(null);\n    setEditDetail(null);\n    setCreatingProfile(false);\n  }, [popEpoch]);"],
       ["features/mcp/McpView", "if (!popEpoch) return;\n    setEditingServer(null);\n    setCreatingServer(false);\n    setDiffOpen(false);\n  }, [popEpoch]);"],
-      ["features/plugins/PluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setAddingMarketplace(false);\n  }, [popEpoch]);"],
+      ["features/plugins/CodexPluginsView", "if (!popEpoch) return;\n    setSelectedPlugin(null);\n    setShowSources(false);\n  }, [popEpoch]);"],
       ["features/skills/SkillsView", "if (!popEpoch) return;\n    setImporting(false);\n  }, [popEpoch]);"],
     ];
     for (const [file, effect] of popEffects) {
@@ -227,7 +227,6 @@ describe("AppShell 布局", () => {
   it("按 4K 150% 缩放换算侧栏与窗口标题栏尺寸，并让窗口控制区底边与主卡片顶边重合", () => {
     expect(styles).toContain("--sidebar-width-collapsed: 3.125rem;");
     expect(styles).toContain("--window-chrome-height: 2.2083333333rem;");
-    expect(styles).toContain("margin: 0 3px 3px 0;");
   });
 
   it("浅色主题的侧栏与窗口标题栏使用统一背景色", () => {
@@ -320,7 +319,7 @@ describe("AppShell 布局", () => {
   });
 
   it("所有编辑正文复用共享容器，不依赖 apple-group 的嵌套层数", () => {
-    const files = ["codex/CodexProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView", "plugins/AddPluginView", "plugins/MarketplaceDetailView"];
+    const files = ["codex/CodexProfileEdit", "profiles/ProfileIconEdit", "claude/ClaudeProfileEdit", "mcp/McpEdit", "mcp/ClaudeMcpEdit", "plugins/PluginDetailView"];
     // 「必须使用 apple-edit-surface」由 check-style-leaks 的结构检查兜底；这里守另一半：不得再挂 apple-group
     for (const file of files) {
       const page = readFileSync(new URL(`../features/${file}.tsx`, import.meta.url), "utf8");
@@ -397,13 +396,14 @@ describe("AppShell 布局", () => {
     expect(styles).not.toContain(".cm-horizontal-scrollbar");
   });
 
-  it("通用模板复用 Skill 预览的视口高度，保留自己的宽度及其他编辑器限高", () => {
+  it("通用模板弹窗按窗口宽高固定占比，编辑器占满正文剩余高度", () => {
     const skillsSource = readFileSync(new URL("../features/skills/SkillsView.tsx", import.meta.url), "utf8");
     const templateRule = styles.match(/\.claude-template-dialog \{([^}]+)\}/)?.[1];
     expect(styles.includes("--dialog-preview-height: 60vh;")).toBe(true);
     expect(skillsSource.match(/h-\[var\(--dialog-preview-height\)\]/g)).toHaveLength(4);
-    expect(templateRule).toContain("width: min(clamp(720px, 70vw, 900px), calc(100vw - 2rem));");
-    expect(templateRule).toContain("--editor-max-height: var(--dialog-preview-height);");
+    expect(templateRule).toContain("width: 80vw;");
+    expect(templateRule).toContain("height: 80vh;");
+    expect(templateRule).toContain("--editor-max-height: 100%;");
     expect(styles.includes("--editor-max-height: min(34rem, 60vh);")).toBe(true);
   });
 

@@ -310,14 +310,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_configs_match_provider_templates_without_prefilled_models() {
+    fn embedded_configs_match_provider_templates() {
         assert_eq!(
             DEEPSEEK_CONFIG,
-            b"model_provider = \"deepseek\"\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\nmodel_reasoning_effort = \"high\"\nweb_search = \"disabled\"\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.deepseek]\nname = \"deepseek\"\nbase_url = \"https://api.deepseek.com/\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\""
+            b"model = \"deepseek-flash\"\nmodel_provider = \"deepseek\"\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\nmodel_reasoning_effort = \"high\"\nweb_search = \"disabled\"\nshow_raw_agent_reasoning = true\nmodel_catalog_json = \"~/.codex/models.json\"\n\n[model_providers.deepseek]\nname = \"deepseek\"\nbase_url = \"https://api.deepseek.com/\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\n\n[desktop]\nenabled-reasoning-efforts = [\"low\", \"medium\", \"high\", \"xhigh\", \"ultra\", \"max\"]"
         );
         assert_eq!(
             MINIMAX_CONFIG,
-            b"model_provider = \"minimax\"\nmodel_context_window = 524288\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\n\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"https://api.minimax.cn/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
+            b"model = \"MiniMax-M3.1-Flash\"\nmodel_provider = \"minimax\"\nmodel_context_window = 524288\npreferred_auth_method = \"apikey\"\nforced_login_method = \"api\"\n\n[model_providers.minimax]\nname = \"MiniMax\"\nbase_url = \"https://api.minimax.cn/v1\"\nexperimental_bearer_token = \"<YOUR_API_KEY>\"\nwire_api = \"responses\""
         );
         assert_eq!(
             ZHIPU_CONFIG,
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(count(DEEPSEEK_MODELS, b"\r\n"), 139);
         assert_eq!(ZHIPU_MODELS.len(), 4061);
         assert_eq!(count(ZHIPU_MODELS, b"\r\n"), 114);
-        assert_eq!(MINIMAX_CATALOG.len(), 1710);
+        assert_eq!(MINIMAX_CATALOG.len(), 1678);
         assert_eq!(count(MINIMAX_CATALOG, b"\r\n"), 41);
         // OpenCode 目录为构造产物（无官方文件），不做字节级快照；
         // 内容由下方 opencode_catalog 结构断言覆盖
@@ -420,7 +420,7 @@ mod tests {
         let models = catalog["models"].as_array().unwrap();
         assert_eq!(models.len(), 1);
         let model = &models[0];
-        assert_eq!(model["slug"], "MiniMax-M3.1-Flash-Preview");
+        assert_eq!(model["slug"], "MiniMax-M3.1-Flash");
         assert_eq!(model["default_reasoning_level"], "max");
         let efforts: Vec<&str> = model["supported_reasoning_levels"]
             .as_array()

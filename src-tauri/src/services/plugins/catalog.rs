@@ -1,4 +1,4 @@
-//! 插件与市场目录解析：CLI 表格输出、市场元数据富化、manifest 读取与 contains 推导。
+//! 插件与市场目录解析：CLI 表格输出、市场元数据富化与 manifest 读取。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -7,63 +7,13 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::codex::config::parse_document;
-use crate::services::plugin_net::{parse_github_url, TreeEntry};
+use crate::services::plugin_net::parse_github_url;
 
-use super::store::store_contains;
 use super::{
     MarketplacePlugin, PluginManifest, PluginMarketplace, PluginSummary, PluginUpdate,
     CLAUDE_MANIFEST_RELATIVE_PATH, MANIFEST_RELATIVE_PATH,
 };
 use crate::error::{app_err, AppResult};
-/// 解析 `codex plugin list` 的表格输出：
-/// `<插件>@<市场>  installed, enabled|disabled  <版本>  <路径>`；`not installed` 跳过。
-pub(super) fn parse_plugin_list_output(
-    text: &str,
-) -> Vec<(String, String, bool, Option<String>, String)> {
-    let mut items = Vec::new();
-    for line in text.lines() {
-        let line = line.trim_end();
-        let trimmed = line.trim_start();
-        if trimmed.is_empty()
-            || trimmed.starts_with("PLUGIN ")
-            || trimmed.starts_with("Marketplace `")
-        {
-            continue;
-        }
-        let Some((selector, rest)) = trimmed.split_once(char::is_whitespace) else {
-            continue;
-        };
-        let Some((plugin, marketplace)) = selector.split_once('@') else {
-            continue;
-        };
-        let rest = rest.trim_start();
-        if rest.starts_with("not installed") {
-            continue;
-        }
-        if !rest.starts_with("installed,") {
-            continue;
-        }
-        let enabled = rest.starts_with("installed, enabled");
-        let after_status = rest
-            .strip_prefix("installed, enabled")
-            .or_else(|| rest.strip_prefix("installed, disabled"))
-            .unwrap_or(rest)
-            .trim_start();
-        let mut parts = after_status.split_whitespace();
-        let version = parts
-            .next()
-            .filter(|token| !token.contains('\\') && !token.contains('/'));
-        let path = parts.collect::<Vec<_>>().join(" ");
-        items.push((
-            plugin.to_string(),
-            marketplace.to_string(),
-            enabled,
-            version.map(str::to_string),
-            path,
-        ));
-    }
-    items
-}
 
 pub(super) fn parse_marketplace_list_output(text: &str) -> Vec<PluginMarketplace> {
     text.lines()
@@ -195,10 +145,8 @@ pub(super) fn enrich_marketplace_metadata(
 pub(super) struct MarketplaceEntryMetadata {
     display_name: Option<String>,
     description: Option<String>,
-    category: Option<String>,
-    capabilities: Vec<String>,
-    contains: Vec<String>,
     version: Option<String>,
+    icon_path: Option<String>,
 }
 
 pub(super) fn marketplace_entry_metadata(
@@ -228,6 +176,21 @@ pub(super) fn marketplace_entry_metadata(
     let manifest_interface = local_manifest
         .as_ref()
         .and_then(|item| item.interface.as_ref());
+    // 图标先看清单条目指向的本地目录，再按市场物化约定探 `plugins/<name>`（openai 运行时市场走后者）。
+    let icon_dir = local_path
+        .clone()
+        .or_else(|| Some(root.join("plugins").join(name)));
+    let icon_path = icon_dir
+        .as_deref()
+        .and_then(|dir| {
+            let manifest = if Some(dir) == local_path.as_deref() {
+                local_manifest.clone()
+            } else {
+                read_manifest(dir)
+            };
+            super::store::plugin_icon_from(manifest.as_ref(), dir)
+        })
+        .map(|path| path.display().to_string());
     MarketplaceEntryMetadata {
         display_name: interface
             .and_then(|item| item.get("displayName"))
@@ -239,44 +202,32 @@ pub(super) fn marketplace_entry_metadata(
             .and_then(Value::as_str)
             .map(String::from)
             .or_else(|| local_manifest.as_ref().and_then(manifest_description)),
-        category: entry
-            .get("category")
-            .and_then(Value::as_str)
-            .map(String::from)
-            .or_else(|| manifest_interface.and_then(|item| item.category.clone())),
-        capabilities: manifest_interface
-            .map(|item| item.capabilities.clone())
-            .unwrap_or_default(),
-        contains: local_path
-            .as_deref()
-            .map(store_contains)
-            .unwrap_or_default(),
         version: local_manifest
             .as_ref()
             .and_then(|item| item.version.clone()),
+        icon_path,
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct PluginCatalogEntry {
-    plugin_id: String,
-    name: String,
-    marketplace_name: String,
+    pub(super) plugin_id: String,
+    pub(super) name: String,
+    pub(super) marketplace_name: String,
     #[serde(default)]
-    version: Option<String>,
+    pub(super) version: Option<String>,
     #[serde(default)]
     installed: bool,
     #[serde(default)]
     auth_policy: String,
     #[serde(default)]
-    source: Option<Value>,
+    pub(super) source: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(super) struct PluginCatalogOutput {
-    #[serde(default)]
-    installed: Vec<PluginCatalogEntry>,
+    pub(super) installed: Vec<PluginCatalogEntry>,
     #[serde(default)]
     available: Vec<PluginCatalogEntry>,
 }
@@ -316,9 +267,7 @@ pub(super) fn parse_marketplace_plugins_output(
                 source: plugin_source_label(item.source.as_ref()),
                 display_name: metadata.display_name,
                 description: metadata.description,
-                category: metadata.category,
-                capabilities: metadata.capabilities,
-                contains: metadata.contains,
+                icon_path: metadata.icon_path,
             })
         })
         .collect())
@@ -489,113 +438,11 @@ pub(super) fn validate_plugin_name(name: &str) -> AppResult<()> {
     }
 }
 
-/// 从文件树里找插件根目录（.codex-plugin/plugin.json 的父目录），仓库根插件表示为空串。
-pub(super) fn plugin_roots(entries: &[TreeEntry]) -> Vec<String> {
-    let mut roots: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.kind == "blob" && entry.path.ends_with(MANIFEST_RELATIVE_PATH))
-        .map(|entry| {
-            entry
-                .path
-                .strip_suffix(&format!("/{MANIFEST_RELATIVE_PATH}"))
-                .unwrap_or_default()
-                .to_string()
-        })
-        .collect();
-    roots.sort();
-    roots.dedup();
-    roots
-}
-
-/// 判断 root 是否等于指定子路径或位于其下（子目录过滤用）。
-pub(super) fn root_within(root: &str, sub_path: &str) -> bool {
-    let sub = sub_path.trim_matches('/');
-    if sub.is_empty() {
-        return true;
-    }
-    root == sub || root.starts_with(&format!("{sub}/"))
-}
-
-pub(super) fn files_under_root<'a>(entries: &'a [TreeEntry], root: &str) -> Vec<&'a str> {
-    entries
-        .iter()
-        .filter(|entry| entry.kind == "blob" && root_within(&entry.path, root))
-        .map(|entry| entry.path.as_str())
-        .collect()
-}
-
-/// 从插件文件清单推导内容类型（白皮书的「包含内容」维度）。
-pub(super) fn derive_contains(files: &[&str]) -> Vec<String> {
-    let mut contains = Vec::new();
-    let has = |predicate: &dyn Fn(&str) -> bool| files.iter().any(|path| predicate(path));
-    if has(&|path| path.starts_with("skills/") || path == "skills") {
-        contains.push("skills".into());
-    }
-    if has(&|path| path.ends_with("/.mcp.json") || path == ".mcp.json") {
-        contains.push("mcp".into());
-    }
-    if has(&|path| path.ends_with("/.app.json") || path == ".app.json") {
-        contains.push("app".into());
-    }
-    if has(&|path| path.ends_with("/hooks.json") || path == "hooks.json") {
-        contains.push("hooks".into());
-    }
-    if has(&|path| path.starts_with("agents/")) {
-        contains.push("agents".into());
-    }
-    if has(&|path| path.starts_with("commands/")) {
-        contains.push("commands".into());
-    }
-    contains
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::plugin_net::TreeEntry;
     use crate::services::plugins::*;
     use serde_json::json;
-
-    fn entry(path: &str) -> TreeEntry {
-        TreeEntry {
-            path: path.to_string(),
-            kind: "blob".into(),
-        }
-    }
-
-    #[test]
-    fn plugin_roots_find_nested_and_root_plugins() {
-        let entries = vec![
-            entry(".codex-plugin/plugin.json"),
-            entry("skills/a/SKILL.md"),
-            entry("plugins/foo/.codex-plugin/plugin.json"),
-            entry("plugins/foo/skills/b/SKILL.md"),
-            entry("plugins/foo/node_modules/x/.codex-plugin/plugin.json"),
-        ];
-        let roots = plugin_roots(&entries);
-        assert_eq!(
-            roots,
-            vec![
-                "".to_string(),
-                "plugins/foo".to_string(),
-                "plugins/foo/node_modules/x".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn root_within_matches_self_and_children_only() {
-        assert!(root_within("plugins/foo", "plugins"));
-        assert!(root_within("plugins/foo", "plugins/foo"));
-        assert!(!root_within("plugins/foobar", "plugins/foo"));
-        assert!(root_within("anything", ""));
-    }
-
-    #[test]
-    fn derive_contains_labels_content_types() {
-        let files = vec!["skills/a/SKILL.md", ".mcp.json", "hooks.json"];
-        assert_eq!(derive_contains(&files), vec!["skills", "mcp", "hooks"]);
-    }
 
     #[test]
     fn resolve_local_path_accepts_prefix_and_cursor_style() {
@@ -635,7 +482,7 @@ mod tests {
             "name": "memory-bank",
             "version": "1.0.0",
             "description": "Memory management",
-            "interface": { "displayName": "Memory Bank", "category": "memory", "capabilities": ["read", "write"] }
+            "interface": { "displayName": "Memory Bank" }
         }"#;
         let manifest = parse_manifest_text(text).unwrap();
         assert_eq!(manifest.name, "memory-bank");
@@ -644,33 +491,6 @@ mod tests {
             manifest.interface.unwrap().display_name.as_deref(),
             Some("Memory Bank")
         );
-    }
-
-    #[test]
-    fn plugin_list_output_parses_status_and_versions() {
-        let output = "\
-Marketplace `openai-bundled`
-C:\\users\\\\.codex\\.tmp\\bundled-marketplaces\\openai-bundled\\.agents\\plugins\\marketplace.json
-
-PLUGIN                           STATUS              VERSION       PATH
-codex-app-tools@openai-bundled  installed, enabled  0.1.0         C:\\bundle\\plugins\\codex-app-tools
-latex@openai-bundled            not installed                     C:\\bundle\\plugins\\latex
-ponytail@ponytail               installed, disabled 4.9.0         C:\\cache\\ponytail\\ponytail\\4.9.0
-";
-        let items = parse_plugin_list_output(output);
-        assert_eq!(items.len(), 2);
-        assert_eq!(
-            items[0],
-            (
-                "codex-app-tools".into(),
-                "openai-bundled".into(),
-                true,
-                Some("0.1.0".into()),
-                "C:\\bundle\\plugins\\codex-app-tools".into()
-            )
-        );
-        assert!(!items[1].2);
-        assert_eq!(items[1].1, "ponytail");
     }
 
     #[test]
@@ -849,14 +669,6 @@ ponytail@ponytail               installed, disabled 4.9.0         C:\\cache\\pon
         let plugin_dir = root.path().join("plugins/local-tool/.codex-plugin");
         std::fs::create_dir_all(&marketplace_dir).unwrap();
         std::fs::create_dir_all(&plugin_dir).unwrap();
-        std::fs::create_dir_all(root.path().join("plugins/local-tool/skills/example")).unwrap();
-        std::fs::write(
-            root.path()
-                .join("plugins/local-tool/skills/example/SKILL.md"),
-            "# Example",
-        )
-        .unwrap();
-        std::fs::write(root.path().join("plugins/local-tool/.mcp.json"), "{}").unwrap();
         std::fs::write(
             marketplace_dir.join("marketplace.json"),
             r#"{
@@ -866,7 +678,6 @@ ponytail@ponytail               installed, disabled 4.9.0         C:\\cache\\pon
               "plugins": [{
                 "name": "local-tool",
                 "description": "Catalog description",
-                "category": "Productivity",
                 "keywords": ["local", "fixture"],
                 "source": "./plugins/local-tool"
               }]
@@ -879,13 +690,13 @@ ponytail@ponytail               installed, disabled 4.9.0         C:\\cache\\pon
               "name": "local-tool",
               "version": "2.0.0",
               "interface": {
-                "displayName": "Local Tool",
-                "capabilities": ["Read", "Write"]
+                "displayName": "Local Tool"
               }
             }"#,
         )
         .unwrap();
         let output = r#"{
+          "installed": [],
           "available": [{
             "pluginId": "local-tool@fixture",
             "name": "local-tool",
@@ -901,13 +712,7 @@ ponytail@ponytail               installed, disabled 4.9.0         C:\\cache\\pon
         let items = parse_marketplace_plugins_output(output, "fixture", Some(root.path())).unwrap();
         assert_eq!(items[0].display_name.as_deref(), Some("Local Tool"));
         assert_eq!(items[0].description.as_deref(), Some("Catalog description"));
-        assert_eq!(items[0].category.as_deref(), Some("Productivity"));
-        assert_eq!(
-            items[0].capabilities,
-            vec!["Read".to_string(), "Write".to_string()]
-        );
         assert_eq!(items[0].version.as_deref(), Some("2.0.0"));
-        assert_eq!(items[0].contains, vec!["skills", "mcp"]);
     }
 
     #[test]

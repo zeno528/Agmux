@@ -43,7 +43,7 @@ const RULES = [
     extract: () => "mt-[var(--gap-page)]",
   },
   {
-    name: "自造滚动容器 / sticky（纵向滚动只归 <main> 与 .apple-edit-content；页头吸顶用 apple-page-bar--sticky）",
+    name: "自造滚动容器 / sticky（纵向滚动只归 <main> 与 .apple-edit-content；页头保持普通流式）",
     pattern: /(?:overflow(?:-x|-y)?-(?:auto|scroll)|overscroll-[a-z-]+|(?:^|[\s"'`])sticky(?:[\s"'`]|$))/g,
     extract: (match) => match.trim(),
   },
@@ -97,13 +97,9 @@ const STRUCTURAL_CHECKS = [
 ];
 
 function walk(dir) {
-  const entries = [];
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) entries.push(...walk(full));
-    else if (/\.(tsx|ts)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) entries.push(full);
-  }
-  return entries;
+  return readdirSync(dir, { recursive: true })
+    .map((name) => join(dir, name))
+    .filter((full) => !statSync(full).isDirectory() && /\.(tsx|ts)$/.test(full) && !/\.test\.(ts|tsx)$/.test(full));
 }
 
 const violations = [];

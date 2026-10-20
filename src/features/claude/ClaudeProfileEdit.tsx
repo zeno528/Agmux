@@ -372,7 +372,7 @@ function ClaudeProfileEditor({
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={tProfiles("edit.back")} onClick={create ? onChangeProvider : onBack}>
           <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
-          <span className="apple-title">{create ? tProfiles("edit.createTitle") : tProfiles("edit.editTitle")}</span>
+          <span className="apple-title">{create ? tProfiles("toolbar.addProvider") : tProfiles("edit.editTitle")}</span>
         </button>
       </div>
       <div className="apple-edit-content">
@@ -429,7 +429,7 @@ function ClaudeProfileEditor({
               </div>
               <input className="app-input" placeholder={t("adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} />
             </div>
-            {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{tProfiles("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{tProfiles("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving || savingBalance} label={tProfiles("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
+            {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{tProfiles("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{tProfiles("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={tProfiles("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
           </div>
           <div className="apple-panel-section">
             <ProviderModelFields

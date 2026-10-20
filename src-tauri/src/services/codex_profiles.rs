@@ -146,6 +146,10 @@ impl AppContext {
             } else {
                 AuthSource::Desktop
             });
+            if account_id.is_none() {
+                payload.raw_auth = self.desktop_auth_snapshot()?;
+                payload.auth_auto_sync = Some(true);
+            }
         }
         let timestamp = now_ms().to_string();
         let summary = self

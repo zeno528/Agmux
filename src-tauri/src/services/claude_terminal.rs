@@ -1,16 +1,15 @@
-//! Claude Code 供应商终端：在新终端里起一个只属于某个供应商的 `claude` 会话。
+//! Claude Code 供应商终端：激活项跟随 live，其他项使用独立覆盖。
 //!
-//! 机制是官方 `--settings` 的 per-invocation 覆盖：把该供应商的配置写进
-//! `.agmux/terminal/claude_<id>.json`，终端里跑
-//! `claude --settings <该文件> --setting-sources project,local`。
-//! 配置生成复用激活逻辑；不加载 user settings，避免当前激活项的 Hooks、权限等混入。
+//! 激活项进入项目后直接执行 `claude`，使用默认全局配置；非激活项把配置写进
+//! `.agmux/terminal/claude_<id>.json` 并用 `--settings` 指向该文件，只加载 project/local。
+//! 非激活项的配置生成复用激活逻辑；不加载 user settings，避免当前激活项的 Hooks、权限等混入。
 //! `--add-dir` 只引入共用 Skills，MCP 经 `--mcp-config ~/.claude.json` 读取。
 //! 保留默认 Claude 用户目录，共用登录、历史会话与信任记录；不跳过权限检查。
 //! `--settings` 同名字段按官方覆盖语义高于 project/local，不另造优先级规则。
-//! 因为是进程级 flag 而非全局文件，N 个终端就是 N 份互不干扰的配置。
+//! 非激活项的覆盖文件只影响该供应商终端；激活项的配置加载与更新交由 Claude Code 处理。
 //!
 //! 只读旁路：不碰 `~/.claude/settings.json`、不改 live、不切激活、不触发回写。
-//! 覆盖文件固定命名、每次覆写、不随进程删除——终端里能直接看到路径，便于排查。
+//! 非激活项覆盖文件固定命名、每次覆写、不随进程删除；终端里会回显配置路径。
 
 use std::path::Path;
 #[cfg(any(windows, target_os = "macos"))]
@@ -24,6 +23,7 @@ use std::path::PathBuf;
 
 use super::claude::claude_settings_bytes;
 use super::AppContext;
+#[cfg(test)]
 use crate::database::StoredClaudeProfile;
 use crate::error::{app_err, AppResult};
 use crate::fsutil::atomic_write;
@@ -74,28 +74,16 @@ fn prepare_shared_skills(terminal: &Path, source: &Path) -> AppResult<std::path:
     Ok(shared)
 }
 
-fn terminal_model(profile: &StoredClaudeProfile) -> String {
-    profile
-        .model
-        .as_deref()
+fn terminal_model(bytes: &[u8]) -> AppResult<String> {
+    let settings: Value =
+        serde_json::from_slice(bytes).map_err(|error| app_err!("终端配置解析失败: {error}"))?;
+    let model = [&settings["env"]["ANTHROPIC_MODEL"], &settings["model"]]
+        .into_iter()
+        .filter_map(Value::as_str)
         .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            profile
-                .raw_settings
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-                .and_then(|settings| {
-                    settings
-                        .get("model")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|model| !model.is_empty())
-                        .map(str::to_owned)
-                })
-        })
-        .unwrap_or_else(|| "default".to_string())
+        .find(|model| !model.is_empty())
+        .unwrap_or("default");
+    Ok(model.into())
 }
 
 /// 终端启动脚本与 AppleScript 都会二次求值，路径里的引号和换行直接拒收。
@@ -115,82 +103,61 @@ fn checked_cwd(cwd: Option<&str>) -> AppResult<Option<&str>> {
 }
 
 /// POSIX 单引号包裹：单引号内不做任何展开，`$`、反引号、`()` 都是字面量。
-/// 只服务 macOS 的 Terminal.app 启动路径（cmd 用双引号），故与测试同 gate；
-/// CI 的 test-macos job 负责在目标平台上跑它。
-#[cfg(target_os = "macos")]
+/// macOS 的 Terminal.app 与 Ghostty 启动路径共用。
+#[cfg(not(windows))]
 fn posix_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
 impl AppContext {
-    /// 写覆盖文件并在新终端里启动 `claude --settings <file>`。
+    /// 激活项直接启动 Claude Code；非激活项写覆盖文件再启动终端。
     /// 目录缺失、终端起不来都返回 Err，由调用方透出给用户——这是用户主动点的操作。
     pub fn claude_open_terminal(&self, id: &str, cwd: Option<&str>) -> AppResult<()> {
         let profile = self.database.claude_profile(id)?;
         let dir = checked_cwd(cwd)?;
 
-        self.paths.ensure()?;
-        let settings = self.paths.terminal_settings(&profile.id);
-        let stale_extra_keys = self.claude_previous_extra_keys(id)?;
-        atomic_write(
-            &settings,
-            &claude_settings_bytes(
+        let active = self.database.active_claude_profile()?.as_deref() == Some(id);
+        let (arguments, banner) = terminal_launch_spec(active, || {
+            self.paths.ensure()?;
+            let live = self.paths.claude_home.join("settings.json");
+            let settings = self.paths.terminal_settings(&profile.id);
+            let bytes = claude_settings_bytes(
                 Some(&profile),
-                &self.paths.claude_home.join("settings.json"),
-                &stale_extra_keys,
-            )?,
-        )?;
-        let shared_skills =
-            prepare_shared_skills(&self.paths.terminal, &self.paths.claude_home.join("skills"))?;
-        let shared_skills = shared_skills.to_string_lossy();
-
-        // 启动前回显覆盖文件路径：用户能立刻确认这个终端用的是哪份配置。
-        let settings_text = settings.display().to_string();
-        let banner = format!("Agmux Claude terminal: {settings_text}");
-        let model = terminal_model(&profile);
-        let mcp_path = self.paths.claude_mcp_config();
-        let mcp_config = mcp_path
-            .is_file()
-            .then(|| mcp_path.to_string_lossy().into_owned());
+                &live,
+                &self.claude_previous_extra_keys(id)?,
+            )?;
+            let model = terminal_model(&bytes)?;
+            atomic_write(&settings, &bytes)?;
+            let shared_skills = prepare_shared_skills(
+                &self.paths.terminal,
+                &self.paths.claude_home.join("skills"),
+            )?;
+            let settings_text = settings.display().to_string();
+            let mcp_path = self.paths.claude_mcp_config();
+            let mcp_config = mcp_path
+                .is_file()
+                .then(|| mcp_path.to_string_lossy().into_owned());
+            Ok((
+                claude_arguments(
+                    &settings_text,
+                    &model,
+                    mcp_config.as_deref(),
+                    &shared_skills.to_string_lossy(),
+                ),
+                format!("Agmux Claude terminal: {settings_text}"),
+            ))
+        })?;
 
         #[cfg(target_os = "windows")]
-        launch_windows(
-            dir,
-            &settings_text,
-            &banner,
-            &model,
-            mcp_config.as_deref(),
-            &shared_skills,
-        )?;
+        launch_windows(dir, &banner, &arguments)?;
         #[cfg(target_os = "macos")]
         match self.settings()?.macos_terminal {
-            MacosTerminal::Ghostty => launch_ghostty(
-                dir,
-                &settings_text,
-                &banner,
-                &model,
-                mcp_config.as_deref(),
-                &shared_skills,
-            )?,
-            MacosTerminal::Terminal => launch_macos(
-                dir,
-                &settings_text,
-                &banner,
-                &model,
-                mcp_config.as_deref(),
-                &shared_skills,
-            )?,
+            MacosTerminal::Ghostty => launch_ghostty(dir, &banner, &arguments)?,
+            MacosTerminal::Terminal => launch_macos(dir, &banner, &arguments)?,
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
-            let _ = (
-                dir,
-                &settings_text,
-                &banner,
-                &model,
-                &mcp_config,
-                &shared_skills,
-            );
+            let _ = (dir, &banner, &arguments);
             return Err(app_err!("当前平台不支持启动终端"));
         }
 
@@ -203,19 +170,48 @@ impl AppContext {
     }
 }
 
-/// ShellExecuteW 交给系统启动独立 PowerShell，不继承开发进程的控制台输入。
-/// 脚本用 UTF-16LE Base64 传入，避免 ShellExecuteW 再次拆分路径和引号。
-#[cfg(target_os = "windows")]
-fn launch_windows(
-    dir: Option<&str>,
+/// 激活项沿用全局配置，终端不注入参数；非激活项才生成覆盖文件参数。
+fn terminal_launch_spec(
+    active: bool,
+    profile_terminal: impl FnOnce() -> AppResult<(String, String)>,
+) -> AppResult<(String, String)> {
+    if active {
+        Ok((
+            String::new(),
+            "Agmux Claude terminal: global settings".into(),
+        ))
+    } else {
+        profile_terminal()
+    }
+}
+
+fn claude_arguments(
     settings: &str,
-    banner: &str,
     model: &str,
     mcp_config: Option<&str>,
     shared_skills: &str,
-) -> AppResult<()> {
+) -> String {
+    #[cfg(not(windows))]
+    use posix_quote as quote;
+    #[cfg(windows)]
+    use ps_quote as quote;
+    format!(
+        " --settings {} --setting-sources 'project,local' --add-dir {} {}--model {}",
+        quote(settings),
+        quote(shared_skills),
+        mcp_config
+            .map(|path| format!("--mcp-config {} ", quote(path)))
+            .unwrap_or_default(),
+        quote(model)
+    )
+}
+
+/// ShellExecuteW 交给系统启动独立 PowerShell，不继承开发进程的控制台输入。
+/// 脚本用 UTF-16LE Base64 传入，避免 ShellExecuteW 再次拆分路径和引号。
+#[cfg(target_os = "windows")]
+fn launch_windows(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<()> {
     let shell = find_windows_shell().ok_or_else(|| app_err!("未找到 PowerShell"))?;
-    let script = windows_launch_script(dir, settings, banner, model, mcp_config, shared_skills);
+    let script = windows_launch_script(dir, banner, arguments);
     shell_execute_script(&shell, &script)
 }
 
@@ -278,14 +274,7 @@ fn find_windows_shell() -> Option<String> {
 /// 路径用 PowerShell 单引号（字面量，不展开 `$`），内嵌单引号按 PS 规则写两遍。
 /// `&`、`|`、`$`、反引号在单引号内全部无害，只有 `'` 自身需要处理。
 #[cfg(target_os = "windows")]
-fn windows_launch_script(
-    dir: Option<&str>,
-    settings: &str,
-    banner: &str,
-    model: &str,
-    mcp_config: Option<&str>,
-    shared_skills: &str,
-) -> String {
+fn windows_launch_script(dir: Option<&str>, banner: &str, arguments: &str) -> String {
     // GUI 父进程可能缺少持久环境变量；只补缺失项，保留 shell/profile 的进程级覆盖。
     let mut script = String::from(
         "foreach ($scope in 'User','Machine') { \
@@ -298,14 +287,8 @@ fn windows_launch_script(
         script.push_str(&format!("Set-Location -LiteralPath {}; ", ps_quote(dir)));
     }
     script.push_str(&format!(
-        "Write-Output {}; claude --settings {} --setting-sources 'project,local' --add-dir {} {}--model {}",
+        "Write-Output {}; claude{arguments}",
         ps_quote(banner),
-        ps_quote(settings),
-        ps_quote(shared_skills),
-        mcp_config
-            .map(|path| format!("--mcp-config {} ", ps_quote(path)))
-            .unwrap_or_default(),
-        ps_quote(model)
     ));
     script
 }
@@ -317,20 +300,9 @@ fn ps_quote(value: &str) -> String {
 
 /// 两套 macOS 启动路径共用的 claude 调用行（posix 单引号字面量）。
 #[cfg(target_os = "macos")]
-fn claude_invocation(
-    settings: &str,
-    model: &str,
-    mcp_config: Option<&str>,
-    shared_skills: &str,
-) -> String {
+fn claude_invocation(arguments: &str) -> String {
     format!(
-        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude --settings {} --setting-sources 'project,local' --add-dir {} {}--model {}",
-        posix_quote(settings),
-        posix_quote(shared_skills),
-        mcp_config
-            .map(|path| format!("--mcp-config {} ", posix_quote(path)))
-            .unwrap_or_default(),
-        posix_quote(model)
+        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude{arguments}"
     )
 }
 
@@ -339,40 +311,22 @@ fn claude_invocation(
 /// IPC 转发给已有实例后立即退出；无实例时本进程常驻为 GUI——因此 spawn 发射
 /// 不等待（与 Windows ShellExecuteW 同语义）。
 #[cfg(target_os = "macos")]
-fn ghostty_launch_script(
-    banner: &str,
-    settings: &str,
-    model: &str,
-    mcp_config: Option<&str>,
-    shared_skills: &str,
-) -> String {
+fn ghostty_launch_script(banner: &str, arguments: &str) -> String {
     format!(
         "echo {}; {}",
         posix_quote(banner),
-        claude_invocation(settings, model, mcp_config, shared_skills)
+        claude_invocation(arguments)
     )
 }
 
 #[cfg(target_os = "macos")]
-fn launch_ghostty(
-    dir: Option<&str>,
-    settings: &str,
-    banner: &str,
-    model: &str,
-    mcp_config: Option<&str>,
-    shared_skills: &str,
-) -> AppResult<()> {
+fn launch_ghostty(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<()> {
     const GHOSTTY_BIN: &str = "/Applications/Ghostty.app/Contents/MacOS/ghostty";
     if !Path::new(GHOSTTY_BIN).is_file() {
         return Err(app_err!("未安装 Ghostty（/Applications/Ghostty.app）"));
     }
     let mut command = Command::new(GHOSTTY_BIN);
-    command.args([
-        "-e",
-        "zsh",
-        "-c",
-        &ghostty_launch_script(banner, settings, model, mcp_config, shared_skills),
-    ]);
+    command.args(["-e", "zsh", "-c", &ghostty_launch_script(banner, arguments)]);
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
@@ -384,15 +338,8 @@ fn launch_ghostty(
 
 /// 未装 Ghostty 时的兜底：Terminal.app 系统必带。
 #[cfg(target_os = "macos")]
-fn launch_macos(
-    dir: Option<&str>,
-    settings: &str,
-    banner: &str,
-    model: &str,
-    mcp_config: Option<&str>,
-    shared_skills: &str,
-) -> AppResult<()> {
-    let claude = claude_invocation(settings, model, mcp_config, shared_skills);
+fn launch_macos(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<()> {
+    let claude = claude_invocation(arguments);
     let line = match dir {
         Some(dir) => format!("cd {} && {claude}", posix_quote(dir)),
         None => claude,
@@ -569,17 +516,26 @@ mod tests {
 
     #[test]
     fn terminal_model_uses_target_profile_instead_of_active_user_model() {
+        let model = |target: &StoredClaudeProfile| {
+            terminal_model(&terminal_settings_document(target).unwrap()).unwrap()
+        };
         let mut target = profile(Some("deepseek"), Some("sk-x"), None);
         target.model = None;
         target.raw_settings = Some(r#"{"model":"sonnet"}"#.into());
         assert!(!env_of(&target).contains_key("ANTHROPIC_MODEL"));
-        assert_eq!(terminal_model(&target), "sonnet");
+        assert_eq!(model(&target), "sonnet");
 
         target.raw_settings = None;
-        assert_eq!(terminal_model(&target), "default");
+        assert_eq!(model(&target), "default");
 
         target.model = Some("deepseek-flash[1M]".into());
-        assert_eq!(terminal_model(&target), "deepseek-flash[1M]");
+        assert_eq!(model(&target), "deepseek-flash[1M]");
+        target.extra_env =
+            Some(r#"{"ANTHROPIC_DEFAULT_SONNET_MODEL":"deepseek-flash[1M]"}"#.into());
+        assert_eq!(model(&target), "deepseek-flash[1M]");
+        assert_eq!(env_of(&target)["ANTHROPIC_MODEL"], "deepseek-flash[1M]");
+        target.raw_settings = Some(r#"{"env":{"ANTHROPIC_MODEL":"sonnet","ANTHROPIC_DEFAULT_SONNET_MODEL":"other-model[1M]"}}"#.into());
+        assert_eq!(model(&target), "sonnet");
     }
 
     #[test]
@@ -640,10 +596,12 @@ mod tests {
     fn ghostty_script_quotes_paths_and_stays_single_line() {
         let script = ghostty_launch_script(
             "Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json",
-            "/Users/u/.agmux/terminal/claude_p1.json",
-            "sonnet's",
-            Some("/Users/u's home/.claude.json"),
-            "/Users/u/.agmux/terminal/shared",
+            &claude_arguments(
+                "/Users/u/.agmux/terminal/claude_p1.json",
+                "sonnet's",
+                Some("/Users/u's home/.claude.json"),
+                "/Users/u/.agmux/terminal/shared",
+            ),
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
@@ -656,17 +614,75 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn active_terminal_uses_default_claude_settings() {
+        let script = ghostty_launch_script("banner", "");
+        assert!(script.ends_with(" claude"));
+        assert!(!script.contains("--settings"));
+        assert!(!script.contains("--model"));
+    }
+
+    #[test]
+    fn active_terminal_skips_the_profile_override_file() {
+        // 激活项不能读 live 之外的覆盖文件；闭包被调用即说明分支选错了。
+        let (arguments, banner) = terminal_launch_spec(true, || {
+            unreachable!("active profile must not build override arguments")
+        })
+        .unwrap();
+        assert!(arguments.is_empty());
+        assert_eq!(banner, "Agmux Claude terminal: global settings");
+
+        let (arguments, banner) =
+            terminal_launch_spec(false, || Ok((" --settings 'x'".into(), "banner".into())))
+                .unwrap();
+        assert_eq!(arguments, " --settings 'x'");
+        assert_eq!(banner, "banner");
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn active_terminal_enters_project_and_starts_claude_without_arguments() {
+        let project = tempfile::tempdir().unwrap();
+        // 用目录内标记文件判断位置：CI 的 TEMP 可能是 8.3 短路径，直接比字符串不可靠。
+        std::fs::write(project.path().join("agmux-terminal-marker.txt"), "here").unwrap();
+        let fixture = r#"
+$ErrorActionPreference = 'Stop'
+function claude {
+    if ($args.Count -ne 0) { throw 'Active profile must use default settings' }
+    if (-not (Test-Path -LiteralPath '.\agmux-terminal-marker.txt')) { throw 'Wrong project directory' }
+    Write-Output 'default claude verified'
+}
+"#;
+        let script = format!(
+            "{fixture}\n{}",
+            windows_launch_script(Some(project.path().to_str().unwrap()), "banner", "")
+        );
+        let output = Command::new(find_windows_shell().unwrap())
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("default claude verified"));
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn windows_script_is_a_single_line_so_nothing_is_silently_dropped() {
         // 回归：命令行里的换行会终止命令，-NoExit 窗口只执行第一行，
         // Set-Location 与 claude 被丢弃——表现为终端开了却只打印 banner 就回到提示符。
         let script = windows_launch_script(
             Some("D:\\GitHub project\\Agmux"),
-            "C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
             "Agmux Claude terminal: C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
-            "sonnet",
-            None,
-            "C:\\t\\shared",
+            &claude_arguments(
+                "C:\\Users\\u\\.agmux\\terminal\\claude_p1.json",
+                "sonnet",
+                None,
+                "C:\\t\\shared",
+            ),
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // PowerShell 5.1 不支持 &&，只能 ; 串联；换目录、banner、claude 必须同在一条里
@@ -685,11 +701,8 @@ mod tests {
     fn windows_script_skips_set_location_when_no_directory_is_given() {
         let script = windows_launch_script(
             None,
-            "C:\\t\\claude_p1.json",
             "banner",
-            "default",
-            None,
-            "C:\\t\\shared",
+            &claude_arguments("C:\\t\\claude_p1.json", "default", None, "C:\\t\\shared"),
         );
         assert!(!script.contains("Set-Location"));
         assert!(script.contains("Write-Output 'banner'; claude --settings "));
@@ -728,11 +741,13 @@ function claude {
             "{fixture}\n{}",
             windows_launch_script(
                 None,
-                r"C:\t\profile.json",
                 "banner",
-                "sonnet",
-                Some(r"C:\user's home\.claude.json"),
-                r"C:\shared skills",
+                &claude_arguments(
+                    r"C:\t\profile.json",
+                    "sonnet",
+                    Some(r"C:\user's home\.claude.json"),
+                    r"C:\shared skills",
+                ),
             )
         );
         let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
@@ -770,11 +785,8 @@ function claude {
         // 单引号是 PowerShell 的字面量串：$ 与 & 都不展开；内嵌单引号写两遍
         let script = windows_launch_script(
             Some("D:\\a&b$c"),
-            "C:\\t\\it's.json",
             "banner",
-            "sonnet's",
-            None,
-            "C:\\t\\shared",
+            &claude_arguments("C:\\t\\it's.json", "sonnet's", None, "C:\\t\\shared"),
         );
         assert!(script.contains("Set-Location -LiteralPath 'D:\\a&b$c';"));
         assert!(script.contains("claude --settings 'C:\\t\\it''s.json'"));

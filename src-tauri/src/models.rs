@@ -338,80 +338,45 @@ pub enum MacosTerminal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct Settings {
-    #[serde(default = "default_theme")]
     pub theme: String,
-    #[serde(default = "default_language")]
+    /// 界面语言；"system" 表示跟随系统语言。
     pub language: String,
-    #[serde(default)]
     pub auto_restart: bool,
-    #[serde(default)]
     pub autostart_enabled: bool,
-    #[serde(default)]
     pub silent_start: bool,
-    #[serde(default)]
     pub minimize_to_tray: bool,
-    #[serde(default)]
     pub tray_click_action: TrayClickAction,
     /// 冷启动落页：前端 AppView 标识原样透传，不解析；非法值由前端回落默认页。
-    #[serde(default = "default_startup_view")]
     pub startup_view: String,
     /// macOS 供应商终端的宿主终端；Windows 分支不读取此字段。
-    #[serde(default)]
     pub macos_terminal: MacosTerminal,
-    #[serde(default = "default_auto_check_update")]
     pub auto_check_update: bool,
-    #[serde(default)]
     pub auto_backup_interval_hours: u64,
-    #[serde(default = "default_database_backup_keep_count")]
     pub database_backup_keep_count: u32,
-    #[serde(default)]
     pub proxy_mode: ProxyMode,
-    #[serde(default)]
     pub proxy_url: String,
     /// 供应商终端的最近工作目录（最近使用在前）。卡片下拉框的新建/删除直接改这里，
     /// 与 ~/.claude 无关，不参与应用与回写。
-    #[serde(default)]
     pub claude_terminal_dirs: Vec<String>,
-}
-
-fn default_theme() -> String {
-    "system".into()
-}
-
-/// 界面语言；"system" 表示跟随系统语言。
-fn default_language() -> String {
-    "system".into()
-}
-
-fn default_database_backup_keep_count() -> u32 {
-    5
-}
-
-/// 冷启动落页：前端 AppView 标识原样透传，不解析；非法值由前端回落默认页。
-fn default_startup_view() -> String {
-    "codexProfiles".into()
-}
-
-fn default_auto_check_update() -> bool {
-    true
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
-            language: default_language(),
+            language: "system".into(),
             auto_restart: false,
             autostart_enabled: false,
             silent_start: false,
             minimize_to_tray: false,
             tray_click_action: TrayClickAction::ShowWindow,
-            startup_view: default_startup_view(),
+            startup_view: "codexProfiles".into(),
             macos_terminal: MacosTerminal::Terminal,
-            auto_check_update: default_auto_check_update(),
+            auto_check_update: true,
             auto_backup_interval_hours: 0,
-            database_backup_keep_count: default_database_backup_keep_count(),
+            database_backup_keep_count: 5,
             proxy_mode: ProxyMode::Auto,
             proxy_url: String::new(),
             claude_terminal_dirs: Vec::new(),
@@ -426,6 +391,7 @@ mod settings_tests {
     #[test]
     fn proxy_settings_default_to_auto_and_round_trip_custom_address() {
         let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(legacy, Settings::default());
         assert_eq!(legacy.proxy_mode, ProxyMode::Auto);
         assert_eq!(legacy.startup_view, "codexProfiles");
         assert!(legacy.proxy_url.is_empty());

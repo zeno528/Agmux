@@ -12,6 +12,12 @@ vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: vi.fn() }) }
 // CodeMirror 依赖浏览器 DOM；回归测试仅渲染真实表单和下拉组件。
 vi.mock("../../components/ConfigTextEditor", () => ({ default: () => null }));
 
+it("认证预览保留 OAuth 路径，浏览器不能伪造本机桌面认证", async () => {
+  const preview = await webInvoke<string>("auth_preview", { accountId: "fixture-account" });
+  expect(JSON.parse(preview).tokens.account_id).toBe("fixture-account");
+  await expect(webInvoke("auth_preview", { accountId: null })).rejects.toThrow("无法读取本机");
+});
+
 it.each([{ models: [] }, { models: ["fetched-model"] }])("仅有缓存时可用模型补入手输 ID，模型列表为 $models", async ({ models }) => {
   setupI18n("zh-CN");
   const profile = await webInvoke<CodexProfileSummary>("codex_add_builtin_profile", { kind: "opencode", apiKey: "fixture-key" });

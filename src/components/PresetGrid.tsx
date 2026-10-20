@@ -36,7 +36,7 @@ export default function PresetGrid({ presets, selectedKind, onSelect, category, 
     <div className="apple-panel-section">
       {!visibleEntries.length ? <p className="muted text-sm" role="status">{tCommon("select.noResults")}</p> : null}
       {groups.map((group, index) => <section key={group.key} className={index ? "mt-6" : undefined}>
-      {category === "all" ? <h2 className="field-subtitle mb-3">{t(GROUP_LABEL_KEYS[group.key], { count: group.entries.length })}</h2> : null}
+      {category === "all" ? <h2 className="field-subtitle mb-3">{t(GROUP_LABEL_KEYS[group.key], { count: group.entries.length })}{group.key !== "custom" ? t("edit.providerFilterCount", { count: group.entries.length }) : null}</h2> : null}
       <div className="apple-tile-grid apple-tile-grid--labeled apple-tile-grid--providers">
         {group.entries.map(({ key, name, preset }) => {
           const subtitle = preset.kind === "custom" ? t("edit.customProviderSubtitle") : preset.admin_url;

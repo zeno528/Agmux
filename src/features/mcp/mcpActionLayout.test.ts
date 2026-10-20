@@ -14,20 +14,28 @@ const claudeEditSource = readFileSync(new URL("./ClaudeMcpEdit.tsx", import.meta
 const sharedFormSource = readFileSync(new URL("./McpConnectionForm.tsx", import.meta.url), "utf8");
 
 describe("MCP 操作入口", () => {
-  it("禁用时旧成功结果和进行中的检测不再点亮状态灯", () => {
+  it.each([
+    { enabled: false, ok: true, probing: true, color: "bg-(--text-secondary)", label: "已禁用" },
+    { enabled: false, ok: false, probing: false, color: "bg-(--text-secondary)", label: "已禁用" },
+    { enabled: true, ok: undefined, probing: false, color: "bg-(--text-secondary)" },
+    { enabled: true, ok: undefined, probing: true, color: "bg-(--text-secondary)" },
+    { enabled: true, ok: true, probing: false, color: "bg-success" },
+    { enabled: true, ok: false, probing: false, color: "bg-(--danger)" },
+    { enabled: true, ok: false, probing: true, color: "bg-(--danger)" },
+  ])("状态灯遵循启用状态和检测结果：$enabled / $ok / $probing", ({ enabled, ok, probing, color, label }) => {
     setupI18n("zh-CN");
     const noop = () => undefined;
     const html = renderToStaticMarkup(createElement(McpServerRow, {
-      server: { name: "sample", enabled: false, command: "sample-mcp", args: [], env: {}, url: null,
+      server: { name: "sample", enabled, command: "sample-mcp", args: [], env: {}, url: null,
         startup_timeout_sec: null, tool_timeout_sec: null, bearer_token_env_var: null, http_headers: {}, env_http_headers: {} },
-      result: { ok: true, latency_ms: 1, status: null, protocol_version: null, server_info: null,
+      result: ok === undefined ? undefined : { ok, latency_ms: 1, status: null, protocol_version: null, server_info: null,
         tools: [], tools_truncated: false, error: null, tools_error: null },
-      probing: true, detailsVisible: false, toolsBusy: false, toolsLoaded: false,
+      probing, detailsVisible: false, toolsBusy: false, toolsLoaded: false,
       onEdit: noop, onDelete: noop, onProbe: noop, onToggleTools: noop,
     }));
     const indicator = html.match(/<span\b[^>]*role="img"[^>]*>/)![0];
-    expect(indicator).not.toContain("bg-success");
-    expect(indicator).toContain('aria-label="已禁用"');
+    expect(indicator.match(/bg-[^\s"]+/g)).toEqual([color]);
+    if (label) expect(indicator).toContain(`aria-label="${label}"`);
   });
 
   it("已有 MCP 名称仅展示，新建名称可填写，连接字段仍可编辑", () => {
@@ -100,7 +108,6 @@ describe("MCP 操作入口", () => {
     const styles = readFileSync(new URL("../../style.css", import.meta.url), "utf8");
     expect(styles).toContain(".mcp-target-switch .apple-count-badge {");
     expect(styles).toContain("position: static;");
-    expect(viewSource).toContain("onClick={() => onChange(target)}");
   });
 
   it("两个客户端共用编辑标题、按钮、通知和卸载确认文案", () => {

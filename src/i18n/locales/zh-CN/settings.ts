@@ -60,7 +60,12 @@ export default {
     tabAbout: "关于",
   },
   cli: {
-    description: "使用官方安装器安装或更新该 Agent 工具；如操作失败，请尝试启用网络代理后重试",
+    installConfirmTitle: "安装 {{client}} CLI？",
+    installConfirmDescription: "确认后将运行官方安装脚本，也可复制以下命令到终端手动安装",
+    copyCommand: "复制安装命令",
+    commandCopied: "安装命令已复制",
+    copyFailed: "复制失败，请选中命令手动复制",
+    pathUnavailable: "暂无安装路径",
     sources: {
       claude: {
         native: "原生安装器",

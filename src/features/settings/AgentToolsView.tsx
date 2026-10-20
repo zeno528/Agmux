@@ -14,7 +14,7 @@ export default function AgentToolsView({ active }: { active: boolean }) {
         <h1 className="apple-title management-page-title__label"><span>{t("nav.agentTools")}</span></h1>
       </div>
     </header>
-    <div className="apple-edit-content flex flex-col gap-[var(--gap-section)]">
+    <div className="apple-edit-content cli-cards gap-[var(--gap-section)]">
       <CliCard client="codex" management={codexCli} />
       <CliCard client="claude" management={claudeCli} />
     </div>

@@ -391,7 +391,7 @@ export default function AppShell() {
     const pages: Record<AppView, ReactNode> = {
       codexProfiles: <CodexProfilesView state={state} authStatusReady={authStatusReady} activationEpoch={activationEpoch} coldStart={!startupReady} onRefresh={refresh} onManageChatgptAccounts={() => setView("accounts")} popEpoch={popEpochOf("codexProfiles")} />,
       mcp: <McpView activationEpoch={activationEpoch} popEpoch={popEpochOf("mcp")} />,
-      plugins: <PluginsView state={state} popEpoch={popEpochOf("plugins")} />,
+      plugins: <PluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpochOf("plugins")} />,
       skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
       claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,

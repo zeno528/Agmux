@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { compareMarketplacePlugins, comparePlugins, matchesQuery, resolveAliasInstalled, splitMarketplaceCards } from "./pluginMeta";
+import { compareMarketplacePlugins, comparePlugins, matchesQuery, resolveAliasInstalled, resolveAppIcon } from "./pluginMeta";
+
+it("应用优先复用同一服务的官方插件图标，不借用无关插件的图标", () => {
+  const plugins = [
+    { name: "sample", display_name: "Sample", origin: "codex", icon_path: "/third-party.png" },
+    { name: "app-sample", display_name: "Sample", origin: "official", icon_path: "/official.png" },
+    { name: "other", display_name: "Other", origin: "official", icon_path: null },
+  ] as const;
+  expect(resolveAppIcon({ name: " SAMPLE ", icon_path: "https://example.test/unavailable.png" }, plugins)).toBe("/official.png");
+  expect(resolveAppIcon({ name: "App-sample", icon_path: null }, plugins)).toBe("/official.png");
+  expect(resolveAppIcon({ name: "Other", icon_path: "https://example.test/other.png" }, plugins)).toBe("https://example.test/other.png");
+  expect(resolveAppIcon({ name: "Unknown", icon_path: null }, plugins)).toBeNull();
+  expect(resolveAppIcon({ name: "Sample", icon_path: null }, plugins.slice(0, 1))).toBeNull();
+});
 
 describe("插件搜索", () => {
   it("仅按插件名忽略大小写匹配，不搜显示名与描述", () => {
@@ -29,11 +42,11 @@ describe("插件列表排序", () => {
 });
 
 describe("别名安装纠正", () => {
-  it("未安装条目命中已安装名单时翻转为已安装，其余保持原状", () => {
+  it("保留目录的安装标记，补齐远程别名，不合并其他市场的同名插件", () => {
     const plugin = (name: string, installed: boolean) =>
       ({ plugin_id: `${name}@m`, name, installed }) as Parameters<typeof resolveAliasInstalled>[0][number];
     const input = [plugin("canva", false), plugin("grill", false), plugin("github", true)];
-    const resolved = resolveAliasInstalled(input, new Set(["canva", "notion"]));
+    const resolved = resolveAliasInstalled(input, new Set(["canva@m-remote", "notion@m", "grill@another-market"]));
     expect(resolved.map((item) => item.installed)).toEqual([true, false, true]);
     expect(input.map((item) => item.installed)).toEqual([false, false, true]); // 原数组不被就地修改
   });
@@ -50,36 +63,5 @@ describe("市场明细排序", () => {
       plugin("app-69ea", true),
     ].sort(compareMarketplacePlugins);
     expect(ordered.map((item) => item.name)).toEqual(["app-69ea", "canva", "beta", "zeta"]);
-  });
-});
-
-describe("市场两卡分组", () => {
-  const marketplace = (name: string, kind: string) =>
-    ({ name, kind }) as Parameters<typeof splitMarketplaceCards>[0][number];
-
-  it("已配置市场按 kind 归卡，未配置推荐进对应卡兜底", () => {
-    const { official, thirdParty } = splitMarketplaceCards([
-      marketplace("openai-bundled", "official"),
-      marketplace("openai-curated", "official"),
-      marketplace("ponytail", "third-party"),
-    ]);
-    expect(official.marketplaces.map((item) => item.name)).toEqual(["openai-bundled", "openai-curated"]);
-    expect(official.pending).toEqual([]);
-    expect(thirdParty.marketplaces.map((item) => item.name)).toEqual(["ponytail"]);
-    expect(thirdParty.pending).toEqual([]);
-  });
-
-  it("推荐未配置时进对应卡安装行：官方缺 curated、第三方缺 ponytail", () => {
-    const { official, thirdParty } = splitMarketplaceCards([
-      marketplace("openai-primary-runtime", "official"),
-    ]);
-    expect(official.pending.map((item) => item.name)).toEqual(["openai-curated"]);
-    expect(thirdParty.pending.map((item) => item.name)).toEqual(["ponytail"]);
-  });
-
-  it("别名命中视为已配置（openai-api-curated）", () => {
-    const { official } = splitMarketplaceCards([marketplace("openai-api-curated", "official")]);
-    expect(official.pending).toEqual([]);
-    expect(official.marketplaces.map((item) => item.name)).toEqual(["openai-api-curated"]);
   });
 });

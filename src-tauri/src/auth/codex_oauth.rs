@@ -1539,6 +1539,22 @@ pub struct ExternalCodexAuth {
     pub subscription_active_until: Option<i64>,
 }
 
+impl ExternalCodexAuth {
+    pub(crate) fn is_newer_than(&self, other: &Self) -> bool {
+        self.account_id != "codex-external"
+            && self.account_id == other.account_id
+            && self.user_identity.is_some()
+            && self.user_identity == other.user_identity
+            && matches!(
+                (
+                    parse_jwt_claims(&self.access_token).and_then(|claims| claims.iat),
+                    parse_jwt_claims(&other.access_token).and_then(|claims| claims.iat),
+                ),
+                (Some(current), Some(previous)) if current > previous
+            )
+    }
+}
+
 /// 解析 Codex CLI 官方生成的 auth.json。
 /// 校验为 ChatGPT 订阅认证（auth_mode=chatgpt 且 access_token 非空）；
 /// id_token 缺失或解不出时 account_id 用占位 id。

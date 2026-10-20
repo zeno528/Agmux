@@ -364,6 +364,31 @@ mod tests {
     }
 
     #[test]
+    fn provider_origin_preserves_authority_and_strips_url_suffixes() {
+        for (base, expected) in [
+            (" https://api.example.test/v1/ ", "https://api.example.test"),
+            (
+                "https://api.example.test?route=v1#models",
+                "https://api.example.test",
+            ),
+            (
+                "http://user:pass@[::1]:8080/v1",
+                "http://user:pass@[::1]:8080",
+            ),
+        ] {
+            assert_eq!(super::provider_origin(base).unwrap(), expected, "{base}");
+        }
+        for invalid in [
+            "https://",
+            "ftp://api.example.test",
+            "file:///tmp/api",
+            "http:api.example.test",
+        ] {
+            assert!(super::provider_origin(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn provider_request_errors_return_localizable_codes() {
         let error = reqwest::Client::new()
             .get("not a valid URL")
@@ -1088,20 +1113,14 @@ pub(crate) fn zhipu_quota_info(
 }
 
 fn provider_origin(base: &str) -> AppResult<String> {
-    let base = base.trim().trim_end_matches('/');
-    let authority_start = base
-        .find("://")
-        .map(|index| index + 3)
-        .ok_or_else(|| app_err!("用量查询失败：供应商 API 端点无效"))?;
-    let origin_end = base[authority_start..]
-        .find('/')
-        .map(|index| authority_start + index)
-        .unwrap_or(base.len());
-    let origin = &base[..origin_end];
-    if !origin.starts_with("http://") && !origin.starts_with("https://") {
-        return Err(app_err!("用量查询失败：供应商 API 端点无效"));
+    let invalid = || app_err!("用量查询失败：供应商 API 端点无效");
+    let base = base.trim();
+    if !base.starts_with("http://") && !base.starts_with("https://") {
+        return Err(invalid());
     }
-    Ok(origin.to_string())
+    let url = url::Url::parse(base).map_err(|_| invalid())?;
+    // 保留端点认证信息，只剥离路径、查询和片段。
+    Ok(url[..url::Position::BeforePath].to_string())
 }
 
 /// 智谱 GLM Coding Plan 用量查询：GET {origin}/api/monitor/usage/quota/limit。

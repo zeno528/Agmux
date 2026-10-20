@@ -10,7 +10,7 @@ use super::AppContext;
 fn network_settings(network: &Network) -> serde_json::Value {
     serde_json::json!({ "env": network.env() })
 }
-fn native_path(home: &Path) -> PathBuf {
+pub(super) fn native_path(home: &Path) -> PathBuf {
     home.join(".local/bin").join(if cfg!(windows) {
         "claude.exe"
     } else {

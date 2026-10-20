@@ -146,6 +146,20 @@ describe("Claude 默认跳过权限确认", () => {
 });
 
 describe("settings.json 全文与表单同步", () => {
+  it("清空全文时表单字段归零，未写完的 JSON 保持原值", () => {
+    expect(readEnvFields(" \n ")).toEqual({ baseUrl: "", authToken: "", model: "" });
+    expect(readEnvFields("{")).toBeNull();
+  });
+
+  it("清空后重新填写表单会生成 settings.json，未写完的 JSON 不被覆盖", () => {
+    const fields = { baseUrl: "https://api.example.test", authToken: "token", model: "model-a" };
+    const text = patchEnvFields("", fields);
+    expect(readEnvFields(text)).toEqual(fields);
+    const mapped = patchModelMappings("", { ...readModelMappings(""), ANTHROPIC_DEFAULT_OPUS_MODEL: "model-b" });
+    expect(readModelMappings(mapped).ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("model-b");
+    expect(patchEnvFields("{", fields)).toBe("{");
+  });
+
   it("官方 API 使用 API Key 回显，账号模式撤下认证覆盖并保留普通设置", () => {
     const raw = JSON.stringify({ apiKeyHelper: "fixture-helper", hooks: { Stop: [] }, env: {
       ANTHROPIC_AUTH_TOKEN: "relay-token", CLAUDE_CODE_OAUTH_TOKEN: "override", CLAUDE_CODE_USE_VERTEX: "1", KEEP: "keep",

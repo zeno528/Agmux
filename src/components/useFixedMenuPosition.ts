@@ -7,8 +7,7 @@ export const MENU_MAX_HEIGHT = 320;
 /// AppSelect 下拉与行内 ⋯ 菜单共用的 fixed 弹层定位：打开后按菜单真实展示高度
 /// 判定下方空间，不够且上方更大时向上翻转，够则向下展开。
 /// align "match" = 左缘对齐且默认同宽（下拉框）；"end" = 右缘对齐、宽度自适应（行菜单）。
-/// 返回值里带 --app-popover-origin：浮层等比缩放的变换原点，贴着触发按钮那一侧的边角，
-/// 菜单从按钮所在的角"胀开"，而不是一律从左上角。对齐方式与上下翻转共同决定该原点。
+/// 缩放原点贴着触发按钮；等宽下拉只纵向展开，独立宽度的菜单保留等比缩放。
 export function useFixedMenuPosition(
   open: boolean,
   trigger: HTMLElement | null,
@@ -18,7 +17,7 @@ export function useFixedMenuPosition(
 ): CSSProperties | undefined {
   // 定位结果除标准属性外还注入 --app-popover-origin（浮层缩放原点），
   // 该自定义属性不在 CSSProperties 里，用扩展类型承载，避免 setStyle 处断言
-  type MenuPositionStyle = CSSProperties & { "--app-popover-origin"?: string };
+  type MenuPositionStyle = CSSProperties & { "--app-popover-origin"?: string; "--app-popover-scale-x"?: number };
   const [style, setStyle] = useState<MenuPositionStyle | undefined>(undefined);
   useLayoutEffect(() => {
     if (!open || !trigger) return;
@@ -47,6 +46,7 @@ export function useFixedMenuPosition(
           : { top: `${rect.bottom + gap}px`, bottom: "auto" }),
         maxHeight: `${Math.min(MENU_MAX_HEIGHT, available)}px`,
         "--app-popover-origin": `${originX} ${originY}`,
+        "--app-popover-scale-x": align === "match" && menuWidth == null ? 1 : 0.8,
       });
     };
     updatePosition();

@@ -20,10 +20,10 @@ export function ProviderCreate({ presets, onBack, children }: {
   const [picking, setPicking] = useState(true);
   const [category, setCategory] = useState<"all" | "api" | "plans" | "accounts">("all");
   const [query, setQuery] = useState("");
-  const backLabel = t("edit.createTitle");
+  const backLabel = t("toolbar.addProvider");
   return <>
     {picking ? <section className="apple-scroll-page mx-auto flex w-full max-w-none flex-col">
-      <header className="apple-page-bar">
+      <header className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={backLabel} onClick={onBack}>
           <ChevronLeft size={16} strokeWidth={2} className="shrink-0 text-accent" aria-hidden="true" />
           <span className="apple-title">{backLabel}</span>
@@ -31,10 +31,10 @@ export function ProviderCreate({ presets, onBack, children }: {
         <AppSearchInput className="ml-auto w-64" value={query} onChange={setQuery} placeholder={t("edit.searchProviders")} />
       </header>
       <AppTabBar selected={category} onSelect={setCategory} label={t("edit.selectProvider")} items={[
-        { id: "all", label: t("edit.providerFilterAll", { count: entries.length }) },
-        { id: "accounts", label: t("edit.providerFilterAccounts", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "accounts").length }) },
-        { id: "plans", label: t("edit.providerFilterPlans", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "plans").length }) },
-        { id: "api", label: t("edit.providerFilterApi", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "api").length }) },
+        { id: "all", label: t("edit.providerFilterAll"), count: t("edit.providerFilterCount", { count: entries.length }) },
+        { id: "accounts", label: t("edit.providerFilterAccounts"), count: t("edit.providerFilterCount", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "accounts").length }) },
+        { id: "plans", label: t("edit.providerFilterPlans"), count: t("edit.providerFilterCount", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "plans").length }) },
+        { id: "api", label: t("edit.providerFilterApi"), count: t("edit.providerFilterCount", { count: entries.filter(({ preset }) => presetEntryCategory(preset) === "api").length }) },
       ]} />
       <div className="apple-edit-content">
         <div className="apple-edit-surface">

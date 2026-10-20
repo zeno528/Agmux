@@ -52,5 +52,6 @@ docs/architecture-report-*.md
 
 # 本地个人工作目录（不进 git）
 /work/
+归档/
 balance-hover-demo.html
 .codex/skills/desktop-debug/SKILL.md

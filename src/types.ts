@@ -266,15 +266,69 @@ export interface MarketplacePlugin {
   source: string | null;
   display_name: string | null;
   description: string | null;
-  category: string | null;
-  capabilities: string[];
-  contains: string[];
+  /** 市场物化目录内的本地图标（未安装插件同样有本地 checkout 文件）。 */
+  icon_path?: string | null;
 }
 
 export interface PluginUpdate {
   name: string;
   marketplace: string;
   version: string;
+}
+
+// Claude Code 插件（claude plugin --json 契约，字段为 CLI 原生 camelCase）
+export interface ClaudePluginEntry {
+  /** 形如 name@marketplace；同一 id 可按 scope 和 projectPath 多行并存。 */
+  id: string;
+  version: string | null;
+  /** user / project / local。 */
+  scope: string;
+  enabled: boolean;
+  installPath: string | null;
+  installedAt: string | null;
+  lastUpdated: string | null;
+  /** project/local scope 所属目录。 */
+  projectPath: string | null;
+  /** 安装目录内的本地图标文件路径（后端解析 plugin.json logo 字段）；无则首字母兜底。 */
+  iconPath?: string | null;
+}
+
+export interface ClaudeMarketplace {
+  name: string;
+  /** github / directory。 */
+  source: string;
+  repo: string | null;
+  path: string | null;
+  installLocation: string | null;
+}
+
+export interface ClaudeAvailablePlugin {
+  /** 形如 name@marketplace。 */
+  pluginId: string;
+  name: string;
+  description: string | null;
+  marketplaceName: string;
+  /** 市场物化目录内的本地图标；官方目录只物化少数条目，多数回落首字母。 */
+  iconPath?: string | null;
+}
+
+export interface ClaudePluginInventory {
+  installed: ClaudePluginEntry[];
+  available: ClaudeAvailablePlugin[];
+}
+
+export interface ClaudePluginUpdate {
+  /** 形如 name@marketplace。 */
+  id: string;
+  /** 目标版本（本地路径插件为市场仓库新提交前缀）。 */
+  version: string;
+}
+
+export interface ClaudePluginUpdateResult {
+  /** updated / up_to_date。 */
+  updateOutcome: string;
+  oldVersion: string;
+  newVersion: string;
 }
 
 /** Skill 启停的目标工具：同一份正本分发到各工具自己的 skills 目录。 */
@@ -341,38 +395,30 @@ export interface SkillCandidate {
   modified_at: number;
 }
 
+export interface CodexAppSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  icon_path: string | null;
+}
+
 export interface PluginSummary {
+  desktop_visible: boolean;
   name: string;
   version: string | null;
   display_name: string | null;
   description: string | null;
-  category: string | null;
-  capabilities: string[];
-  contains: string[];
   enabled: boolean;
+  can_toggle: boolean;
+  can_uninstall: boolean;
   /** official=官方市场；codex=第三方市场。 */
   origin: "official" | "codex";
   marketplace: string | null;
   store_path: string;
   source_url: string | null;
-}
-
-export interface PluginCandidate {
-  sub_path: string;
-  name: string;
-  version: string | null;
-  display_name: string | null;
-  description: string | null;
-  capabilities: string[];
-  contains: string[];
-  files: string[];
-}
-
-export interface PluginPreview {
-  repo: string;
-  reference: string;
-  default_branch: string;
-  candidates: PluginCandidate[];
+  /** 插件目录内的本地图标（assets/icon.png 约定）；无则首字母兜底。 */
+  icon_path?: string | null;
 }
 
 export interface CodexAppStatus {

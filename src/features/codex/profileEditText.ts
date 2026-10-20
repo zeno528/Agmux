@@ -183,6 +183,43 @@ export function patchProviderFields(text: string, baseUrl: string, apiKey: strin
   return out.join("\n");
 }
 
+/**
+ * 清空编辑器后的重建骨架：model_provider 行 + 它指向的表头 + 该表的 wire_api。
+ * 三段必须同源——分别取全文第一个命中会拼出「指向 A 表却只含 B 表」的骨架，
+ * patchProviderFields 找不到目标表，表单输入的地址密钥全部落空。
+ * model_provider 缺失时退化为第一张表（与 patchProviderFields 的兜底一致）；
+ * 指向的表不存在则返回空串，不产出错误骨架。
+ */
+export function emptyConfigSeed(text: string): string {
+  const lines = text.split("\n");
+  let providerId: string | null = null;
+  let providerLine: string | null = null;
+  for (const line of lines) {
+    const match = /^model_provider\s*=\s*"([^"]+)"/.exec(line.trim());
+    if (match) {
+      providerId = match[1];
+      providerLine = line;
+      break;
+    }
+  }
+  let tableHeader: string | null = null;
+  let wireApi: string | null = null;
+  let inTarget = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^\[.+\]$/.test(trimmed)) {
+      if (tableHeader) break;
+      const section = /^\[model_providers\.(.+)\]$/.exec(trimmed);
+      inTarget = section != null && (providerId === null || section[1] === providerId);
+      if (inTarget) tableHeader = line;
+    } else if (inTarget && /^wire_api\s*=/.test(trimmed)) {
+      wireApi = line;
+    }
+  }
+  if (!tableHeader) return "";
+  return [providerLine, tableHeader, wireApi].filter(Boolean).join("\n") + "\n";
+}
+
 export function withoutApiKeyPlaceholder(text: string): string {
   const fields = readProviderFields(text);
   return fields.found && /^<.*>$/.test(fields.experimental_bearer_token)

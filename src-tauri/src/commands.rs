@@ -14,9 +14,10 @@ use crate::models::{
     McpSyncPreview, ProfileBalanceInfo, Settings, TrayClickAction,
 };
 use crate::services::{
-    AppContext, CliFailure, CliStatus, CliUpdate, CodexProfileConnectionResult, DatabaseBackupInfo,
-    MarketplacePlugin, PluginMarketplace, PluginPreview, PluginSkill, PluginSummary, PluginUpdate,
-    ProfileBalance, SkillSummary, SkillTool,
+    AppContext, ClaudeMarketplace, ClaudePluginInventory, ClaudePluginUpdate,
+    ClaudePluginUpdateResult, CliFailure, CliStatus, CliUpdate, CodexProfileConnectionResult,
+    DatabaseBackupInfo, MarketplacePlugin, PluginMarketplace, PluginSkill, PluginSummary,
+    PluginUpdate, ProfileBalance, SkillSummary, SkillTool,
 };
 
 /// CLI 状态检测走阻塞线程池；两端命令共用壳，兜底文案只此一份。
@@ -151,6 +152,21 @@ pub async fn list_plugins(state: State<'_, AppContext>) -> AppResult<Vec<PluginS
 }
 
 #[tauri::command]
+pub async fn list_codex_apps(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<crate::services::CodexAppSummary>> {
+    state.list_codex_apps().await
+}
+
+#[tauri::command]
+pub async fn get_plugin_icon(
+    path: String,
+    state: State<'_, AppContext>,
+) -> AppResult<Option<String>> {
+    state.plugin_icon_data_url(path).await
+}
+
+#[tauri::command]
 pub async fn list_skills(state: State<'_, AppContext>) -> AppResult<Vec<SkillSummary>> {
     state.list_skills().await
 }
@@ -229,7 +245,7 @@ pub fn claude_get_common_settings(state: State<'_, AppContext>) -> AppResult<Opt
     state.claude_common_settings()
 }
 
-/// 在新终端里启动一个绑定该供应商的 Claude Code 会话（`claude --settings` 覆盖）。
+/// 在新终端里启动 Claude Code：激活供应商跟随 live，非激活供应商独立覆盖。
 /// 只读旁路：不切激活、不改 live、不触发回写。
 /// async 是给 macOS 的：osascript 要等 Terminal 自动化授权弹窗，同步 command 跑在
 /// 主线程会把整个 UI 冻到用户处理完弹窗（Tauri 官方文档：无 async 的 command 在主线程执行）。
@@ -368,14 +384,10 @@ pub async fn list_plugin_marketplaces(
 }
 
 #[tauri::command]
-pub async fn list_marketplace_plugins(
-    marketplace: String,
-    root: Option<String>,
+pub async fn list_plugin_catalog(
     state: State<'_, AppContext>,
 ) -> AppResult<Vec<MarketplacePlugin>> {
-    state
-        .list_marketplace_plugins(&marketplace, root.as_deref())
-        .await
+    state.list_plugin_catalog().await
 }
 
 #[tauri::command]
@@ -384,6 +396,23 @@ pub async fn add_plugin_marketplace(
     state: State<'_, AppContext>,
 ) -> AppResult<PluginMarketplace> {
     state.add_plugin_marketplace(&url).await
+}
+
+#[tauri::command]
+pub async fn set_plugin_enabled(
+    plugin_id: String,
+    enabled: bool,
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<PluginSummary>> {
+    state.set_plugin_enabled(&plugin_id, enabled).await
+}
+
+#[tauri::command]
+pub async fn refresh_plugin_marketplace(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.refresh_plugin_marketplace(&name).await
 }
 
 #[tauri::command]
@@ -399,7 +428,7 @@ pub async fn install_marketplace_plugin(
     marketplace: String,
     name: String,
     state: State<'_, AppContext>,
-) -> AppResult<PluginSummary> {
+) -> AppResult<Vec<PluginSummary>> {
     state.install_marketplace_plugin(&marketplace, &name).await
 }
 
@@ -418,22 +447,105 @@ pub async fn upgrade_marketplace_plugin(
 }
 
 #[tauri::command]
-pub async fn preview_plugin(url: String, state: State<'_, AppContext>) -> AppResult<PluginPreview> {
-    state.preview_plugin(&url).await
-}
-
-#[tauri::command]
-pub async fn install_plugin(
-    url: String,
-    sub_path: Option<String>,
+pub async fn uninstall_plugin(
+    name: String,
+    marketplace: String,
     state: State<'_, AppContext>,
-) -> AppResult<PluginSummary> {
-    state.install_plugin(&url, sub_path.as_deref()).await
+) -> AppResult<Vec<PluginSummary>> {
+    state.uninstall_plugin(&name, &marketplace).await
+}
+
+// ==================== Claude Code 插件管理 ====================
+
+#[tauri::command]
+pub async fn claude_check_plugin_updates(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<ClaudePluginUpdate>> {
+    state.claude_check_plugin_updates().await
 }
 
 #[tauri::command]
-pub async fn uninstall_plugin(name: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.uninstall_plugin(&name).await
+pub async fn claude_list_plugins(
+    include_available: bool,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudePluginInventory> {
+    state.claude_list_plugins(include_available).await
+}
+
+#[tauri::command]
+pub async fn claude_list_plugin_marketplaces(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<ClaudeMarketplace>> {
+    state.claude_list_plugin_marketplaces().await
+}
+
+#[tauri::command]
+pub async fn claude_add_plugin_marketplace(
+    source: String,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeMarketplace> {
+    state.claude_add_plugin_marketplace(&source).await
+}
+
+#[tauri::command]
+pub async fn claude_remove_plugin_marketplace(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_remove_plugin_marketplace(&name).await
+}
+
+#[tauri::command]
+pub async fn claude_update_plugin_marketplace(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_update_plugin_marketplace(&name).await
+}
+
+#[tauri::command]
+pub async fn claude_install_plugin(
+    plugin_id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_install_plugin(&plugin_id).await
+}
+
+#[tauri::command]
+pub async fn claude_uninstall_plugin(
+    plugin_id: String,
+    scope: String,
+    project_path: Option<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state
+        .claude_uninstall_plugin(&plugin_id, &scope, project_path.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn claude_set_plugin_enabled(
+    plugin_id: String,
+    scope: String,
+    enabled: bool,
+    project_path: Option<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state
+        .claude_set_plugin_enabled(&plugin_id, &scope, enabled, project_path.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn claude_update_plugin(
+    plugin_id: String,
+    scope: String,
+    project_path: Option<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudePluginUpdateResult> {
+    state
+        .claude_update_plugin(&plugin_id, &scope, project_path.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -1175,9 +1287,15 @@ pub async fn auth_warmup(
 
 #[tauri::command]
 pub async fn auth_preview(
-    account_id: String,
+    account_id: Option<String>,
+    state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
 ) -> Result<Option<String>, String> {
+    let Some(account_id) = account_id else {
+        return state
+            .desktop_auth_snapshot()
+            .map_err(|error| error.to_string());
+    };
     if let Some(cached) = oauth.0.cached_auth_json(&account_id).await {
         return Ok(Some(cached));
     }

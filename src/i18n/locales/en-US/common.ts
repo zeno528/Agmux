@@ -21,6 +21,10 @@ export default {
     maximize: "Maximize",
     close: "Close",
   },
+  search: {
+    clear: "Clear search",
+    clearText: "Clear",
+  },
   select: {
     placeholder: "Select...",
     optionsLabel: "Options",

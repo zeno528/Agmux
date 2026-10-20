@@ -26,6 +26,7 @@ import {
 } from "../../presets";
 import {
   chatgptModelOptions,
+  emptyConfigSeed,
   patchModelValue,
   patchProviderFields,
   readCatalogOptions,
@@ -186,6 +187,7 @@ function CodexProfileEditor({
     return list;
   }, [catalogFileName, liveCatalogPath, showAuthTab]);
   const baseFragment = create ? presetFragment : detail?.config_fragment ?? "";
+  const configSeed = emptyConfigSeed(baseFragment);
   const liveConfigFragment = useMemo(() => {
     if (!baseFragment) return "";
     return withMcpSection(patchProviderFields(baseFragment, baseUrl, apiKey), mcpSection);
@@ -245,6 +247,18 @@ function CodexProfileEditor({
   useEffect(() => {
     if (authSource === "desktop") modelListRequest.current++;
   }, [authText, authSource]);
+
+  useEffect(() => {
+    if (!create || !isOfficial || authSource !== "desktop" || activeTab !== "auth" || authPreviewReady || authDirty) return;
+    let cancelled = false;
+    void api.authPreview().then((text) => {
+      if (cancelled) return;
+      setAuthText(text ?? "");
+      setAuthInitial(text ?? "");
+      setAuthPreviewReady(true);
+    }).catch((error) => { if (!cancelled) feedback.error(String(error)); });
+    return () => { cancelled = true; };
+  }, [create, isOfficial, authSource, activeTab, authPreviewReady, authDirty, feedback]);
 
   useEffect(() => {
     if (create && initialized.current) return;
@@ -328,7 +342,8 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const next = patchProviderFields(current, baseUrl, apiKey);
+      const source = !current.trim() && (baseUrl.trim() || apiKey.trim()) ? configSeed : current;
+      const next = patchProviderFields(source, baseUrl, apiKey);
       return next === current ? current : next;
     });
   }, [apiKey, baseUrl]);
@@ -337,9 +352,10 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     setConfigText((current) => {
-      const effort = readModelValue(current, "model_reasoning_effort") ?? "";
+      const source = !current.trim() && modelValue.trim() ? configSeed : current;
+      const effort = readModelValue(source, "model_reasoning_effort") ?? "";
       const picked = selectModel(modelValue, effort, modelEfforts[modelValue]);
-      let next = patchModelValue(current, modelValue);
+      let next = patchModelValue(source, modelValue);
       if (picked.effort !== effort) next = patchModelValue(next, picked.effort, "model_reasoning_effort");
       return next === current ? current : next;
     });
@@ -348,14 +364,16 @@ function CodexProfileEditor({
   useEffect(() => {
     if (!initialized.current) return;
     const model = readModelValue(configText);
-    if (model !== null && model !== modelValue) setModelValue(model);
+    if (model !== null || !configText.trim()) {
+      if ((model ?? "") !== modelValue) setModelValue(model ?? "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configText]);
 
   useEffect(() => {
     if (!initialized.current) return;
     const fields = readProviderFields(configText);
-    if (fields.found) {
+    if (fields.found || !configText.trim()) {
       if (fields.base_url !== baseUrl) setBaseUrl(fields.base_url);
       if (!fields.tokenMasked) {
         const key = /^<.*>$/.test(fields.experimental_bearer_token) ? "" : fields.experimental_bearer_token;
@@ -602,7 +620,7 @@ function CodexProfileEditor({
       }
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
-        <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={create ? onChangeProvider : onBack}><ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="apple-title">{create ? t("edit.createTitle") : t("edit.editTitle")}</span></button>
+        <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={create ? onChangeProvider : onBack}><ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="apple-title">{create ? t("toolbar.addProvider") : t("edit.editTitle")}</span></button>
       </div>
       <div className="apple-edit-content">
         {loadError ? <p className="muted mt-4 text-sm">{loadError}{create ? <button type="button" className="apple-inline-btn ml-2" onClick={() => void selectPreset()}>{t("edit.retryTemplate")}</button> : null}</p> : null}
@@ -650,7 +668,24 @@ function CodexProfileEditor({
                 />
               </>
             ) : null}
-            {isOfficial ? <div className="mt-4"><div className="field-label mb-1.5">{t("edit.authMethodLabel")}</div>{create ? <AppSelect value={boundAccountId ?? ""} options={accountOptions} onChange={selectAccount} placeholder={t("card.authDesktop")} renderLabel={renderAccountLabel} /> : authSource === "oauth" ? <AppSelect value={boundAccountId ?? ""} options={oauthAccountOptions} onChange={selectAccount} placeholder={t("edit.selectOauthAccount")} renderLabel={renderAccountLabel} /> : <div className="app-input flex min-w-0 items-center gap-2"><AuthSourceIcon source="desktop" className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="shrink-0 text-xs font-medium text-[var(--text-secondary)]">{t("card.authDesktop")}</span>{detail?.desktop_login ? <><span className="muted" aria-hidden="true">·</span><span className="min-w-0 truncate text-xs font-medium text-[var(--text-secondary)]" title={detail.desktop_login}>{detail.desktop_login}</span></> : null}</div>}</div> : null}
+            {isOfficial ? (
+              <div className="mt-4">
+                <div className="field-label mb-1.5">{t("edit.authMethodLabel")}</div>
+                {create ? <AppSelect value={boundAccountId ?? ""} options={accountOptions} onChange={selectAccount} placeholder={t("card.authDesktop")} renderLabel={renderAccountLabel} /> : authSource === "oauth" ? <AppSelect value={boundAccountId ?? ""} options={oauthAccountOptions} onChange={selectAccount} placeholder={t("edit.selectOauthAccount")} renderLabel={renderAccountLabel} /> : (
+                  <div className="app-input flex min-w-0 items-center gap-2">
+                    <AuthSourceIcon source="desktop" className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+                    <span className="shrink-0 text-xs font-medium text-[var(--text-secondary)]">{t("card.authDesktop")}</span>
+                    {detail ? <>
+                      <span className="muted" aria-hidden="true">·</span>
+                      <span className="min-w-0 truncate text-xs font-medium text-[var(--text-secondary)]" title={detail.desktop_login ?? undefined}>
+                        {detail.desktop_login ?? t("edit.desktopAuthWaiting")}
+                      </span>
+                    </> : null}
+                  </div>
+                )}
+                {authSource === "desktop" ? <p className="setting-description mt-1.5">{t("edit.desktopAuthHint")}</p> : null}
+              </div>
+            ) : null}
             {showProviderFields || isOfficial ? <div className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
               <div className="min-w-0">
                 <div className="field-label mb-1.5 flex h-6 items-center">{t("edit.modelIdLabel")}</div>
@@ -673,7 +708,7 @@ function CodexProfileEditor({
               {effortField}
             </div> : null}
             {(!create || Boolean(selectedPreset?.admin_url)) ? <div className="mt-4"><div className="mb-1.5 flex items-center gap-2"><span className="field-label">{t("edit.adminUrlLabel")}</span><button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-5 shrink-0" disabled={!adminUrl.trim()} aria-label={t("card.openWebsite")} onClick={() => void api.openUrl(adminUrl.trim()).catch((error) => feedback.error(String(error)))}><ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden="true" />{t("card.openWebsite")}</button></div><input className="app-input" placeholder={t("edit.adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} /></div> : null}
-              {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving || savingBalance} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
+              {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
           </fieldset>
           {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
             {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
@@ -698,7 +733,7 @@ function CodexProfileEditor({
                     />
                   )}
                 </div>
-              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
               </div>
             </div>}
         </div>

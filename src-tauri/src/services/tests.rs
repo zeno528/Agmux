@@ -474,6 +474,106 @@ experimental_bearer_token = "old"
 }
 
 #[test]
+fn failed_codex_apply_restores_files_and_keeps_active_snapshot() {
+    for builtin in [false, true] {
+        for (table, operation) in [("app_state", "UPDATE"), ("switch_events", "INSERT")] {
+            let (home, context) = chatgpt_test_context();
+            let paths = &context.paths;
+            let database = &context.database;
+            let config_path = paths.codex_config();
+            let auth_path = context.paths.codex_home.join("auth.json");
+            let original_auth = r#"{"OPENAI_API_KEY":"fixture-old"}"#;
+            let active = context.codex_capture_profile("Active").unwrap();
+            context.codex_apply_profile(&active.id).unwrap();
+            std::fs::write(&auth_path, original_auth).unwrap();
+            context.get_state().unwrap();
+            let original_config = std::fs::read(&config_path).unwrap();
+            let original_payload = database.codex_profile(&active.id).unwrap().payload;
+            let catalog = if builtin {
+                paths.codex_home.join("models.json")
+            } else {
+                home.path().join("external-models.json")
+            };
+            if builtin {
+                std::fs::write(&catalog, r#"{"models":[],"fixture":"old"}"#).unwrap();
+            }
+            let original_catalog = std::fs::read(&catalog).ok();
+            let target = if builtin {
+                context
+                    .codex_add_builtin_profile(
+                        "deepseek",
+                        None,
+                        None,
+                        Some("fixture-key"),
+                        None,
+                        None,
+                    )
+                    .unwrap()
+            } else {
+                context.codex_capture_profile("Target").unwrap()
+            };
+            let mut stored = database.codex_profile(&target.id).unwrap();
+            stored.payload.raw_catalog = Some(r#"{"models":[]}"#.into());
+            stored.payload.raw_auth = Some(r#"{"OPENAI_API_KEY":"fixture-new"}"#.into());
+            stored.payload.auth_auto_sync = Some(false);
+            if !builtin {
+                let path = serde_json::to_string(&catalog.to_string_lossy()).unwrap();
+                stored
+                    .payload
+                    .model_values
+                    .insert("model_catalog_json".into(), path.clone());
+                stored.payload.raw_config = Some(format!(
+                    "model = \"fixture-new\"\nmodel_catalog_json = {path}\n"
+                ));
+            }
+            database
+                .codex_update_profile(&target.id, &stored.name, &stored.payload, "2")
+                .unwrap();
+            let connection = Connection::open(&paths.database).unwrap();
+            connection
+                .execute_batch(&format!(
+                    "CREATE TRIGGER reject_apply BEFORE {operation} ON {table}
+                 BEGIN SELECT RAISE(FAIL, 'fixture commit failure'); END;"
+                ))
+                .unwrap();
+
+            let error = context.codex_apply_profile(&target.id).unwrap_err();
+            assert!(error.0.contains("fixture commit failure"), "{error}");
+            assert_eq!(std::fs::read(&config_path).unwrap(), original_config);
+            assert_eq!(std::fs::read_to_string(&auth_path).unwrap(), original_auth);
+            assert_eq!(std::fs::read(&catalog).ok(), original_catalog);
+            let state = context.get_state().unwrap();
+            assert_eq!(state.active_codex_profile_id.as_ref(), Some(&active.id));
+            assert_eq!(
+                database.codex_profile(&active.id).unwrap().payload,
+                original_payload
+            );
+            assert_eq!(
+                database.codex_latest_applied_profile().unwrap().as_ref(),
+                Some(&active.id)
+            );
+
+            connection
+                .execute_batch("DROP TRIGGER reject_apply")
+                .unwrap();
+            context.codex_apply_profile(&target.id).unwrap();
+            assert_eq!(
+                database.app_state().unwrap().0.as_deref(),
+                Some(target.id.as_str())
+            );
+            assert_eq!(
+                std::fs::read_to_string(&auth_path).unwrap(),
+                r#"{"OPENAI_API_KEY":"fixture-new"}"#
+            );
+            assert_eq!(
+                std::fs::read_to_string(&catalog).unwrap(),
+                r#"{"models":[]}"#
+            );
+        }
+    }
+}
+
+#[test]
 fn apply_profile_autosyncs_accumulated_active_profile() {
     let home = tempfile::tempdir().unwrap();
     let paths = crate::paths::from_home(home.path()).unwrap();
@@ -763,11 +863,18 @@ fn desktop_profile_syncs_and_restores_auth_snapshot() {
         Some(crate::models::AuthSource::Desktop)
     );
 
-    // 创建只写数据库；激活空快照会清理当前 live 认证。
+    // 创建后才登录，首次激活也应承接已有认证。
     let initial_live = chatgpt_auth("desktop-account", "initial-live");
     std::fs::write(context.paths.codex_home.join("auth.json"), &initial_live).unwrap();
     context.codex_apply_profile(&profile.id).unwrap();
-    assert!(!context.paths.codex_home.join("auth.json").exists());
+    assert_eq!(
+        std::fs::read_to_string(context.paths.codex_home.join("auth.json")).unwrap(),
+        initial_live
+    );
+    assert_eq!(
+        context.codex_get_profile(&profile.id).unwrap().raw_auth,
+        Some(initial_live)
+    );
 
     // 官方认证完成后，聚焦/刷新把新文件回写当前 Desktop 配置。
     let refreshed_live = chatgpt_auth("desktop-account", "refreshed-live");
@@ -798,6 +905,155 @@ fn desktop_profile_syncs_and_restores_auth_snapshot() {
         std::fs::read_to_string(context.paths.codex_home.join("auth.json")).unwrap(),
         refreshed_live
     );
+}
+
+#[test]
+fn desktop_profile_creation_captures_existing_login_without_writing_live() {
+    let (_home, context) = chatgpt_test_context();
+    let path = context.paths.codex_home.join("auth.json");
+    let auth = chatgpt_auth("fixture-account", "fixture-token");
+    std::fs::write(&path, &auth).unwrap();
+    let config = std::fs::read(context.paths.codex_config()).unwrap();
+    let profile = context
+        .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+        .unwrap();
+    assert_eq!(
+        context.codex_get_profile(&profile.id).unwrap().raw_auth,
+        Some(auth.clone())
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), auth);
+    assert_eq!(std::fs::read(context.paths.codex_config()).unwrap(), config);
+    assert!(context.database.app_state().unwrap().0.is_none());
+
+    for invalid in ["{", r#"{"OPENAI_API_KEY":"fixture"}"#] {
+        std::fs::write(&path, invalid).unwrap();
+        let empty = context
+            .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+            .unwrap();
+        assert!(context
+            .codex_get_profile(&empty.id)
+            .unwrap()
+            .raw_auth
+            .is_none());
+        context.codex_apply_profile(&empty.id).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), invalid);
+    }
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(context
+        .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+        .is_err());
+}
+
+#[test]
+fn desktop_profile_keeps_newer_credentials_and_isolates_other_profiles() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let auth = |user: &str, issued_at: i64| {
+        let identity = URL_SAFE_NO_PAD.encode(format!(
+            r#"{{"chatgpt_account_id":"fixture-workspace","sub":"{user}"}}"#
+        ));
+        let access = URL_SAFE_NO_PAD.encode(format!(r#"{{"iat":{issued_at}}}"#));
+        serde_json::json!({"auth_mode":"chatgpt", "tokens":{
+            "id_token":format!("e30.{identity}.sig"),
+            "access_token":format!("e30.{access}.sig"),
+            "refresh_token":format!("fixture-{user}-{issued_at}")
+        }})
+        .to_string()
+    };
+    let (_home, context) = chatgpt_test_context();
+    let path = context.paths.codex_home.join("auth.json");
+    let old = auth("user-a", 100);
+    let new = auth("user-a", 200);
+    std::fs::write(&path, &old).unwrap();
+    let first = context
+        .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+        .unwrap();
+    let second = context
+        .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+        .unwrap();
+    std::fs::write(&path, &new).unwrap();
+    context.codex_apply_profile(&first.id).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), new);
+    assert_eq!(
+        context.codex_get_profile(&first.id).unwrap().raw_auth,
+        Some(new.clone())
+    );
+    assert_eq!(
+        context.codex_get_profile(&second.id).unwrap().raw_auth,
+        Some(old.clone())
+    );
+
+    std::fs::write(&path, &old).unwrap();
+    context.codex_apply_profile(&first.id).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), new);
+
+    // 同账号旧文件不能覆盖新快照；换用户只更新当前激活项。
+    std::fs::write(&path, &old).unwrap();
+    context.get_state().unwrap();
+    assert_eq!(
+        context.codex_get_profile(&first.id).unwrap().raw_auth,
+        Some(new)
+    );
+    let other = auth("user-b", 300);
+    std::fs::write(&path, &other).unwrap();
+    context.get_state().unwrap();
+    assert_eq!(
+        context.codex_get_profile(&first.id).unwrap().raw_auth,
+        Some(other.clone())
+    );
+    context.codex_apply_profile(&second.id).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+    assert_eq!(
+        context.codex_get_profile(&first.id).unwrap().raw_auth,
+        Some(other)
+    );
+}
+
+#[test]
+fn failed_desktop_auth_adoption_keeps_files_and_snapshot() {
+    for (table, operation) in [
+        ("profiles", "UPDATE"),
+        ("app_state", "INSERT"),
+        ("switch_events", "INSERT"),
+    ] {
+        let (_home, context) = chatgpt_test_context();
+        let profile = context
+            .codex_add_builtin_profile("chatgpt", None, None, None, None, None)
+            .unwrap();
+        let path = context.paths.codex_home.join("auth.json");
+        let auth = chatgpt_auth("fixture-account", "fixture-token");
+        std::fs::write(&path, &auth).unwrap();
+        let config = std::fs::read(context.paths.codex_config()).unwrap();
+        let payload = context.database.codex_profile(&profile.id).unwrap().payload;
+        let connection = Connection::open(&context.paths.database).unwrap();
+        connection
+            .execute_batch(&format!(
+                "CREATE TRIGGER reject_apply BEFORE {operation} ON {table}
+             BEGIN SELECT RAISE(FAIL, 'fixture commit failure'); END;"
+            ))
+            .unwrap();
+        assert!(context.codex_apply_profile(&profile.id).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), auth);
+        assert_eq!(std::fs::read(context.paths.codex_config()).unwrap(), config);
+        assert_eq!(
+            context.database.codex_profile(&profile.id).unwrap().payload,
+            payload
+        );
+        assert!(context.database.app_state().unwrap().0.is_none());
+        assert!(context
+            .database
+            .codex_latest_applied_profile()
+            .unwrap()
+            .is_none());
+        connection
+            .execute_batch("DROP TRIGGER reject_apply")
+            .unwrap();
+        context.codex_apply_profile(&profile.id).unwrap();
+        assert_eq!(
+            context.codex_get_profile(&profile.id).unwrap().raw_auth,
+            Some(auth)
+        );
+    }
 }
 
 #[test]
@@ -1040,6 +1296,32 @@ async fn oauth_activation_and_account_switch_write_only_the_bound_account_snapsh
     oauth
         .seed_access_token_for_test("oauth-account", "fresh-oauth-access")
         .await;
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let auth_path = context.paths.codex_home.join("auth.json");
+        let original_auth = chatgpt_auth("external-account", "fixture-old");
+        std::fs::write(&auth_path, &original_auth).unwrap();
+        let original_config = std::fs::read(context.paths.codex_config()).unwrap();
+        let auth_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&auth_path)
+            .unwrap();
+        let error = context
+            .codex_apply_profile_with_auth(&profile.id, &oauth)
+            .await
+            .unwrap_err();
+        assert!(error.0.contains("无法替换"), "{error}");
+        drop(auth_lock);
+        assert_eq!(
+            std::fs::read(context.paths.codex_config()).unwrap(),
+            original_config
+        );
+        assert_eq!(std::fs::read_to_string(&auth_path).unwrap(), original_auth);
+        assert_eq!(context.get_state().unwrap().active_codex_profile_id, None);
+    }
 
     context
         .codex_apply_profile_with_auth(&profile.id, &oauth)
@@ -1612,7 +1894,7 @@ fn add_builtin_profile_creates_snapshot_without_activating() {
         .unwrap();
 
     assert_eq!(profile.name, "DeepSeek");
-    assert_eq!(profile.model, None);
+    assert_eq!(profile.model.as_deref(), Some("deepseek-flash"));
     assert_eq!(profile.provider.as_deref(), Some("deepseek"));
     assert_eq!(profile.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(profile.icon.as_deref(), Some("deepseek"));
@@ -2879,6 +3161,22 @@ fn apply_raw_profile_carries_live_mcp_section() {
     assert!(!config.contains("marketplaces.stale"), "{config}");
     assert!(!config.contains("stale@stale"), "{config}");
     assert!(config.contains("model = \"glm-5.3\""), "{config}");
+    let second = context
+        .codex_add_custom_profile("第二配置", None, raw, None, None, None, None, None)
+        .unwrap();
+    for enabled in [false, true] {
+        let mut live = codex_config::parse_document(&read_config_text(&context)).unwrap();
+        live["plugins"]["ponytail@ponytail"]["enabled"] = toml_edit::value(enabled);
+        std::fs::write(context.paths.codex_config(), live.to_string()).unwrap();
+        for id in [&second.id, &profile.id] {
+            context.codex_apply_profile(id).unwrap();
+            let config = codex_config::parse_document(&read_config_text(&context)).unwrap();
+            assert_eq!(
+                config["plugins"]["ponytail@ponytail"]["enabled"].as_bool(),
+                Some(enabled)
+            );
+        }
+    }
 }
 
 #[test]
@@ -3945,7 +4243,7 @@ fn apply_minimax_inserts_catalog_line_and_writes_catalog() {
 }
 
 #[test]
-fn apply_chatgpt_writes_official_default_and_clears_empty_desktop_auth() {
+fn apply_chatgpt_writes_official_default_and_preserves_unrecognized_auth() {
     let home = tempfile::tempdir().unwrap();
     let paths = crate::paths::from_home(home.path()).unwrap();
     paths.ensure().unwrap();
@@ -3967,7 +4265,10 @@ fn apply_chatgpt_writes_official_default_and_clears_empty_desktop_auth() {
         std::fs::read(context.paths.codex_config()).unwrap(),
         crate::codex_builtin::CHATGPT_CONFIG
     );
-    assert!(!context.paths.codex_home.join("auth.json").exists());
+    assert_eq!(
+        std::fs::read(context.paths.codex_home.join("auth.json")).unwrap(),
+        br#"{"login":"kept"}"#
+    );
     assert!(!context.paths.codex_home.join("models.json").exists());
 }
 
