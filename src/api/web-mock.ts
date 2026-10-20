@@ -1621,6 +1621,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "auth_get_status":
       return webAuthStatus as T;
     case "auth_preview": {
+      if (args?.accountId == null) throw new Error("浏览器预览无法读取本机 Codex 桌面端认证文件");
       if (typeof args?.accountId !== "string" || !args.accountId) {
         throw new Error("OAuth 账号不能为空");
       }

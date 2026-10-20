@@ -256,7 +256,7 @@ export const api = {
     call<ProfileBalance>("auth_get_quota", { source, accountId }),
   authWarmup: (source: "desktop" | "oauth", accountId: string) =>
     call<void>("auth_warmup", { source, accountId }),
-  authPreview: (accountId: string) => call<string | null>("auth_preview", { accountId }),
+  authPreview: (accountId: string | null = null) => call<string | null>("auth_preview", { accountId }),
   authRemoveAccount: (accountId: string) =>
     call<void>("auth_remove_account", { accountId }),
   openUrl: (url: string) => call<void>("open_url", { url }),

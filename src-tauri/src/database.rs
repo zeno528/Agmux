@@ -793,6 +793,7 @@ impl Database {
     pub(crate) fn commit_codex_profile_apply(
         &self,
         id: &str,
+        payload: &CodexProfilePayload,
         message: &str,
         timestamp: &str,
     ) -> AppResult<()> {
@@ -800,6 +801,14 @@ impl Database {
         let transaction = connection
             .transaction()
             .map_err(|error| app_err!("无法开始配置切换事务: {error}"))?;
+        let payload_json =
+            serde_json::to_string(payload).map_err(|_| app_err!("供应商配置序列化失败"))?;
+        transaction
+            .execute(
+                "UPDATE profiles SET payload_json=?2, updated_at=?3 WHERE id=?1",
+                params![id, payload_json, timestamp],
+            )
+            .map_err(|error| app_err!("无法更新供应商配置: {error}"))?;
         transaction
             .execute(
                 "INSERT INTO app_state(singleton, active_profile_id) VALUES(1, ?1)

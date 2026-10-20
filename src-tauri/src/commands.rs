@@ -1287,9 +1287,15 @@ pub async fn auth_warmup(
 
 #[tauri::command]
 pub async fn auth_preview(
-    account_id: String,
+    account_id: Option<String>,
+    state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
 ) -> Result<Option<String>, String> {
+    let Some(account_id) = account_id else {
+        return state
+            .desktop_auth_snapshot()
+            .map_err(|error| error.to_string());
+    };
     if let Some(cached) = oauth.0.cached_auth_json(&account_id).await {
         return Ok(Some(cached));
     }

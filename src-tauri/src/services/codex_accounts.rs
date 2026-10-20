@@ -41,6 +41,16 @@ impl AppContext {
             .and_then(parse_external_auth_json)
     }
 
+    pub(crate) fn desktop_auth_snapshot(&self) -> AppResult<Option<String>> {
+        match std::fs::read_to_string(self.paths.codex_home.join("auth.json")) {
+            Ok(text) => Ok(Some(text).filter(|text| parse_external_auth_json(text).is_some())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(app_err!(
+                "无法读取 Codex 桌面端认证文件，请检查文件权限或占用"
+            )),
+        }
+    }
+
     /// Desktop 账号清单：真源是数据库中 Desktop 来源官方配置保存的认证快照，
     /// 不读 live auth.json（切换配置时该文件会被覆写，身份不能跟着漂移）。
     /// 同一账号存在多个配置时按 (workspace, 用户身份) 去重。

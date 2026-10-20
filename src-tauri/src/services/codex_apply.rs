@@ -72,11 +72,29 @@ impl AppContext {
 
         let profile = self.database.codex_profile(id)?;
         let profile_kind = profile.kind;
-        let payload = profile.payload;
+        let mut payload = profile.payload;
         let auth_source =
             payload.effective_auth_source(profile_kind, profile.account_id.as_deref());
         if auth_source == Some(AuthSource::Oauth) && profile.account_id.is_none() {
             return Err(app_err!("OAuth 配置必须绑定一个订阅账号"));
+        }
+        if auth_source == Some(AuthSource::Desktop) && payload.auth_auto_sync != Some(false) {
+            if let Some(text) = self.desktop_auth_snapshot()? {
+                let previous = payload
+                    .raw_auth
+                    .as_deref()
+                    .and_then(parse_external_auth_json);
+                let use_live = payload.raw_auth.is_none()
+                    || previous.is_some_and(|snapshot| {
+                        parse_external_auth_json(&text)
+                            .is_some_and(|live| live.is_newer_than(&snapshot))
+                    });
+                if use_live {
+                    let previous_auth = payload.raw_auth.replace(text);
+                    payload.auth_auto_sync = Some(true);
+                    payload.invalidate_models_for_auth_change(previous_auth.as_deref());
+                }
+            }
         }
         let mut paths = vec![config_path.clone()];
         let catalog_path = if let Some(kind) = payload.builtin.as_deref() {
@@ -125,7 +143,7 @@ impl AppContext {
                 "configuration applied"
             };
             self.database
-                .commit_codex_profile_apply(id, message, &now_ms().to_string())
+                .commit_codex_profile_apply(id, &payload, message, &now_ms().to_string())
         })?;
         // 操作审计与激活位一起提交；文件日志留一行，也能重建切换史。
         let source_label = match auth_source {
@@ -278,7 +296,7 @@ impl AppContext {
             Some(AuthSource::Desktop) => {
                 match normalize_auth_override(payload.raw_auth.as_deref()) {
                     Some(raw) => self.write_auth_json(&raw),
-                    None => self.remove_raw_auth(),
+                    None => Ok(()),
                 }
             }
             Some(AuthSource::Oauth) => Ok(()),
@@ -366,7 +384,17 @@ impl AppContext {
                 let live_auth = read_optional_text(&self.paths.codex_home.join("auth.json"));
                 if let Some(text) = live_auth {
                     // Codex 正在刷新或外部文件损坏时，不能把不可用内容覆盖掉最后一次有效快照。
-                    if parse_external_auth_json(&text).is_some() {
+                    let parsed = parse_external_auth_json(&text);
+                    let snapshot = profile
+                        .payload
+                        .raw_auth
+                        .as_deref()
+                        .and_then(parse_external_auth_json);
+                    if parsed.as_ref().is_some_and(|auth| {
+                        snapshot
+                            .as_ref()
+                            .is_none_or(|saved| !saved.is_newer_than(auth))
+                    }) {
                         live.raw_auth = normalize_auth_override(Some(&text));
                         live.auth_auto_sync = Some(true);
                     } else {

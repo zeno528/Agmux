@@ -249,6 +249,18 @@ function CodexProfileEditor({
   }, [authText, authSource]);
 
   useEffect(() => {
+    if (!create || !isOfficial || authSource !== "desktop" || activeTab !== "auth" || authPreviewReady || authDirty) return;
+    let cancelled = false;
+    void api.authPreview().then((text) => {
+      if (cancelled) return;
+      setAuthText(text ?? "");
+      setAuthInitial(text ?? "");
+      setAuthPreviewReady(true);
+    }).catch((error) => { if (!cancelled) feedback.error(String(error)); });
+    return () => { cancelled = true; };
+  }, [create, isOfficial, authSource, activeTab, authPreviewReady, authDirty, feedback]);
+
+  useEffect(() => {
     if (create && initialized.current) return;
     let cancelled = false;
     void (async () => {
@@ -656,7 +668,24 @@ function CodexProfileEditor({
                 />
               </>
             ) : null}
-            {isOfficial ? <div className="mt-4"><div className="field-label mb-1.5">{t("edit.authMethodLabel")}</div>{create ? <AppSelect value={boundAccountId ?? ""} options={accountOptions} onChange={selectAccount} placeholder={t("card.authDesktop")} renderLabel={renderAccountLabel} /> : authSource === "oauth" ? <AppSelect value={boundAccountId ?? ""} options={oauthAccountOptions} onChange={selectAccount} placeholder={t("edit.selectOauthAccount")} renderLabel={renderAccountLabel} /> : <div className="app-input flex min-w-0 items-center gap-2"><AuthSourceIcon source="desktop" className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="shrink-0 text-xs font-medium text-[var(--text-secondary)]">{t("card.authDesktop")}</span>{detail?.desktop_login ? <><span className="muted" aria-hidden="true">·</span><span className="min-w-0 truncate text-xs font-medium text-[var(--text-secondary)]" title={detail.desktop_login}>{detail.desktop_login}</span></> : null}</div>}</div> : null}
+            {isOfficial ? (
+              <div className="mt-4">
+                <div className="field-label mb-1.5">{t("edit.authMethodLabel")}</div>
+                {create ? <AppSelect value={boundAccountId ?? ""} options={accountOptions} onChange={selectAccount} placeholder={t("card.authDesktop")} renderLabel={renderAccountLabel} /> : authSource === "oauth" ? <AppSelect value={boundAccountId ?? ""} options={oauthAccountOptions} onChange={selectAccount} placeholder={t("edit.selectOauthAccount")} renderLabel={renderAccountLabel} /> : (
+                  <div className="app-input flex min-w-0 items-center gap-2">
+                    <AuthSourceIcon source="desktop" className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+                    <span className="shrink-0 text-xs font-medium text-[var(--text-secondary)]">{t("card.authDesktop")}</span>
+                    {detail ? <>
+                      <span className="muted" aria-hidden="true">·</span>
+                      <span className="min-w-0 truncate text-xs font-medium text-[var(--text-secondary)]" title={detail.desktop_login ?? undefined}>
+                        {detail.desktop_login ?? t("edit.desktopAuthWaiting")}
+                      </span>
+                    </> : null}
+                  </div>
+                )}
+                {authSource === "desktop" ? <p className="setting-description mt-1.5">{t("edit.desktopAuthHint")}</p> : null}
+              </div>
+            ) : null}
             {showProviderFields || isOfficial ? <div className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
               <div className="min-w-0">
                 <div className="field-label mb-1.5 flex h-6 items-center">{t("edit.modelIdLabel")}</div>
@@ -704,7 +733,7 @@ function CodexProfileEditor({
                     />
                   )}
                 </div>
-              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
               </div>
             </div>}
         </div>
