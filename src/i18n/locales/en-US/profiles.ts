@@ -194,7 +194,7 @@ export default {
     clearCatalogTitle: "Clear the models catalog?",
     clearCatalogDescription: "Discards the saved models.json draft; built-in providers fall back to the bundled catalog after saving",
     clearAuthTitle: "Clear auth.json?",
-    clearAuthDescription: "Removes the authentication file saved for this provider. If this configuration is active, saving also backs up and deletes the live authentication file",
+    clearAuthDescription: "Saving clears this configuration's credentials; if active, Codex's current live authentication file is backed up before deletion",
     authPillEditable: "Editable",
     authPillReadonly: "Read-only",
     configPlaceholderCreate: "Select a provider to see the config preview",
