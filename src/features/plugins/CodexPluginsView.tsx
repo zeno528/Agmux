@@ -69,13 +69,15 @@ export default function CodexPluginsView({
   const [catalog, setCatalog] = useState(() => getCachedPluginCatalog() ?? []);
   const [catalogLoaded, setCatalogLoaded] = useState(() => getCachedPluginCatalog() !== null);
   const [catalogError, setCatalogError] = useState("");
+  const [catalogRefreshed, setCatalogRefreshed] = useState(false);
   const [visibleCount, setVisibleCount] = useState(40);
   const [updates, setUpdates] = useState<PluginUpdate[]>([]);
   const [checking, setChecking] = useState(false);
   const [upgradingAll, setUpgradingAll] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<PluginSummary | null>(null);
   const [showSources, setShowSources] = useState(false);
-  const [filter, setFilter] = useState<PluginFilter>("all");
+  const [filter, setFilter] = useState<PluginFilter>("installed");
+  const showAvailable = filter === "all" || filter === "available";
   const [installing, setInstalling] = useState("");
   const [removingMarket, setRemovingMarket] = useState("");
   const [refreshingMarket, setRefreshingMarket] = useState("");
@@ -88,6 +90,7 @@ export default function CodexPluginsView({
       const next = changed ? items.map((item) => item.plugin_id === changed.id ? { ...item, installed: changed.installed } : item) : items;
       if (changed) setCachedPluginCatalog(next);
       setCatalog(next);
+      setCatalogRefreshed(true);
       setCatalogError("");
     } catch (error) {
       setCatalogError(String(error));
@@ -113,10 +116,13 @@ export default function CodexPluginsView({
   };
   useEffect(() => {
     // 先显缓存（命中即回），后台再强制取一次最新，保证外部变更能浮上来
+    setCatalogRefreshed(false);
     void refresh();
     void refresh(true);
-    void refreshCatalog().catch(() => undefined);
   }, [activationEpoch]);
+  useEffect(() => {
+    if (showAvailable && !catalogRefreshed) void refreshCatalog().catch(() => undefined);
+  }, [showAvailable, catalogRefreshed]);
   useEffect(() => {
     let cancelled = false;
     void loadCodexApps(true).then((items) => {
@@ -179,12 +185,6 @@ export default function CodexPluginsView({
     () => updates.filter((update) => visibleInstalled.some((plugin) => plugin.name === update.name)),
     [updates, visibleInstalled],
   );
-  const counts = {
-    all: visibleInstalled.length + available.length,
-    installed: visibleInstalled.length,
-    available: available.length,
-    updates: visibleUpdates.length,
-  };
 
   const install = async (plugin: AvailablePlugin) => {
     if (installing || checking || upgradingAll) return;
@@ -346,7 +346,6 @@ export default function CodexPluginsView({
 
   const showUpdates = filter === "all" || filter === "updates";
   const showInstalled = filter === "all" || filter === "installed";
-  const showAvailable = filter === "all" || filter === "available";
   const boardEmpty = loaded && catalogLoaded && !catalogError && !visibleInstalled.length && !available.length && !visibleUpdates.length;
 
   const renderSourceRow = (marketplace: PluginMarketplace) => (
@@ -417,7 +416,7 @@ export default function CodexPluginsView({
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PluginFilterChips value={filter} onChange={setFilter} counts={loaded && catalogLoaded ? counts : { all: null, installed: null, available: null }} />
+        <PluginFilterChips value={filter} onChange={setFilter} updateCount={visibleUpdates.length} />
         <div className="ml-auto flex items-center gap-2">
           <button type="button" className="apple-action-button" disabled={checking || upgradingAll || Boolean(installing)} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
             <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
@@ -429,6 +428,11 @@ export default function CodexPluginsView({
           </button>
         </div>
       </div>
+      {showAvailable && !catalogLoaded && !catalogError ? (
+        <p className="muted flex items-center gap-2 text-sm" role="status">
+          <LoadingSpinner />{t("loading", { ns: "common" })}
+        </p>
+      ) : null}
       {!loaded ? null : (
         <>
           {showUpdates && visibleUpdates.length ? (

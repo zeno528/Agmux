@@ -1,6 +1,6 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { webInvoke } from "../../api/web-mock";
 import { getCachedPluginCatalog, getCachedPlugins, loadPluginCatalog, loadPlugins, setCachedPluginCatalog, setCachedPlugins } from "../../app/managementDataCache";
@@ -9,6 +9,14 @@ import { AppSwitch } from "../../components/AppSwitch";
 import { PluginCard } from "./components/PluginCard";
 import type { AppState, MarketplacePlugin, PluginSummary } from "../../types";
 import CodexPluginsView from "./CodexPluginsView";
+
+const ui = vi.hoisted(() => ({ filter: "installed" }));
+// 当前渲染树中只有筛选器以 "installed" 初始化状态。
+vi.mock("react", async (original) => {
+  const actual = await original<typeof import("react")>();
+  return { ...actual, useState: (initial: unknown) => actual.useState(initial === "installed" ? ui.filter : initial) };
+});
+beforeEach(() => { ui.filter = "installed"; });
 
 const feedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), confirm: vi.fn() }));
 vi.mock("../../app/Feedback", () => ({ useFeedback: () => feedback }));
@@ -22,6 +30,20 @@ vi.mock("../../app/managementDataCache", async (original) => ({
   getCachedCodexApps: () => [{ id: "app-one", name: "App one", enabled: false, description: null, icon_path: null }],
   loadPlugins: vi.fn().mockResolvedValue([]),
 }));
+
+it("Codex 首次读取可安装目录时显示加载反馈", async () => {
+  ui.filter = "available";
+  setupI18n("zh-CN");
+  const state = await webInvoke<AppState>("get_state");
+  setCachedPlugins(await webInvoke<PluginSummary[]>("list_plugins"));
+  vi.mocked(getCachedPluginCatalog).mockReturnValue(null);
+  try {
+    const html = renderToStaticMarkup(<CodexPluginsView state={state} activationEpoch={0} popEpoch={0} query="" onHeaderChange={() => undefined} />);
+    expect(html).toContain('role="status"');
+    expect(html).toContain("正在加载…");
+    expect(html).not.toContain("没有匹配的插件");
+  } finally { vi.mocked(getCachedPluginCatalog).mockReturnValue([]); }
+});
 
 it("插件与应用分别计数，运行时不冒充已安装或可安装插件，禁用插件仍在名单中", async () => {
   setupI18n("zh-CN");
@@ -38,6 +60,8 @@ it("插件与应用分别计数，运行时不冒充已安装或可安装插件�
     const tree = CodexPluginsView({ state, activationEpoch: 0, popEpoch: 0, query: "", onHeaderChange: () => undefined });
     expect(pluginCards(tree).map((card) => card.props.name)).toEqual(["Sample"]);
     const html = renderToStaticMarkup(tree);
+    expect(html).toContain('aria-pressed="true">已安装');
+    expect(html).not.toContain("animate-spin");
     const text = html.replace(/<[^>]*>/g, "");
     expect(text).toContain("插件1");
     expect(text).toContain("应用1");
@@ -95,6 +119,7 @@ function pluginCards(node: ReactNode): ReactElement<Parameters<typeof PluginCard
 }
 
 it("远程目录分批展示、按显示名搜索全部条目，并使用远程市场身份安装", async () => {
+  ui.filter = "all";
   setupI18n("zh-CN");
   const state = await webInvoke<AppState>("get_state");
   const installed = await webInvoke<PluginSummary[]>("list_plugins");

@@ -10,7 +10,7 @@ import { CliUpgradePill, cliFailureMessage } from "../../components/CliUpgradePi
 
 const hooks = vi.hoisted(() => ({
   cells: [] as unknown[], effects: [] as (() => void | (() => void))[], index: 0, t: null as TFunction<"settings"> | null,
-  error: vi.fn(), info: vi.fn(), success: vi.fn(), command: vi.fn(),
+  error: vi.fn(), info: vi.fn(), success: vi.fn(), command: vi.fn(), confirm: vi.fn(),
   cached: vi.fn((): import("../../types").CliStatus | null => null), cacheSet: vi.fn(),
   cachedUpdate: vi.fn((): { latest_version: string; channel: string; available: boolean } | null => null),
   serviceCheck: vi.fn(), touch: vi.fn(), cacheUpdate: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock("react", async (original) => ({
   },
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: hooks.t ?? ((key: string, options?: { version?: string }) => `${key}${options?.version ?? ""}`) }) }));
-vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: hooks.error, info: hooks.info, success: hooks.success }) }));
+vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: hooks.error, info: hooks.info, success: hooks.success, confirm: hooks.confirm }) }));
 vi.mock("../../app/managementDataCache", () => ({ getCachedCliStatus: hooks.cached, getCachedCliUpdate: hooks.cachedUpdate, subscribeCliUpdate: () => () => undefined, setCliStatusCache: hooks.cacheSet, runCliUpdateCheck: hooks.serviceCheck, touchCliUpdateCheckedAt: hooks.touch, clearCachedCliUpdate: hooks.cacheUpdate }));
 vi.mock("../../api", () => ({ api: {
   codexGetCliStatus: hooks.command, codexCheckCliUpdate: hooks.command, codexInstallCli: hooks.command, codexUpdateCli: hooks.command,
@@ -51,6 +51,7 @@ beforeEach(() => {
   hooks.error.mockClear();
   hooks.info.mockClear();
   hooks.success.mockClear();
+  hooks.confirm.mockReset().mockResolvedValue(true);
   hooks.cached.mockClear().mockReturnValue(null);
   hooks.cachedUpdate.mockClear().mockReturnValue(null);
   hooks.cacheSet.mockClear();
@@ -58,7 +59,7 @@ beforeEach(() => {
   hooks.touch.mockClear();
   hooks.cacheUpdate.mockClear();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 const status: CliStatus = {
   installation: "native", source: null, version: "1.2.3", path: "/fixture/bin/cli", other_paths: [],
@@ -295,7 +296,7 @@ it("只显示可管理的安装来源", () => {
   expect(codex).not.toContain("cli.missing");
 });
 
-it.each(["codex", "claude"] as const)("%s 保留安装路径，移除代理信息且无路径时不显示空底栏", (client) => {
+it.each(["codex", "claude"] as const)("%s 保留安装路径，无路径时使用相同底栏显示占位", (client) => {
   const html = renderToStaticMarkup(<CliCard client={client} management={{
     ...management, status: { ...status, other_paths: ["/fixture/other/cli"], network: "proxy", proxy: "http://proxy.invalid:9001" },
   }} />);
@@ -306,8 +307,10 @@ it.each(["codex", "claude"] as const)("%s 保留安装路径，移除代理信�
   expect(html).not.toContain("proxy.invalid");
   for (const missing of [{ ...status, installation: "missing" as const, path: null }, null]) {
     const empty = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: missing }} />);
-    expect(empty).not.toContain("cli-facts");
-    expect(empty).not.toContain("cli.pathLabel");
+    expect(empty).toContain("cli-facts");
+    expect(empty).toContain("cli.pathLabel");
+    expect(empty).toContain("cli.pathUnavailable");
+    expect(empty).not.toContain("cli.description");
   }
 });
 
@@ -332,6 +335,7 @@ it("版本查询错误随界面语言翻译，不显示后端中文或内部阶�
 });
 
 it("刷新失败静默，主动检查和安装失败透出，均恢复状态且不写回结果", async () => {
+  hooks.cached.mockReturnValue(status);
   const failure: CliFailure = { stage: "fetch_version", kind: "timeout", message: "诊断信息" };
   for (const client of ["codex", "claude"] as const) {
     hooks.cells.length = 0;
@@ -346,7 +350,7 @@ it("刷新失败静默，主动检查和安装失败透出，均恢复状态且�
       if (action === "refresh") expect(result).toBeNull();
       expect(render().busy).toBe(false);
       expect(render().operation).toBeNull();
-      expect(render().status).toBeNull();
+      expect(render().status).toEqual(status);
       expect(hooks.error).toHaveBeenCalledTimes(action === "refresh" ? 0 : 1);
       expect(hooks.success).not.toHaveBeenCalled();
       hooks.error.mockClear();
@@ -369,6 +373,58 @@ function buttons(node: ReactNode): { children?: ReactNode; onClick: () => void; 
   });
   return result;
 }
+
+it.each([
+  ["codex", "win32-x64", 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"'],
+  ["claude", "win32-arm64", "irm https://claude.ai/install.ps1 | iex"],
+  ["codex", "darwin-arm64", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
+  ["claude", "darwin-x64", "curl -fsSL https://claude.ai/install.sh | bash"],
+] as const)("%s 在 %s 安装前展示命令，取消或等待确认时不安装", async (client, platform, command) => {
+  hooks.cached.mockReturnValue({ ...status, platform, installation: "missing", path: null });
+  const render = () => { hooks.index = 0; return useCliManagement(client, true); };
+  let finish!: (confirmed: boolean) => void;
+  hooks.confirm.mockReturnValueOnce(new Promise<boolean>((resolve) => { finish = resolve; }));
+  const pending = render().run();
+  const options = hooks.confirm.mock.calls[0][0];
+  const description = renderToStaticMarkup(<>{options.description}</>);
+  const code = description.match(/<code\b[^>]*>(.*?)<\/code>/)?.[1];
+  expect(code).toBe(command.replace(/"/g, "&quot;"));
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const copy = buttons(options.description)[0];
+  await copy.onClick();
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(command);
+  expect(hooks.success).toHaveBeenCalledWith("cli.commandCopied");
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  hooks.success.mockClear();
+  await copy.onClick();
+  expect(hooks.error).toHaveBeenCalledWith("cli.copyFailed");
+  expect(hooks.success).not.toHaveBeenCalled();
+  expect(hooks.command).not.toHaveBeenCalled();
+  expect(render().busy).toBe(false);
+  await render().run();
+  expect(hooks.confirm).toHaveBeenCalledOnce();
+  finish(false);
+  await pending;
+  expect(hooks.command).not.toHaveBeenCalled();
+  expect(render().busy).toBe(false);
+
+  hooks.confirm.mockResolvedValueOnce(true);
+  let complete!: (result: CliStatus) => void;
+  hooks.command.mockReturnValueOnce(new Promise<CliStatus>((resolve) => { complete = resolve; }));
+  const installing = render().run();
+  await flush();
+  expect(hooks.command).toHaveBeenCalledOnce();
+  const current = render();
+  expect(current.busy).toBe(true);
+  const button = buttons(CliCard({ client, management: current }))[0];
+  expect(button.disabled).toBe(true);
+  expect(renderToStaticMarkup(<>{button.children}</>)).toContain("cli.installing");
+  complete(status);
+  await installing;
+  expect(render().busy).toBe(false);
+  expect(hooks.success).toHaveBeenCalledOnce();
+});
 
 it("检查只查询，发现更新后仍需单独点击升级；没有更新时不提供升级", () => {
   hooks.cached.mockReturnValue(status);

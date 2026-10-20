@@ -1,5 +1,5 @@
 import { api } from "../api";
-import type { ClaudeMarketplace, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
+import type { ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
 
 export type McpProbeCacheEntry = {
   fingerprint: string;
@@ -32,16 +32,30 @@ function readJson(key: string): unknown {
   }
 }
 
-function writeJson(key: string, value: unknown): void {
-  if (typeof localStorage === "undefined") return;
+const PLUGIN_CATALOG_STORAGE_KEYS = ["agmux.plugin-catalog-cache-v1", "agmux.claude-plugin-available-cache-v1"];
+const INSTALLED_PLUGIN_STORAGE_KEYS = ["agmux.plugins-cache-v2", "agmux.claude-plugin-catalog-cache-v1"];
+
+function writeJson(key: string, value: unknown): boolean {
+  if (typeof localStorage === "undefined") return false;
+  let text = "";
   try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // 本地存储不可用时保留内存缓存，当前操作仍可继续。
+    text = JSON.stringify(value);
+    localStorage.setItem(key, text);
+    return true;
+  } catch (error) {
+    // 空间不足时先让出可安装目录，优先保存两端已安装插件。
+    if (error instanceof DOMException && error.name === "QuotaExceededError" && INSTALLED_PLUGIN_STORAGE_KEYS.includes(key)) {
+      try {
+        for (const catalogKey of PLUGIN_CATALOG_STORAGE_KEYS) localStorage.removeItem(catalogKey);
+        localStorage.setItem(key, text);
+        return true;
+      } catch { /* 存储不可用时仍保留当前会话的内存缓存。 */ }
+    }
+    return false;
   }
 }
 
-function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: string; restore: (raw: unknown) => T | null; maxAgeMs?: number }) {
+function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: string; restore: (raw: unknown) => T | null; maxAgeMs?: number; snapshot?: (items: T) => unknown[] }) {
   let cache: T | null = null;
   let request: Promise<T> | null = null;
   let restored = false;
@@ -54,8 +68,7 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
     let raw = readJson(persist.key);
     if (raw === null) return;
     if (persist.maxAgeMs !== undefined) {
-      // 包络 { at, items }：快照带写入时间，超龄不直出——陈旧快照会展示错误状态
-      // （数量、开关与现状不符），宁可进页转一圈也不给错数据。裸数组/缺 at 视为来历不明。
+      // 包络 { at, items }：按各缓存的年龄策略恢复，裸数组或缺 at 视为来历不明。
       const envelope = raw as { at?: unknown; items?: unknown };
       if (typeof envelope.at !== "number" || Date.now() - envelope.at > persist.maxAgeMs) return;
       raw = envelope.items;
@@ -65,7 +78,11 @@ function createManagementCache<T>(loader: () => Promise<T>, persist?: { key: str
 
   const saveToStorage = (items: T) => {
     if (!persist) return;
-    writeJson(persist.key, persist.maxAgeMs !== undefined ? { at: Date.now(), items } : items);
+    let snapshot: unknown = persist.snapshot ? persist.snapshot(items) : items;
+    while (!writeJson(persist.key, persist.maxAgeMs !== undefined ? { at: Date.now(), items: snapshot } : snapshot)) {
+      if (!persist.snapshot || !Array.isArray(snapshot) || !snapshot.length) break;
+      snapshot = snapshot.slice(0, Math.floor(snapshot.length / 2));
+    }
   };
 
   return {
@@ -148,8 +165,8 @@ export function loadPluginIcon(path: string): Promise<string | null> {
   return pluginIconCache(path).load();
 }
 
-// 插件快照的直出年龄上限：超龄不直出（陈旧快照的数量/开关与现状不符，属错误状态）。
-const PLUGIN_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// 旧快照先直出，进页静默刷新纠正；不因跨天或强制刷新丢掉已安装列表。
+const PLUGIN_SNAPSHOT_MAX_AGE_MS = Number.POSITIVE_INFINITY;
 const plugins = createManagementCache<PluginSummary[]>(api.listPlugins, {
   key: "agmux.plugins-cache-v2",
   restore: restoreNamedList<PluginSummary>,
@@ -164,6 +181,7 @@ const pluginCatalog = createManagementCache(api.listPluginCatalog, {
   key: "agmux.plugin-catalog-cache-v1",
   restore: restoreNamedList<MarketplacePlugin>,
   maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
+  snapshot: (items) => items.filter((item) => !item.installed).slice(0, 40),
 });
 const skills = createManagementCache<SkillSummary[]>(api.listSkills, {
   key: "agmux.skills-cache-v2", // v2：SkillSummary 增加 claude_enabled，旧缓存缺字段直接弃用
@@ -186,18 +204,27 @@ const pluginMarketplaces = createManagementCache<PluginMarketplace[]>(api.listPl
   key: "agmux.plugin-marketplaces-cache-v1",
   restore: restoreNamedList<PluginMarketplace>,
 });
-/// Claude 插件全景缓存的最小形状校验：installed/available 都是数组，installed 每项含字符串 id。
-function restoreClaudePluginInventory(raw: unknown): ClaudePluginInventory | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const candidate = raw as { installed?: unknown; available?: unknown };
-  if (!Array.isArray(candidate.installed) || !Array.isArray(candidate.available)) return null;
-  if (candidate.installed.some((item) => typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string")) return null;
-  return raw as ClaudePluginInventory;
+function restoreClaudeInstalledPlugins(raw: unknown): ClaudePluginEntry[] | null {
+  // 兼容原来与完整目录一起保存的 installed 快照。
+  const items = Array.isArray(raw) ? raw : (raw as Partial<ClaudePluginInventory> | null)?.installed;
+  if (!Array.isArray(items) || items.some((item) => typeof item !== "object" || item === null || typeof item.id !== "string")) return null;
+  return items;
 }
-const claudePlugins = createManagementCache<ClaudePluginInventory>(() => api.claudeListPlugins(true), {
+const claudePlugins = createManagementCache<ClaudePluginEntry[]>(async () => (await api.claudeListPlugins(false)).installed, {
   key: "agmux.claude-plugin-catalog-cache-v1",
-  restore: restoreClaudePluginInventory,
+  restore: restoreClaudeInstalledPlugins,
   maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
+});
+const claudePluginCatalog = createManagementCache<ClaudeAvailablePlugin[]>(async () => {
+  const previous = claudePlugins.get();
+  const inventory = await api.claudeListPlugins(true);
+  if (claudePlugins.get() === previous) claudePlugins.set(inventory.installed);
+  return inventory.available;
+}, {
+  key: "agmux.claude-plugin-available-cache-v1",
+  restore: restoreNamedList<ClaudeAvailablePlugin>,
+  maxAgeMs: PLUGIN_SNAPSHOT_MAX_AGE_MS,
+  snapshot: (items) => items.slice(0, 40),
 });
 const claudePluginMarketplaces = createManagementCache<ClaudeMarketplace[]>(api.claudeListPluginMarketplaces, {
   key: "agmux.claude-plugin-marketplaces-cache-v1",
@@ -307,16 +334,23 @@ export function loadPluginMarketplaces(force = false): Promise<PluginMarketplace
   return pluginMarketplaces.load(force);
 }
 
-export function loadClaudePlugins(force = false): Promise<ClaudePluginInventory> {
-  return claudePlugins.load(force);
+export async function loadClaudePlugins(force = false, includeAvailable = true): Promise<ClaudePluginInventory> {
+  if (includeAvailable) {
+    const available = await claudePluginCatalog.load(force);
+    return { installed: claudePlugins.get() ?? [], available };
+  }
+  const installed = await claudePlugins.load(force);
+  return { installed, available: claudePluginCatalog.get() ?? [] };
 }
 
 export function getCachedClaudePlugins(): ClaudePluginInventory | null {
-  return claudePlugins.get();
+  const installed = claudePlugins.get();
+  return installed === null ? null : { installed, available: claudePluginCatalog.get() ?? [] };
 }
 
 export function setClaudePluginsCache(items: ClaudePluginInventory): void {
-  claudePlugins.set(items);
+  claudePlugins.set(items.installed);
+  if (items.available !== claudePluginCatalog.get()) claudePluginCatalog.set(items.available);
 }
 
 export function loadClaudePluginMarketplaces(force = false): Promise<ClaudeMarketplace[]> {

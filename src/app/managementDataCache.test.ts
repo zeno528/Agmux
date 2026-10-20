@@ -65,7 +65,7 @@ describe("managementDataCache", () => {
     finish(before);
     expect(await pending).toEqual(after);
     expect(cache.getCachedClaudePlugins()).toEqual(after);
-    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!).items).toEqual(after);
+    expect(JSON.parse(persistedStorage.get("agmux.claude-plugin-catalog-cache-v1")!).items).toEqual(after.installed);
     claudeListPlugins.mockResolvedValueOnce(before);
     expect(await cache.loadClaudePlugins(true)).toEqual(before);
   });
@@ -359,8 +359,23 @@ describe("Codex account plugin catalog cache", () => {
     expect(listPluginCatalog).toHaveBeenCalledTimes(1); // 只有首次加载发过请求，重载命中持久化缓存
   });
 
+  it("keeps the complete catalog in memory but restores only the first batch after reload", async () => {
+    const catalog = [
+      ...Array.from({ length: 50 }, (_, index) => ({ ...plugin(`installed-${index}`), installed: true })),
+      ...Array.from({ length: 100 }, (_, index) => plugin(`item-${index}`)),
+    ];
+    listPluginCatalog.mockResolvedValueOnce(catalog);
+    const cache = await import("./managementDataCache");
+    await cache.loadPluginCatalog();
+    expect(cache.getCachedPluginCatalog()).toEqual(catalog);
+    vi.resetModules();
+    const reloaded = await import("./managementDataCache");
+    expect(reloaded.getCachedPluginCatalog()).toEqual(catalog.slice(50, 90));
+    listPluginCatalog.mockResolvedValueOnce(catalog);
+    expect(await reloaded.loadPluginCatalog(true)).toEqual(catalog);
+  });
+
   it.each([
-    ["stale snapshot older than 24h", { at: Date.now() - 25 * 60 * 60 * 1000, items: [plugin("old")] }],
     ["envelope without a timestamp", { items: [plugin("old")] }],
     ["legacy bare array", [plugin("old")]],
   ])("does not restore a %s so a wrong board state never flashes", async (_label, stored) => {
@@ -368,7 +383,7 @@ describe("Codex account plugin catalog cache", () => {
     listPluginCatalog.mockResolvedValue([plugin("fresh")]);
     const cache = await import("./managementDataCache");
 
-    expect(cache.getCachedPluginCatalog()).toBeNull(); // 陈旧/来历不明的快照不直出
+    expect(cache.getCachedPluginCatalog()).toBeNull(); // 损坏或来历不明的快照不直出
     await expect(cache.loadPluginCatalog()).resolves.toEqual([plugin("fresh")]);
   });
 
@@ -480,6 +495,61 @@ describe("list cache persistence", () => {
     void cache.loadPlugins(true);
     await expect(cache.loadPlugins()).resolves.toEqual([plugin]);
     expect(cache.getCachedPlugins()).toEqual([plugin]);
+  });
+
+  it("keeps an installed snapshot older than a day available after reload", async () => {
+    persistedStorage.set("agmux.plugins-cache-v2", JSON.stringify({ at: Date.now() - 48 * 60 * 60 * 1000, items: [plugin] }));
+    const cache = await import("./managementDataCache");
+    expect(cache.getCachedPlugins()).toEqual([plugin]);
+  });
+
+  it("loads Claude installed plugins without fetching the available directory", async () => {
+    claudeListPlugins.mockResolvedValue({ installed: [{ id: "fixture@market", enabled: true }], available: [] });
+    const cache = await import("./managementDataCache");
+    await cache.loadClaudePlugins(true, false);
+    expect(claudeListPlugins).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("restores installed plugins from the previous combined Claude snapshot", async () => {
+    const installed = [{ id: "fixture@market", enabled: true }];
+    persistedStorage.set("agmux.claude-plugin-catalog-cache-v1", JSON.stringify({ at: 1, items: { installed, available: [] } }));
+    const cache = await import("./managementDataCache");
+    expect(cache.getCachedClaudePlugins()?.installed).toEqual(installed);
+  });
+
+  it("persists installed plugins before bounded catalogs and survives a reload during refresh", async () => {
+    vi.stubGlobal("localStorage", {
+      ...localStorageMock,
+      get length() { return persistedStorage.size; },
+      key: (index: number) => [...persistedStorage.keys()][index] ?? null,
+      removeItem: (key: string) => persistedStorage.delete(key),
+      setItem: (key: string, value: string) => {
+        const size = [...persistedStorage].reduce((sum, [storedKey, text]) => sum + (storedKey === key ? 0 : text.length), 0) + value.length;
+        if (size > 12000) throw new DOMException("full", "QuotaExceededError");
+        persistedStorage.set(key, value);
+      },
+    });
+    const inventory = {
+      installed: [{ id: "fixture@market", scope: "user", enabled: true, version: null, installPath: null, installedAt: null, lastUpdated: null, projectPath: null }],
+      available: Array.from({ length: 100 }, (_, index) => ({ pluginId: `item-${index}@market`, name: `item-${index}`, marketplaceName: "market", description: "x".repeat(2000) })),
+    };
+    claudeListPlugins.mockResolvedValueOnce(inventory);
+    const cache = await import("./managementDataCache");
+    expect(await cache.loadClaudePlugins(true)).toEqual(inventory);
+    expect(cache.getCachedClaudePlugins()).toEqual(inventory);
+    const storedAvailable = JSON.parse(persistedStorage.get("agmux.claude-plugin-available-cache-v1")!).items;
+    expect(storedAvailable.length).toBeGreaterThan(0);
+    expect(storedAvailable.length).toBeLessThanOrEqual(40);
+    listPlugins.mockResolvedValueOnce([{ ...plugin, description: "x".repeat(8000) }]);
+    await cache.loadPlugins(true);
+    claudeListPlugins.mockReturnValueOnce(new Promise(() => {}));
+    void cache.loadClaudePlugins(true);
+
+    vi.resetModules();
+    const reloaded = await import("./managementDataCache");
+    expect(reloaded.getCachedPlugins()).toMatchObject([{ name: "ponytail" }]);
+    expect(reloaded.getCachedClaudePlugins()?.installed).toEqual(inventory.installed);
+    expect(reloaded.getCachedClaudePlugins()?.available.length ?? 0).toBeLessThanOrEqual(40);
   });
 
   it("shares the in-flight request between a cold load and a forced refresh", async () => {

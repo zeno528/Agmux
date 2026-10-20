@@ -1,14 +1,12 @@
 import { useTranslation } from "react-i18next";
-import { LoadingSpinner } from "../../../components/LoadingSpinner";
 
 export type PluginFilter = "all" | "installed" | "available" | "updates";
 
-/** 看板一级过滤：「有更新」chip 只在有待更新时出现（计数为 0 或调用方没给——如 Claude 无批量更新检查——都不显示）。
- *  计数 null = 还在加载，用旋转指示器占位，chips 始终固定渲染不塌行。 */
-export default function PluginFilterChips({ value, onChange, counts }: {
+/** 看板一级过滤：「有更新」只在有待更新时出现。 */
+export default function PluginFilterChips({ value, onChange, updateCount = 0 }: {
   value: PluginFilter;
   onChange: (filter: PluginFilter) => void;
-  counts: Partial<Record<PluginFilter, number | null>>;
+  updateCount?: number;
 }) {
   const { t } = useTranslation("plugins");
   const chips: { key: PluginFilter; label: string; alert?: boolean }[] = [
@@ -16,7 +14,7 @@ export default function PluginFilterChips({ value, onChange, counts }: {
     { key: "installed", label: t("board.filterInstalled") },
     { key: "available", label: t("board.filterAvailable") },
   ];
-  if (counts.updates) chips.push({ key: "updates", label: t("board.filterUpdates"), alert: true });
+  if (updateCount > 0) chips.push({ key: "updates", label: t("board.filterUpdates"), alert: true });
   return (
     <div className="plugin-filter-chips" role="group">
       {chips.map((chip) => (
@@ -28,9 +26,6 @@ export default function PluginFilterChips({ value, onChange, counts }: {
           onClick={() => onChange(chip.key)}
         >
           {chip.label}
-          <span className="plugin-filter-chip__count">
-            {counts[chip.key] === null ? <LoadingSpinner /> : counts[chip.key] ?? 0}
-          </span>
         </button>
       ))}
     </div>

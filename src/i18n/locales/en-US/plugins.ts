@@ -25,7 +25,7 @@ export default {
     install: "Install",
     toggleLabel: "Enable or disable {{name}}",
     managed: "Managed by Codex",
-    managedHelp: "This plugin cannot be toggled here. Manage it in the Codex desktop app, then reopen this page to refresh.",
+    managedHelp: "Enable or disable this plugin in the Codex desktop app",
     uninstall: "Uninstall",
     checkUpdates: "Check for updates",
     upgradeAll: "Update all",
@@ -90,8 +90,8 @@ export default {
   },
   // Board hierarchy: engine dimension → full-width search → filter chips → section grids (shared by Codex / Claude)
   board: {
-    codexInstalledHelp: "This page reloads state from Codex when opened. Both clients must use the same account and configuration directory. Local plugin toggles update user settings; project or managed settings may override them, and existing sessions may need a restart. Manage remote plugin toggles in Codex. An uninstall button appears when supported through official commands.",
-    codexAvailableHelp: "Reads the Codex account directory and configured marketplaces, excluding runtime components, entries without installation permission, and installed plugins. Desktop's private hiding and recommendation rules are not fully synchronized. Complete authorization in Codex Desktop when required.",
+    codexInstalledHelp: "Toggles update user settings; project or managed settings may override them. Existing sessions may need a restart. Toggle plugins labeled “Managed by Codex” in the Codex desktop app",
+    codexAvailableHelp: "From your current Codex account and added marketplaces. Complete authorization in the Codex desktop app after installation when required",
     filterAll: "All",
     filterInstalled: "Installed",
     filterAvailable: "Available",
@@ -105,13 +105,13 @@ export default {
   sources: {
     add: "Add",
     title: "Marketplaces",
-    description: "Sources of plugin catalogs. Installable plugins are flattened into the Available section by source; the official marketplace is maintained by the app",
+    description: "Manage third-party marketplaces, then browse their plugins under Available",
     addedToast: "Added plugin marketplace \"{{name}}\"",
   },
   // Claude Code plugin management (all through claude plugin subcommands, never touching CLI-internal files)
   claudePlugin: {
-    installedHelp: "User-level plugin toggles are shared across provider profiles and preserved when switching providers. Project and local toggles apply only to their project. Project settings can override user settings.",
-    availableHelp: "Plugins from added marketplaces that are not yet installed. Installation here defaults to the user scope, making them available across projects. Project settings can control whether they are enabled.",
+    installedHelp: "User-level toggles are shared across provider profiles. Project and local toggles affect only their project; project settings can override user settings",
+    availableHelp: "From added marketplaces, installed to the user scope by default. Project settings can control whether they are enabled",
     noMarkets: "No plugin marketplaces added yet",
     showMore: "Show more",
     scopeUser: "User",
@@ -146,7 +146,7 @@ export default {
       marketsRefreshed: "Refreshed {{count}} marketplace catalogs",
     },
     addMarket: {
-      description: "Accepts GitHub shorthand (owner/repo), Git/HTTPS URLs, or a local marketplace directory; Claude Code owns the result",
+      description: "Supports owner/repo, Git/HTTPS URLs, or local marketplace directories",
       placeholder: "owner/repo or https://...git",
       confirm: "Add",
     },

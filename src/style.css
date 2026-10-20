@@ -522,6 +522,14 @@ button.plan-badge:hover:not(:disabled) {
   color: var(--text-secondary);
 }
 
+/* Agent 工具卡片等高排列，覆盖编辑正文默认的 flex 布局。 */
+.apple-edit-content.cli-cards {
+  align-content: start;
+  display: grid;
+  flex: 0 1 auto;
+  grid-auto-rows: 1fr;
+}
+
 /* CLI 管理卡事实行：头部下发丝线分隔的「图标 + 灰标签 + 值」并排小字 */
 .cli-facts {
   align-items: center;
@@ -1978,12 +1986,6 @@ button.plugin-card-name:hover {
   color: var(--warning);
 }
 
-.plugin-filter-chip__count {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  opacity: 0.72;
-}
-
 .apple-icon-button {
   display: grid;
   width: var(--icon-button-size);
@@ -3079,7 +3081,7 @@ button:focus-visible {
 /* 展开时只旋转下拉箭头，三点菜单图标保持原方向。 */
 .app-select-wrap:not(.app-select-wrap--icon)[data-open="true"] .app-select__icon { transform: rotate(180deg); }
 
-/* 浮层进场：等比 scale + 淡入。变换原点由 useFixedMenuPosition 通过
+/* 浮层进场：scale + 淡入，等宽下拉保持横向比例为 1，只纵向展开。变换原点由 useFixedMenuPosition 通过
    --app-popover-origin 注入（贴触发按钮那一侧的角），此处只给不注入时的兜底值。
    卡片因此像从按钮所在的角"胀开"，而不是一律从左上角。 */
 .app-popover {
@@ -3094,7 +3096,7 @@ button:focus-visible {
    动画期间可点区域更大），但 10% 幅度叠加强透明度渐变后，视觉上退化成纯淡入，
    丢掉了"从触发按钮所在角胀开"的空间感——那正是这套动效的辨识度所在。 */
 @keyframes app-popover-in {
-  from { opacity: 0; transform: scale(0.8); }
+  from { opacity: 0; transform: scale(var(--app-popover-scale-x, 0.8), 0.8); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -3142,7 +3144,7 @@ button:focus-visible {
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), inset var(--card-edge-shadow);
   opacity: 0;
   pointer-events: none;
-  /* 进场走 .app-popover 的 app-popover-in 关键帧（等比缩放 + 淡入）。
+  /* 进场走 .app-popover 的 app-popover-in 关键帧（缩放 + 淡入）。
      关闭没有出场关键帧——菜单点掉即收，节点虽常驻，但这一类浮层的出场
      用基础类原有的短淡出即可，不额外引入缩放，避免与进场观感割裂。 */
   transition: opacity 150ms ease-out, visibility 180ms;

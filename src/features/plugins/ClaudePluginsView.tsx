@@ -42,15 +42,24 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
   // 升级图标只在「检查更新」确认有新版本后出现：id → 目标版本（悬停提示用）
   const [updatable, setUpdatable] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [checking, setChecking] = useState(false);
-  const [filter, setFilter] = useState<PluginFilter>("all");
+  const [filter, setFilter] = useState<PluginFilter>("installed");
+  const [catalogRefreshed, setCatalogRefreshed] = useState(false);
+  const catalogLoading = filter !== "installed" && !catalogRefreshed && !loadError;
   // 可安装目录可达数千条（anthropic 目录 3800+），必须分批进 DOM，否则侧栏开合每帧重排整页直接掉帧
   const [visibleCount, setVisibleCount] = useState(40);
-  const refresh = async (force = false) => {
-    try { setInventory(await loadClaudePlugins(force)); setLoadError(""); }
+  const refresh = async (force = false, includeAvailable = filter !== "installed") => {
+    try {
+      setInventory(await loadClaudePlugins(force, includeAvailable));
+      if (includeAvailable) setCatalogRefreshed(true);
+      setLoadError("");
+    }
     catch (error) { setLoadError(String(error)); }
     finally { setLoaded(true); }
   };
   useEffect(() => { void refresh(); void refresh(true); }, []);
+  useEffect(() => {
+    if (loaded && filter !== "installed" && !catalogRefreshed) void refresh(true, true);
+  }, [loaded, filter, catalogRefreshed]);
   useEffect(() => { if (popEpoch) setShowSources(false); }, [popEpoch]);
   useEffect(() => { setVisibleCount(40); }, [query]);
 
@@ -180,11 +189,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     <div className="space-y-4">
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PluginFilterChips value={filter} onChange={setFilter} counts={loaded ? {
-          all: visibleInstalled.length + available.length,
-          installed: visibleInstalled.length,
-          available: available.length,
-        } : { all: null, installed: null, available: null }} />
+        <PluginFilterChips value={filter} onChange={setFilter} />
         <div className="ml-auto flex items-center gap-2">
           <button type="button" className="apple-action-button" disabled={checking} onClick={() => void checkUpdates()}>
             <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
@@ -196,6 +201,11 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
           </button>
         </div>
       </div>
+      {catalogLoading && !inventory.available.length ? (
+        <p className="muted flex items-center gap-2 text-sm" role="status">
+          <LoadingSpinner />{t("loading", { ns: "common" })}
+        </p>
+      ) : null}
       {!loaded ? null : (
         <>
           {filter !== "available" && visibleInstalled.length ? (
@@ -290,7 +300,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
               ) : null}
             </section>
           ) : null}
-          {loaded && !visibleInstalled.length && !available.length ? (
+          {!catalogLoading && !loadError && !visibleInstalled.length && !available.length ? (
             query.trim()
               ? <p className="muted text-sm">{t("list.noMatch")}</p>
               : <EmptyStateCard icon={<Blocks className="h-5 w-5" strokeWidth={1.8} />}>
@@ -299,7 +309,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
           ) : !query.trim() ? (
             <>
               {filter === "installed" && !visibleInstalled.length ? <p className="muted text-sm">{t("claudePlugin.empty")}</p> : null}
-              {filter === "available" && !available.length ? <p className="muted text-sm">{t("claudePlugin.noMarkets")}</p> : null}
+              {filter === "available" && !catalogLoading && !loadError && !available.length ? <p className="muted text-sm">{t("list.noMatch")}</p> : null}
             </>
           ) : null}
         </>
@@ -311,7 +321,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
         title={t("sources.title")}
         description={t("claudePlugin.addMarket.description")}
       >
-        <ClaudePluginMarketplaceView onChanged={() => refresh(true)} />
+        <ClaudePluginMarketplaceView onChanged={() => refresh(true, true)} />
         </AppDialog>
     </div>
   );

@@ -60,7 +60,12 @@ export default {
     tabAbout: "About",
   },
   cli: {
-    description: "Use the official installer to install or update this Agent tool; if it fails, try enabling a network proxy and retry",
+    installConfirmTitle: "Install {{client}} CLI?",
+    installConfirmDescription: "Confirm to run the official installer, or copy this command to install manually in a terminal",
+    copyCommand: "Copy installation command",
+    commandCopied: "Installation command copied",
+    copyFailed: "Copy failed. Select the command and copy it manually",
+    pathUnavailable: "No installation path yet",
     sources: {
       claude: {
         native: "Native installer",

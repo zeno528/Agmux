@@ -25,7 +25,7 @@ export default {
     install: "安装",
     toggleLabel: "启用或禁用 {{name}}",
     managed: "由 Codex 管理",
-    managedHelp: "此插件的启停暂不支持在这里修改，请在 Codex 桌面端操作后重新进入此页刷新。",
+    managedHelp: "请在 Codex 桌面端启用或禁用此插件",
     uninstall: "卸载",
     checkUpdates: "检查更新",
     upgradeAll: "全部更新",
@@ -90,8 +90,8 @@ export default {
   },
   // 看板层级：客户端维度 → 通栏搜索 → 一级过滤 chips → 分区网格（Codex / Claude 两端共用）
   board: {
-    codexInstalledHelp: "进入此页会从 Codex 重新读取状态。两端需使用相同的账号和配置目录。本地插件开关写入用户级配置，项目或管理员设置可覆盖；已有会话可能需重启。远程插件启停请在 Codex 桌面端管理，支持通过官方命令卸载的插件会显示卸载按钮。",
-    codexAvailableHelp: "来自 Codex 账号远程目录及已配置市场，已排除内置运行时、无安装权限和已安装的条目。客户端私有的隐藏与推荐规则暂不能完全同步。需要授权的插件请在 Codex 桌面端完成授权。",
+    codexInstalledHelp: "开关修改用户级设置，项目或管理员设置可覆盖；已有会话可能需重启。标注“由 Codex 管理”的插件，请在 Codex 桌面端启停",
+    codexAvailableHelp: "来自当前 Codex 账号和已添加的市场。需要授权的插件，安装后请在 Codex 桌面端完成授权",
     filterAll: "全部",
     filterInstalled: "已安装",
     filterAvailable: "可安装",
@@ -105,13 +105,13 @@ export default {
   sources: {
     add: "添加",
     title: "市场源",
-    description: "插件目录的来源。可安装的插件按来源拼进「可安装」区，官方市场由应用内置维护。",
+    description: "管理第三方插件市场，添加后可在「可安装」中浏览插件",
     addedToast: "已添加插件市场「{{name}}」",
   },
   // Claude Code 插件管理（全部经 claude plugin 子命令，不读写 CLI 内部文件）
   claudePlugin: {
-    installedHelp: "用户级插件开关对所有供应商配置共用，切换供应商不会改变；项目级和本地级开关只作用于对应项目。项目设置可覆盖用户级设置。",
-    availableHelp: "来自已添加市场中尚未安装的插件。此处默认安装到用户级，可供所有项目使用；项目设置可单独控制是否启用。",
+    installedHelp: "用户级开关由所有供应商共用；项目级和本地级开关仅影响对应项目，项目设置可覆盖用户级设置",
+    availableHelp: "来自已添加的市场，默认安装到用户级；项目设置可单独控制是否启用",
     noMarkets: "还没有添加插件市场",
     showMore: "显示更多",
     scopeUser: "用户级",
@@ -146,7 +146,7 @@ export default {
       marketsRefreshed: "已刷新 {{count}} 个市场目录",
     },
     addMarket: {
-      description: "支持 GitHub 简写（owner/repo）、Git/HTTPS 地址或本地市场目录；添加后由 Claude Code 识别并管理",
+      description: "支持 owner/repo、Git/HTTPS 地址或本地市场目录",
       placeholder: "owner/repo 或 https://...git",
       confirm: "添加",
     },

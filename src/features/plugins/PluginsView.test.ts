@@ -1,17 +1,27 @@
 // @ts-expect-error 测试运行于 Node，但应用的浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Activity, Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setupI18n } from "../../i18n";
 import { webInvoke } from "../../api/web-mock";
 import { FeedbackProvider } from "../../app/Feedback";
-import { loadClaudePluginMarketplaces, setClaudePluginsCache } from "../../app/managementDataCache";
+import { api } from "../../api";
+import { getCachedClaudePlugins, loadClaudePluginMarketplaces, setClaudePluginsCache } from "../../app/managementDataCache";
+import { AppDialog } from "../../components/AppDialog";
 import { ClientTargetSwitch } from "../../components/ClientTargetSwitch";
 import PluginsView from "./PluginsView";
 import ClaudePluginsView from "./ClaudePluginsView";
 import ClaudePluginMarketplaceView from "./ClaudePluginMarketplaceView";
 import type { AppState, ClaudePluginInventory } from "../../types";
+
+const ui = vi.hoisted(() => ({ filter: "installed" }));
+// 当前渲染树中只有筛选器以 "installed" 初始化状态。
+vi.mock("react", async (original) => {
+  const actual = await original<typeof import("react")>();
+  return { ...actual, useState: (initial: unknown) => actual.useState(initial === "installed" ? ui.filter : initial) };
+});
+beforeEach(() => { ui.filter = "installed"; });
 
 // PluginsView 是双引擎壳，Codex 看板本体在 CodexPluginsView
 const source = readFileSync(new URL("./CodexPluginsView.tsx", import.meta.url), "utf8");
@@ -19,7 +29,41 @@ const claudeSource = readFileSync(new URL("./ClaudePluginsView.tsx", import.meta
 const shell = readFileSync(new URL("./PluginsView.tsx", import.meta.url), "utf8");
 
 describe("插件搜索", () => {
+  it("Claude 在已安装筛选下修改市场源，也重新读取可安装目录", async () => {
+    setupI18n("zh-CN");
+    const inventory = await webInvoke<ClaudePluginInventory>("claude_list_plugins", { includeAvailable: true });
+    setClaudePluginsCache({ ...inventory, available: [] });
+    const list = vi.spyOn(api, "claudeListPlugins").mockResolvedValue(inventory);
+    let marketplace!: ReactElement<Parameters<typeof ClaudePluginMarketplaceView>[0]>;
+    function Capture() {
+      const tree = ClaudePluginsView({ popEpoch: 0, query: "", onHeaderChange: () => undefined });
+      const dialog = Children.toArray(tree.props.children).find((child) => isValidElement(child) && child.type === AppDialog) as ReactElement<{ children: ReactNode }>;
+      marketplace = dialog.props.children as typeof marketplace;
+      return null;
+    }
+    try {
+      renderToStaticMarkup(createElement(FeedbackProvider, null, createElement(Capture)));
+      await marketplace.props.onChanged();
+      expect(list).toHaveBeenCalledExactlyOnceWith(true);
+      expect(getCachedClaudePlugins()?.available).toEqual(inventory.available);
+    } finally { list.mockRestore(); }
+  });
+
+  it("Claude 首次读取可安装目录时显示加载反馈，不误报没有市场", async () => {
+    ui.filter = "available";
+    setupI18n("zh-CN");
+    const inventory = await webInvoke<ClaudePluginInventory>("claude_list_plugins", { includeAvailable: true });
+    setClaudePluginsCache({ ...inventory, available: [] });
+    const html = renderToStaticMarkup(createElement(FeedbackProvider, null,
+      createElement(ClaudePluginsView, { popEpoch: 0, query: "", onHeaderChange: () => undefined }),
+    ));
+    expect(html).toContain('role="status"');
+    expect(html).toContain("正在加载…");
+    expect(html).not.toContain("还没有添加插件市场");
+  });
+
   it("Claude 插件看板统一搜索已安装与可安装，已安装项不重复提供安装", async () => {
+    ui.filter = "all";
     setupI18n("zh-CN");
     const fixture = await webInvoke<ClaudePluginInventory>("claude_list_plugins", { includeAvailable: true });
     setClaudePluginsCache({
@@ -41,6 +85,7 @@ describe("插件搜索", () => {
   });
 
   it("可安装目录分批进 DOM（目录可达数千条，不能一次铺满），搜索仍覆盖未展示条目", async () => {
+    ui.filter = "available";
     const fixture = await webInvoke<ClaudePluginInventory>("claude_list_plugins", { includeAvailable: true });
     setClaudePluginsCache({
       installed: [],
