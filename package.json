@@ -2,7 +2,7 @@
   "name": "agmux",
   "packageManager": "pnpm@11.9.0",
   "private": true,
-  "version": "0.37.1",
+  "version": "0.37.2",
   "type": "module",
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
