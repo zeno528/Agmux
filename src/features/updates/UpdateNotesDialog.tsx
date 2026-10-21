@@ -28,7 +28,7 @@ export function UpdateNotesDialog({ open, onOpenChange }: UpdateNotesDialogProps
     <AppDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t("notice.title", { version: update.version })}
+      title={`v${update.version}`}
       hero={
         <>
           <HeroDoodles patternId="cg-update-hero-doodles" />

@@ -328,8 +328,7 @@ fn parse_claude_op(text: &str) -> AppResult<ClaudeCliOpOutcome> {
     }
 }
 
-/// CLI 自己写的最新目录快照（`plugin-catalog-cache.json`）：单插件 `version`/`sha`，
-/// 以及本地路径条目共用的市场仓库提交 `marketplace_sha`。
+/// CLI 的插件目录；全局 marketplace_sha 属于统计目录，不能用作安装版本。
 #[derive(Deserialize)]
 struct PluginCatalogCache {
     catalog: PluginCatalogBody,
@@ -337,8 +336,6 @@ struct PluginCatalogCache {
 
 #[derive(Deserialize, Default)]
 struct PluginCatalogBody {
-    #[serde(default)]
-    marketplace_sha: String,
     plugins: std::collections::HashMap<String, PluginCatalogEntry>,
 }
 
@@ -359,10 +356,13 @@ pub struct ClaudePluginUpdate {
 /// 更新判定（对齐 CLI `plugin update` 的 dry 语义：`version` 相等即最新），
 /// 返回目标版本，无更新返回 None：
 /// - 目录有版本 → 与已装版本比较，落后则给出目录版本；
-/// - 目录版本为空（本地路径条目，已装版本是市场仓库 commit 前缀）→ 与 marketplace_sha
-///   前缀比较，落后则给出新提交前缀；
+/// - 官方目录版本为空 → 比较 CLI 物化市场的 .gcs-sha，而非统计目录的提交；
 /// - 数据缺失一律判为「无更新」，宁可不显示升级图标，也不误报。
-fn plugin_update_version(entry: &ClaudePluginEntry, catalog: &PluginCatalogBody) -> Option<String> {
+fn plugin_update_version(
+    entry: &ClaudePluginEntry,
+    catalog: &PluginCatalogBody,
+    official_marketplace: &Path,
+) -> Option<String> {
     let current = catalog.plugins.get(&entry.id)?;
     let installed = entry.version.as_deref().unwrap_or_default();
     if installed.is_empty() {
@@ -376,11 +376,15 @@ fn plugin_update_version(entry: &ClaudePluginEntry, catalog: &PluginCatalogBody)
         .rsplit_once('@')
         .map(|(_, market)| market)
         .unwrap_or_default();
-    if marketplace != "claude-plugins-official" || catalog.marketplace_sha.is_empty() {
+    if marketplace != "claude-plugins-official" {
         return None;
     }
-    (!catalog.marketplace_sha.starts_with(installed))
-        .then(|| catalog.marketplace_sha.chars().take(12).collect())
+    let sha = std::fs::read_to_string(official_marketplace.join(".gcs-sha")).ok()?;
+    let sha = sha.trim();
+    if sha.len() != 40 || !sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    (!sha.starts_with(installed)).then(|| sha.chars().take(12).collect())
 }
 
 impl AppContext {
@@ -429,7 +433,12 @@ impl AppContext {
             let mut updates: Vec<ClaudePluginUpdate> = installed
                 .iter()
                 .filter_map(|entry| {
-                    plugin_update_version(entry, &catalog).map(|version| ClaudePluginUpdate {
+                    plugin_update_version(
+                        entry,
+                        &catalog,
+                        &home.join(".claude/plugins/marketplaces/claude-plugins-official"),
+                    )
+                    .map(|version| ClaudePluginUpdate {
                         id: entry.id.clone(),
                         version,
                     })
@@ -724,6 +733,12 @@ mod tests {
 
     #[test]
     fn plugin_update_version_matches_cli_update_semantics() {
+        let market = tempfile::tempdir().unwrap();
+        std::fs::write(
+            market.path().join(".gcs-sha"),
+            "ea10b213686c90bb1984b2016937310e05336cf3\n",
+        )
+        .unwrap();
         let entry = |id: &str, version: &str| ClaudePluginEntry {
             id: id.to_string(),
             version: Some(version.to_string()),
@@ -735,9 +750,14 @@ mod tests {
             project_path: None,
             icon_path: None,
         };
-        let mut catalog = PluginCatalogBody {
-            marketplace_sha: "ea10b213686c90bb1984b2016937310e05336cf3".to_string(),
-            ..Default::default()
+        // 统计目录的 SHA 即使不同，也不能让已经升级的插件再次报更新。
+        let mut catalog = serde_json::from_str::<PluginCatalogCache>(
+            r#"{"catalog":{"marketplace_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","plugins":{}}}"#,
+        )
+        .unwrap()
+        .catalog;
+        let update_version = |entry: ClaudePluginEntry, catalog: &PluginCatalogBody| {
+            plugin_update_version(&entry, catalog, market.path())
         };
         catalog.plugins.insert(
             "versioned@mkt".into(),
@@ -759,24 +779,24 @@ mod tests {
         );
         // 版本不同 → 有更新并给出目标版本；相同 → 无更新
         assert_eq!(
-            plugin_update_version(&entry("versioned@mkt", "1.0.0"), &catalog).as_deref(),
+            update_version(entry("versioned@mkt", "1.0.0"), &catalog).as_deref(),
             Some("1.1.0")
         );
         assert_eq!(
-            plugin_update_version(&entry("versioned@mkt", "1.1.0"), &catalog),
+            update_version(entry("versioned@mkt", "1.1.0"), &catalog),
             None
         );
         // 目录无版本：已装版本是市场仓库 commit 前缀，前缀命中即最新；落后则给出新前缀
         assert_eq!(
-            plugin_update_version(
-                &entry("sha-only@claude-plugins-official", "ea10b213686c"),
+            update_version(
+                entry("sha-only@claude-plugins-official", "ea10b213686c"),
                 &catalog
             ),
             None
         );
         assert_eq!(
-            plugin_update_version(
-                &entry("sha-stale@claude-plugins-official", "1fad13414a44"),
+            update_version(
+                entry("sha-stale@claude-plugins-official", "1fad13414a44"),
                 &catalog
             )
             .as_deref(),
@@ -784,15 +804,30 @@ mod tests {
         );
         // 非官方市场的空版本条目无从判断：宁可不显示升级图标，不误报
         assert_eq!(
-            plugin_update_version(
-                &entry("sha-other-market@ponytail", "16352ac229eb"),
-                &catalog
-            ),
+            update_version(entry("sha-other-market@ponytail", "16352ac229eb"), &catalog),
             None
         );
         // 目录里没有的插件不报更新
         assert_eq!(
-            plugin_update_version(&entry("unknown@mkt", "1.0.0"), &catalog),
+            update_version(entry("unknown@mkt", "1.0.0"), &catalog),
+            None
+        );
+        for invalid in ["", "not-a-commit", "z".repeat(40).as_str()] {
+            std::fs::write(market.path().join(".gcs-sha"), invalid).unwrap();
+            assert_eq!(
+                update_version(
+                    entry("sha-stale@claude-plugins-official", "1fad13414a44"),
+                    &catalog
+                ),
+                None
+            );
+        }
+        std::fs::remove_file(market.path().join(".gcs-sha")).unwrap();
+        assert_eq!(
+            update_version(
+                entry("sha-stale@claude-plugins-official", "1fad13414a44"),
+                &catalog
+            ),
             None
         );
     }

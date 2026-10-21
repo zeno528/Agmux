@@ -5,6 +5,13 @@ import { PluginCard } from "./PluginCard";
 const { pluginIcon } = vi.hoisted(() => ({ pluginIcon: vi.fn() }));
 vi.mock("../../../api", () => ({ api: { pluginIcon } }));
 
+it("没有可用 Logo 时显示默认插件图标，不显示名称首字母", () => {
+  const html = renderToStaticMarkup(<PluginCard name="Fixture" />);
+  expect(html).toContain("<svg");
+  expect(html).not.toContain(">F</span>");
+  expect(html).not.toContain("<img");
+});
+
 it("图标请求去重，重挂载首帧复用图片；缓存只在会话内，刷新后重新请求且失败允许重试", async () => {
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {

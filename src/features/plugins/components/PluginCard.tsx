@@ -1,3 +1,4 @@
+import { Blocks } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getCachedPluginIcon, loadPluginIcon } from "../../../app/managementDataCache";
 
@@ -21,7 +22,7 @@ export function PluginCard({ name, source, description, iconPath, action, meta, 
   name: string;
   source?: ReactNode;
   description?: ReactNode;
-  /** 插件目录内的本地图标路径；缺省、读取失败或解码失败回落首字母。 */
+  /** 插件目录内的本地图标路径；缺省、读取失败或解码失败显示默认插件图标。 */
   iconPath?: string | null;
   action?: ReactNode;
   meta?: ReactNode;
@@ -39,7 +40,7 @@ export function PluginCard({ name, source, description, iconPath, action, meta, 
             <img className="plugin-card-icon-img" src={effectiveSrc} alt=""
               onError={() => setFailedPath(iconPath ?? null)}
             />
-          ) : name.charAt(0).toUpperCase()}
+          ) : <Blocks size={18} strokeWidth={2} />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">

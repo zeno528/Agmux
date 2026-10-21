@@ -79,12 +79,12 @@ export function CliUpgradePill({ client, busy = false, onUpdated }: CliUpgradePi
       type="button"
       className="plan-badge gap-1"
       disabled={upgrading || busy}
-      title={busy ? tSettings("cli.working") : update ? tCommon("cliUpdate.upgradeTitle", { client: label, version: update.latest_version, channel: update.channel }) : undefined}
+      title={busy ? tSettings("cli.updating") : update ? tCommon("cliUpdate.upgradeTitle", { client: label, version: update.latest_version, channel: update.channel }) : undefined}
       onClick={() => void upgrade()}
     >
       {upgrading || busy ? (
         <span className="inline-flex items-center gap-1" role="status" aria-live="polite">
-          <LoadingSpinner /><span className="meta-xs">{tSettings(upgrading ? "cli.updating" : "cli.working")}</span>
+          <LoadingSpinner /><span className="meta-xs">{tSettings("cli.updating")}</span>
         </span>
       ) : update ? <><Download size={12} strokeWidth={2} aria-hidden="true" />{tCommon("cliUpdate.upgrade", { version: update.latest_version })}</> : null}
     </button>

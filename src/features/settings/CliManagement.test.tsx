@@ -487,11 +487,11 @@ it.each(["codex", "claude"] as const)("%s 外部任务的进度显示在禁用�
       hooks.cached.mockReturnValue(current);
       const html = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: current }} />);
       if (busy) {
-        expect(html).toMatch(/<button[^>]*class="plan-badge gap-1"[^>]*disabled=""[^>]*>.*cli.working.*<\/button>/);
-        expect(html.match(/cli.working<\/span>/g)).toHaveLength(1);
+        expect(html).toMatch(/<button[^>]*class="plan-badge gap-1"[^>]*disabled=""[^>]*>.*cli.updating.*<\/button>/);
+        expect(html.match(/cli.updating<\/span>/g)).toHaveLength(1);
         expect(html).toContain('role="status"');
       } else {
-        expect(html).not.toContain("cli.working");
+        expect(html).not.toContain("cli.updating");
         expect(html).not.toContain('disabled=""');
         expect(html.includes('class="plan-badge gap-1"')).toBe(available);
       }

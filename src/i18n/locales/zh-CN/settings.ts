@@ -164,6 +164,7 @@ export default {
     usageLimit: "{{label}}限额",
     refreshQuota: "刷新状态",
     fetchModels: "获取模型",
+    fetchModelsHint: "获取此账号可用的 ChatGPT 模型列表",
     more: "更多操作",
     warmup: "预热账号",
     warmupHint: "使用 gpt-6-luna 模型、low 思考等级发送一次简短请求，会消耗订阅额度；窗口重置时间以官方返回为准",

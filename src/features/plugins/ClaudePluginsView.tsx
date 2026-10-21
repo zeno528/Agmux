@@ -112,7 +112,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
 
   /// 刷新市场目录并按 CLI 的版本语义比对已装插件，只有真的落后才点亮升级图标。
   const checkUpdates = async () => {
-    if (checking) return;
+    if (checking || busyKey) return;
     setChecking(true);
     try {
       const updates = await api.claudeCheckPluginUpdates();
@@ -126,12 +126,13 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
   };
 
   const upgrade = async (entry: ClaudePluginEntry) => {
-    if (busyKey) return;
+    if (busyKey || checking) return;
     const key = `${entry.id}|${entry.scope}|${entry.projectPath ?? ""}`;
     setBusyKey(key);
     setPendingKey(key);
     try {
       const result = await api.claudeUpdatePlugin(entry.id, entry.scope, entry.projectPath);
+      setUpdatable((items) => new Map(items).set(entry.id, result.newVersion || entry.version || ""));
       const name = claudePluginParts(entry.id).name;
       if (result.updateOutcome === "updated") {
         feedback.success(t("claudePlugin.toast.updated", {
@@ -191,7 +192,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PluginFilterChips value={filter} onChange={setFilter} />
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checking} onClick={() => void checkUpdates()}>
+          <button type="button" className="apple-action-button" disabled={checking || busyKey !== null} onClick={() => void checkUpdates()}>
             <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
             {t("action.checkUpdates")}
           </button>

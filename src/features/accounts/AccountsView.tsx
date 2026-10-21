@@ -226,7 +226,7 @@ function AccountCard({ source, accountId, login, plan, expiresAt, cachedBalance,
           <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={loading} onClick={() => { setMenuOpen(false); void refresh(true); }}>
             <span className="flex items-center gap-2"><RefreshCw size={16} strokeWidth={2} aria-hidden="true" />{t("account.refreshQuota")}</span>
           </button>
-          <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={loading} onClick={() => { setMenuOpen(false); void fetchModels(); }}>
+          <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={loading} title={t("account.fetchModelsHint")} onClick={() => { setMenuOpen(false); void fetchModels(); }}>
             <span className="flex items-center gap-2"><Download size={16} strokeWidth={2} aria-hidden="true" />{t("account.fetchModels")}</span>
           </button>
           <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={loading || loginExpired} title={t("account.warmupHint")} onClick={() => { setMenuOpen(false); void warmup(); }}>
