@@ -27,7 +27,7 @@ export function nextDirs(current: string[], dir: string) {
  * 供应商卡片上的终端入口：激活项跟随实时配置，其他项绑定本供应商。
  * 列表存在应用设置里（全局一份，所有卡片共用），删除不确认。
  *
- * 列表只在首次展开时读取，不进冷启动路径。
+ * 每次展开读取全局列表，不进冷启动路径。
  */
 export default function ProfileTerminalMenu({ profileId, active }: { profileId: string; active: boolean }) {
   const { t } = useTranslation("profiles");
@@ -41,11 +41,10 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
   useMenuDismiss(open, triggerRef, menuRef, setOpen);
   const dirs = settings?.claude_terminal_dirs ?? [];
 
-  const saveDirs = async (next: string[]) => {
-    if (!settings) return;
-    const updated = { ...settings, claude_terminal_dirs: next };
-    setSettings(updated);
-    await api.saveSettings(updated);
+  const saveDirs = async (update: (current: string[]) => string[]) => {
+    const current = await api.getSettings();
+    const saved = await api.saveSettings({ ...current, claude_terminal_dirs: update(current.claude_terminal_dirs) });
+    setSettings(saved);
   };
 
   const launch = async (dir: string) => {
@@ -54,7 +53,7 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
     setBusy(true);
     try {
       await api.claudeOpenTerminal(profileId, dir);
-      await saveDirs(nextDirs(dirs, dir));
+      await saveDirs((current) => nextDirs(current, dir));
     } catch (error) {
       feedback.error(String(error));
     } finally {
@@ -83,11 +82,12 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
 
   const toggle = async () => {
     const next = !open;
-    if (next && !settings) {
+    if (next) {
       try {
         setSettings(await api.getSettings());
       } catch (error) {
         feedback.error(String(error));
+        return;
       }
     }
     setOpen(next);
@@ -101,7 +101,7 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
             <Folder className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
             <span className="truncate">{dirName(dir)}</span>
           </button>
-          <button type="button" className="apple-icon-button shrink-0 text-[var(--text-secondary)] hover:bg-transparent! focus-visible:bg-transparent! enabled:hover:text-[var(--danger)]" aria-label={t("terminal.remove")} title={t("terminal.remove")} onClick={() => void saveDirs(dirs.filter((item) => item !== dir)).catch((error) => feedback.error(String(error)))}>
+          <button type="button" className="apple-icon-button shrink-0 text-[var(--text-secondary)] hover:bg-transparent! focus-visible:bg-transparent! enabled:hover:text-[var(--danger)]" aria-label={t("terminal.remove")} title={t("terminal.remove")} onClick={() => void saveDirs((current) => current.filter((item) => item !== dir)).catch((error) => feedback.error(String(error)))}>
             <X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
