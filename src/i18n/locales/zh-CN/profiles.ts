@@ -51,7 +51,7 @@ export default {
   card: {
     authDesktop: "Codex 桌面端",
     authOAuth: "OAuth登录",
-    usageRemaining: "{{label}}: 剩",
+    usageRemaining: "{{label}} 剩",
     notSet: "未设置",
     clickToRename: "点击重命名",
     openWebsite: "打开官网",

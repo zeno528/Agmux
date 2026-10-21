@@ -51,7 +51,7 @@ export default {
   card: {
     authDesktop: "Codex desktop",
     authOAuth: "OAuth sign-in",
-    usageRemaining: "{{label}} remaining: ",
+    usageRemaining: "{{label}} left ",
     notSet: "Not set",
     clickToRename: "Click to rename",
     openWebsite: "Open website",

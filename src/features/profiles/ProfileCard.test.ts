@@ -7,13 +7,32 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { I18nextProvider } from "react-i18next";
 import { authQuotaErrorKind } from "../../app/authQuotaCache";
 import type { CodexProfileSummary } from "../../types";
-import { connectionGate, ProfileCardActions } from "./ProfileCard";
+import { connectionGate, ProfileCardActions, ProfileCardContent } from "./ProfileCard";
 import { profileConnectionGate } from "../codex/CodexProfileCard";
+import zhProfiles from "../../i18n/locales/zh-CN/profiles";
+import enProfiles from "../../i18n/locales/en-US/profiles";
 
 const source = readFileSync(new URL("./ProfileCard.tsx", import.meta.url), "utf8");
 const hookSource = readFileSync(new URL("./useProfileBalance.ts", import.meta.url), "utf8");
 const sortableCardSource = readFileSync(new URL("../../components/SortableCard.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../style.css", import.meta.url), "utf8");
+
+it.each(["official", "minimax", "ZAI", "zhipu"])("%s 用量药丸统一显示剩余，保留重置时间和低额度警示", (kind) => {
+  const i18n = createInstance();
+  void i18n.init({ lng: "zh", resources: { zh: { profiles: zhProfiles }, en: { profiles: enProfiles } }, initAsync: false });
+  const render = () => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardContent, {
+    profile: { name: "Test", icon: null, kind: kind === "official" ? "official" : "third_party", provider: kind === "official" ? null : kind, model: null, reasoning_effort: null, plan_type: null, admin_url: null, show_balance: true },
+    balanceInfos: [{ currency: "", total_balance: "", usage_percent: 20, usage_label: "5小时", usage_reset: "2h", weekly_usage_percent: 90, weekly_label: "7天", weekly_reset: "3d" }],
+    balanceError: "", balanceRefreshing: false,
+  })));
+  const html = render();
+  expect(html).toContain('<span>5小时 剩</span><span class="chip-success">80%</span>');
+  expect(html).toContain('<span> · 7天 剩</span><span class="chip-danger">10%</span>');
+  expect(html).toContain("2h");
+  expect(html).toContain("3d");
+  void i18n.changeLanguage("en");
+  expect(render()).toContain('<span>5h left </span><span class="chip-success">80%</span>');
+});
 
 it("供应商卡片文字区域固定保留标题和元信息行高度", () => {
   expect(styles).toMatch(/\.profile-card-content__text\s*\{[^}]*height: calc\(1\.75rem \+ 0\.25rem \+ 18px\);/);

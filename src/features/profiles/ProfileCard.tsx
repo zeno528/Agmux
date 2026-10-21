@@ -43,10 +43,10 @@ export function ProfileCardContent({
   const primaryLabel = localizeBalanceLabel(balanceInfo?.usage_label, t) ?? (isUsageProvider ? t("balance.window5h") : t("card.usage"));
   const weeklyLabel = localizeBalanceLabel(balanceInfo?.weekly_label, t) ?? (isUsageProvider ? t("balance.window7d") : t("balance.period"));
   const balanceLabel = isSubscriptionProfile || isUsageProvider ? t("card.usage") : t("card.balance");
-  const primaryUsagePercent = balanceInfo?.usage_percent != null ? (isSubscriptionProfile ? 100 - balanceInfo.usage_percent : balanceInfo.usage_percent) : null;
-  const weeklyUsagePercent = balanceInfo?.weekly_usage_percent != null ? (isSubscriptionProfile ? 100 - balanceInfo.weekly_usage_percent : balanceInfo.weekly_usage_percent) : null;
-  const primaryUsageText = isSubscriptionProfile ? t("card.usageRemaining", { label: primaryLabel }) : isUsageProvider ? `${primaryLabel}:` : `${primaryLabel} `;
-  const weeklyUsageText = isSubscriptionProfile ? t("card.usageRemaining", { label: weeklyLabel }) : isUsageProvider ? `${weeklyLabel}:` : `${weeklyLabel} `;
+  const primaryUsagePercent = balanceInfo?.usage_percent != null ? 100 - balanceInfo.usage_percent : null;
+  const weeklyUsagePercent = balanceInfo?.weekly_usage_percent != null ? 100 - balanceInfo.weekly_usage_percent : null;
+  const primaryUsageText = t("card.usageRemaining", { label: primaryLabel });
+  const weeklyUsageText = t("card.usageRemaining", { label: weeklyLabel });
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
