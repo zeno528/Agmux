@@ -62,8 +62,6 @@ export default {
   protocolLabel: "Protocol",
   accountLoginHelp: "Uses the account currently signed in to Claude Code. If you are not signed in, run /login. Activating this profile clears known endpoint and authentication overrides from the user-level ~/.claude/settings.json. Clear any overrides in environment variables and project settings yourself",
   protocolAnthropic: "Anthropic-compatible",
-  endpointCn: "CN",
-  endpointGlobal: "Global",
   baseUrlLabel: "API URL",
   baseUrlPlaceholder: "https://api.example.com/anthropic",
   testConnection: "Test connection",

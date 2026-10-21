@@ -88,7 +88,6 @@ export default {
     other: "检测到其他安装方式，请使用原安装方式管理",
     conflict: "检测到多份安装，请先处理重复安装",
     pathLabel: "路径",
-    refresh: "刷新",
     install: "安装 CLI",
     checkUpdate: "检查更新",
     updateAvailable: "发现新版本 {{version}}（{{channel}}），可选择更新",
@@ -241,10 +240,7 @@ export default {
   about: {
     sectionTitle: "应用信息",
     upToDate: "已是最新版本",
-    versionLabel: "版本",
-    updateTitle: "版本更新",
     updateAvailable: "发现新版本",
-    updateDescription: "检查是否有可用的新版本",
     openRepo: "打开 GitHub 项目仓库",
     changelog: "更新日志",
     changelogDescription: "查看各版本的改动与新功能",

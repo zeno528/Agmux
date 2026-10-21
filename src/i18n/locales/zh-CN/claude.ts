@@ -62,8 +62,6 @@ export default {
   protocolLabel: "接入协议",
   accountLoginHelp: "使用 Claude Code 当前登录的账号；未登录请运行 /login。启用时会清除用户级 ~/.claude/settings.json 中已知的地址和认证覆盖。环境变量及项目级设置中的覆盖需自行清除",
   protocolAnthropic: "Anthropic 兼容",
-  endpointCn: "国内",
-  endpointGlobal: "全球",
   baseUrlLabel: "API 地址",
   baseUrlPlaceholder: "https://api.example.com/anthropic",
   testConnection: "测试连通",

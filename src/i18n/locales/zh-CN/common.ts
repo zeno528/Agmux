@@ -74,6 +74,5 @@ export default {
   cliUpdate: {
     upgrade: "更新到 {{version}}",
     upgradeTitle: "发现 {{client}} CLI 新版本 {{version}}（{{channel}} 通道），点击更新",
-    upgradeDone: "{{client}} CLI 已更新至 v{{version}}",
   },
 } as const;

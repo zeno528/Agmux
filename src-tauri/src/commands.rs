@@ -1033,26 +1033,6 @@ pub fn set_mcp_server_enabled(
     state.set_mcp_server_enabled(&name, tool, enabled)
 }
 
-/// 差异处理"同步"：改写数据库镜像中的单个条目（fragment 为空表示删除该条目；均不触碰 live）。
-#[tauri::command]
-pub fn set_mcp_mirror(
-    name: String,
-    fragment: Option<String>,
-    state: State<'_, AppContext>,
-) -> AppResult<()> {
-    state.set_mcp_mirror_entry(&name, fragment.as_deref())
-}
-
-/// 差异处理"撤销"：仅将单个条目恢复为数据库内容写回 live（fragment 为空时从 live 移除）。
-#[tauri::command]
-pub fn revert_mcp_live(
-    name: String,
-    fragment: Option<String>,
-    state: State<'_, AppContext>,
-) -> AppResult<()> {
-    state.revert_mcp_live_entry(&name, fragment.as_deref())
-}
-
 /// 差异处理"同步"批量：一次写入多条数据库镜像条目（不触碰 live）。
 #[tauri::command]
 pub fn set_mcp_mirror_entries(

@@ -46,7 +46,6 @@ export default {
     thirdPartyNotice: "当前为第三方模型：插件包会保留；带 App 或 MCP 连接器的插件可能无法在 Codex 中加载。需要授权或使用连接器时，请切换到 ChatGPT 官方订阅配置",
   },
   market: {
-    pluginCount: "{{count}} 个插件",
     removeAria: "卸载插件市场 {{name}}",
     foundUpdates: "{{client}}：{{count}} 个插件可更新",
     upToDateToast: "{{client}}：插件已是最新",
@@ -75,7 +74,6 @@ export default {
   },
   confirm: {
     uninstallPluginTitle: "卸载插件",
-    removePlugin: "确定卸载「{{name}}」吗？将通过 Codex CLI 移除插件文件",
   },
   toast: {
     installed: "已安装插件「{{name}}」，重启 Codex 后生效",
@@ -119,7 +117,6 @@ export default {
     scopeLocal: "本地",
     refreshMarketAria: "刷新插件市场 {{name}}",
     empty: "还没有安装 Claude Code 插件，可从「可安装」区选择安装；尚未安装 CLI 时，请先到「Agent 工具」安装",
-    disabled: "已禁用",
     toggleLabel: "启用或禁用 {{name}}",
     action: {
       upgradeTitle: "升级到 v{{version}}（升级后重启 Claude Code 会话生效）",
@@ -141,14 +138,11 @@ export default {
       uninstalled: "已卸载插件「{{name}}」",
       updated: "「{{name}}」已从 {{old}} 升级到 {{new}}，重启 Claude Code 会话后生效",
       upToDate: "「{{name}}」已是最新版本（{{version}}）",
-      marketAdded: "已添加插件市场「{{name}}」",
       marketRemoved: "已移除插件市场「{{name}}」",
       marketsRefreshed: "已刷新 {{count}} 个市场目录",
     },
     addMarket: {
       description: "支持 owner/repo、Git/HTTPS 地址或本地市场目录",
-      placeholder: "owner/repo 或 https://...git",
-      confirm: "添加",
     },
   },
 } as const;

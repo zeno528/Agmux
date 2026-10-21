@@ -88,7 +88,6 @@ export default {
     other: "Another installation method detected; manage it using that method",
     conflict: "Multiple installations detected; resolve duplicates first",
     pathLabel: "Path",
-    refresh: "Refresh",
     install: "Install CLI",
     checkUpdate: "Check for updates",
     updateAvailable: "Version {{version}} is available ({{channel}}). Update when you choose",
@@ -241,10 +240,7 @@ export default {
   about: {
     sectionTitle: "Application info",
     upToDate: "You're on the latest version",
-    versionLabel: "Version",
-    updateTitle: "Version updates",
     updateAvailable: "New version available",
-    updateDescription: "Check for available updates",
     openRepo: "Open the GitHub repository",
     changelog: "Changelog",
     changelogDescription: "See what changed in each release",

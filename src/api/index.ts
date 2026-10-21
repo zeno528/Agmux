@@ -239,8 +239,6 @@ export const api = {
   parseMcpFragment: (toml: string) => call<McpServerSpec>("parse_mcp_fragment", { toml }),
   codexDeleteMcpServer: (name: string) => call<void>("codex_delete_mcp_server", { name }),
   setMcpServerEnabled: (name: string, tool: "codex" | "claude", enabled: boolean) => call<void>("set_mcp_server_enabled", { name, tool, enabled }),
-  setMcpMirror: (name: string, fragment: string | null) => call<void>("set_mcp_mirror", { name, fragment }),
-  revertMcpLive: (name: string, fragment: string | null) => call<void>("revert_mcp_live", { name, fragment }),
   // 批量差异处理：整批一次写入（只备份/写盘一次），返回实际处理的条目数
   setMcpMirrorEntries: (actions: McpDiffEntryAction[]) => call<number>("set_mcp_mirror_entries", { actions }),
   revertMcpLiveEntries: (actions: McpDiffEntryAction[]) => call<number>("revert_mcp_live_entries", { actions }),

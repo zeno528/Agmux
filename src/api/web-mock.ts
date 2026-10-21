@@ -1846,21 +1846,16 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       else webMcpServers = next;
       return undefined as T;
     }
-    case "set_mcp_mirror":
-    case "revert_mcp_live":
     case "set_mcp_mirror_entries":
     case "revert_mcp_live_entries": {
-      // web 调试沙箱只有一份服务器列表、没有独立的镜像侧：单条与批量都当同名 upsert 处理，
+      // web 调试沙箱只有一份服务器列表、没有独立的镜像侧：批量动作按同名 upsert 处理，
       // fragment 为空表示删除该条目；fragment 不做 TOML 解析
-      const batched = Array.isArray(args?.actions);
-      const actions = batched
-        ? (args?.actions as McpDiffEntryAction[])
-        : [{ name: args?.name as string, fragment: (args?.fragment ?? null) as string | null }];
+      const actions = args?.actions as McpDiffEntryAction[];
       for (const action of actions) {
         webMcpServers = webMcpServers.filter((server) => server.name !== action.name);
         if (action.fragment) webMcpServers.push({ name: action.name } as McpServerSpec);
       }
-      return (batched ? actions.length : undefined) as T;
+      return actions.length as T;
     }
     // 浏览器没有独立 Claude 实时 JSON 和数据库镜像，不能可靠模拟差异裁决。
     case "claude_mcp_sync_preview":

@@ -191,8 +191,6 @@ export default {
     systemProxyLabel: "Use system proxy",
     systemProxyTitle: "Make Codex network requests follow the OS proxy settings. Takes effect after restarting Codex",
     clearFile: "Clear",
-    clearCatalogTitle: "Clear the models catalog?",
-    clearCatalogDescription: "Discards the saved models.json draft; built-in providers fall back to the bundled catalog after saving",
     clearAuthTitle: "Clear auth.json?",
     clearAuthDescription: "Saving clears this configuration's credentials; if active, Codex's current live authentication file is backed up before deletion",
     authPillEditable: "Editable",

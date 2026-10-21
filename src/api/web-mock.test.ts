@@ -4,6 +4,21 @@ import { extractClaudeCommonSettings, fillClaudeCommonSettings } from "../featur
 import type { AppState, ClaudeProfileDetail, ClaudeProfileSummary, MarketplacePlugin, McpServerSpec, PluginMarketplace, PluginSkill, PluginSummary, PluginUpdate, CodexProfileDetail, CodexProfileSummary, SkillSummary, CliStatus, CliUpdate } from "../types";
 
 describe("web mock", () => {
+  it.each(["set_mcp_mirror_entries", "revert_mcp_live_entries"])("%s 保留批量增删和处理数量", async (command) => {
+    const name = "fixture-batch-cleanup";
+    const list = () => webInvoke<McpServerSpec[]>("codex_list_mcp_servers");
+    const before = await list();
+    try {
+      expect(await webInvoke(command, { actions: [] })).toBe(0);
+      expect(await webInvoke(command, { actions: [{ name, fragment: "fixture" }] })).toBe(1);
+      expect(await list()).toEqual([...before, { name }]);
+      expect(await webInvoke(command, { actions: [{ name, fragment: null }] })).toBe(1);
+      expect(await list()).toEqual(before);
+    } finally {
+      await webInvoke("codex_delete_mcp_server", { name });
+    }
+  });
+
   it("新建预设的配置文本遵循各供应商的默认模型", async () => {
     for (const kind of ["chatgpt", "zhipu"]) {
       const config = await webInvoke<string>("codex_get_builtin_config", { kind });

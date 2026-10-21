@@ -191,8 +191,6 @@ export default {
     systemProxyLabel: "使用系统代理",
     systemProxyTitle: "让 Codex 的网络请求遵循操作系统代理设置，重启 Codex 后生效",
     clearFile: "清空",
-    clearCatalogTitle: "清空模型目录？",
-    clearCatalogDescription: "将清除该供应商保存的 models.json 草稿；保存后内置供应商回退到内置目录",
     clearAuthTitle: "清空 auth.json？",
     clearAuthDescription: "保存后清空此配置的认证，若配置已激活，会先备份并删除 Codex 当前live的认证文件",
     authPillEditable: "可编辑",

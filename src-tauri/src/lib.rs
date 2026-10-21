@@ -323,8 +323,6 @@ pub fn run() {
             commands::codex_save_mcp_server,
             commands::codex_delete_mcp_server,
             commands::set_mcp_server_enabled,
-            commands::set_mcp_mirror,
-            commands::revert_mcp_live,
             commands::set_mcp_mirror_entries,
             commands::revert_mcp_live_entries,
             commands::codex_get_mcp_section_toml,

@@ -9,7 +9,6 @@ export default {
     viewDiff: "查看差异",
     addServer: "添加服务器",
     loadErrorHint: "config.toml 无法解析时，可点「更新」用数据库中的 MCP 配置恢复",
-    editServerAria: "编辑 {{name}}",
     editTooltip: "编辑",
     moreTooltip: "更多操作",
     enableServer: "启用 {{name}}",

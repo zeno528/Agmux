@@ -46,7 +46,6 @@ export default {
     thirdPartyNotice: "You are using a third-party model: plugin packages are kept, but plugins with App or MCP connectors may fail to load in Codex. To authorize or use connectors, switch to the official ChatGPT subscription provider",
   },
   market: {
-    pluginCount: "Plugins: {{count}}",
     removeAria: "Remove plugin marketplace {{name}}",
     foundUpdates: "{{client}}: {{count}} plugin updates available",
     upToDateToast: "{{client}}: Plugins are up to date",
@@ -75,7 +74,6 @@ export default {
   },
   confirm: {
     uninstallPluginTitle: "Uninstall plugin",
-    removePlugin: "Uninstall \"{{name}}\"? The plugin files will be removed via the Codex CLI",
   },
   toast: {
     installed: "Installed \"{{name}}\". Restart Codex to take effect",
@@ -119,7 +117,6 @@ export default {
     scopeLocal: "Local",
     refreshMarketAria: "Refresh plugin marketplace {{name}}",
     empty: "No Claude Code plugins installed yet. Pick one in the Available section, or install the CLI in Agent Tools first",
-    disabled: "Disabled",
     toggleLabel: "Enable or disable {{name}}",
     action: {
       upgradeTitle: "Upgrade to v{{version}} (restart the Claude Code session to apply)",
@@ -141,14 +138,11 @@ export default {
       uninstalled: "Uninstalled \"{{name}}\"",
       updated: "\"{{name}}\" upgraded from {{old}} to {{new}}. Restart the Claude Code session to take effect",
       upToDate: "\"{{name}}\" is already up to date ({{version}})",
-      marketAdded: "Added plugin marketplace \"{{name}}\"",
       marketRemoved: "Removed plugin marketplace \"{{name}}\"",
       marketsRefreshed: "Refreshed {{count}} marketplace catalogs",
     },
     addMarket: {
       description: "Supports owner/repo, Git/HTTPS URLs, or local marketplace directories",
-      placeholder: "owner/repo or https://...git",
-      confirm: "Add",
     },
   },
 } as const;

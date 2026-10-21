@@ -76,6 +76,5 @@ export default {
   cliUpdate: {
     upgrade: "Update to {{version}}",
     upgradeTitle: "{{client}} CLI {{version}} available ({{channel}} channel). Click to update",
-    upgradeDone: "{{client}} CLI updated to v{{version}}",
   },
 } as const;

@@ -9,7 +9,6 @@ export default {
     viewDiff: "Review changes",
     addServer: "Add server",
     loadErrorHint: "If config.toml cannot be parsed, click \"Update\" to restore the MCP config from the database",
-    editServerAria: "Edit {{name}}",
     editTooltip: "Edit",
     moreTooltip: "More actions",
     enableServer: "Enable {{name}}",

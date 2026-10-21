@@ -1249,7 +1249,6 @@ body.drag-active * {
 }
 
 /* 页头右侧固定槽位在长标题页面可收缩，避免切页时操作区换行造成上下跳动 */
-.apple-page-bar > .w-full.max-w-md,
 .apple-page-bar > .w-full.max-w-2xl {
   flex: 1 1 0%;
   min-width: 0;
@@ -3437,20 +3436,6 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 .app-input-action__button:hover { background: var(--hover-bg); color: var(--accent); }
 .app-input-action__button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-.app-input.underline-input {
-  min-height: 2rem;
-  border: 0;
-  border-bottom: 1px solid var(--panel-border);
-  border-radius: 0;
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.app-input.underline-input:focus {
-  border-bottom-color: var(--accent);
-  box-shadow: none;
-}
 
 .cm-editor {
   /* 代码区按文档内容自适应，最长文件的共享占位由外层承担 */
