@@ -28,6 +28,7 @@ pub struct CodexWindowBounds {
 
 /// 物理像素 → DIP，按窗口所在显示器 DPI 换算（与 Electron 每显示器语义一致）。
 /// 混合 DPI 多屏下副屏定位可能有亚像素误差，尺寸不受影响，可接受。
+#[cfg(any(windows, test))]
 fn to_dip(value: i32, dpi: u32) -> i32 {
     if dpi == 0 {
         return value;

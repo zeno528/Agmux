@@ -112,7 +112,7 @@ describe("供应商创建的两步流程", () => {
     expect(elements(page).find((node) => node.type === AppSearchInput)!.props.value).toBe("");
     expect(names()).toContain("DeepSeek");
     expect(names().some((name) => String(name).includes("Token Plan"))).toBe(false);
-  });
+  }, 15_000); // Windows CI 首次渲染与中文排序冷启动可能超过默认 5 秒。
 
   it.each([{ presets: codexPresets }, { presets: claudePresets }])("复用设置页层级：页头、固定分类栏、独立滚动列表", ({ presets }) => {
     const page = ProviderCreate({ presets, onBack: vi.fn(), children: () => null });
