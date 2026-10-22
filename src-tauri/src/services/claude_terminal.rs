@@ -74,6 +74,24 @@ fn prepare_shared_skills(terminal: &Path, source: &Path) -> AppResult<std::path:
     Ok(shared)
 }
 
+fn terminal_mcp_config(path: &Path) -> AppResult<Option<String>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(app_err!("无法读取 MCP 配置 {}: {error}", path.display())),
+    };
+    let document: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| app_err!("MCP 配置解析失败 {}: {error}", path.display()))?;
+    let root = document
+        .as_object()
+        .ok_or_else(|| app_err!("MCP 配置必须为 JSON 对象: {}", path.display()))?;
+    match root.get("mcpServers") {
+        None => Ok(None),
+        Some(Value::Object(_)) => Ok(Some(path.to_string_lossy().into_owned())),
+        Some(_) => Err(app_err!("mcpServers 必须为 JSON 对象: {}", path.display())),
+    }
+}
+
 fn terminal_model(bytes: &[u8]) -> AppResult<String> {
     let settings: Value =
         serde_json::from_slice(bytes).map_err(|error| app_err!("终端配置解析失败: {error}"))?;
@@ -134,9 +152,7 @@ impl AppContext {
             )?;
             let settings_text = settings.display().to_string();
             let mcp_path = self.paths.claude_mcp_config();
-            let mcp_config = mcp_path
-                .is_file()
-                .then(|| mcp_path.to_string_lossy().into_owned());
+            let mcp_config = terminal_mcp_config(&mcp_path)?;
             Ok((
                 claude_arguments(
                     &settings_text,
@@ -373,6 +389,45 @@ mod tests {
     fn terminal_settings_document(profile: &StoredClaudeProfile) -> AppResult<Vec<u8>> {
         let root = tempfile::tempdir().unwrap();
         claude_settings_bytes(Some(profile), &root.path().join("settings.json"), &[])
+    }
+
+    #[test]
+    fn terminal_mcp_config_skips_unconfigured_servers_and_preserves_live_file() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(".claude.json");
+        assert_eq!(terminal_mcp_config(&path).unwrap(), None);
+        for document in [r#"{}"#, r#"{"numStartups":1,"projects":{}}"#] {
+            std::fs::write(&path, document).unwrap();
+            let config = terminal_mcp_config(&path).unwrap();
+            assert_eq!(config, None);
+            let arguments =
+                claude_arguments("settings.json", "default", config.as_deref(), "shared");
+            assert!(!arguments.contains("--mcp-config"));
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), document);
+        }
+        for document in [
+            r#"{"mcpServers":{}}"#,
+            r#"{"mcpServers":{"fixture":{"command":"fixture"}}}"#,
+        ] {
+            std::fs::write(&path, document).unwrap();
+            let config = terminal_mcp_config(&path).unwrap();
+            assert_eq!(config.as_deref(), Some(path.to_str().unwrap()));
+            assert!(
+                claude_arguments("settings.json", "default", config.as_deref(), "shared")
+                    .contains("--mcp-config")
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), document);
+        }
+        for document in [
+            "broken",
+            "null",
+            r#"{"mcpServers":null}"#,
+            r#"{"mcpServers":[]}"#,
+        ] {
+            std::fs::write(&path, document).unwrap();
+            assert!(terminal_mcp_config(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), document);
+        }
     }
 
     #[test]
