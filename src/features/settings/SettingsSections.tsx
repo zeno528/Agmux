@@ -192,6 +192,12 @@ export function SettingsGeneral({ form, onPatch }: SettingsGeneralProps) {
                   <AppSelect
                     value={form.macos_terminal}
                     options={[{ label: "Terminal.app", value: "terminal" }, { label: "Ghostty", value: "ghostty" }]}
+                    renderLabel={(option) => (
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <img src={option.value === "ghostty" ? "/ghostty.png" : "/terminal-app.png"} alt="" className="h-5 w-5 shrink-0 object-contain" />
+                        <span className="truncate">{option.label}</span>
+                      </span>
+                    )}
                     onChange={(value) => onPatch({ macos_terminal: value })}
                   />
                 </div>
