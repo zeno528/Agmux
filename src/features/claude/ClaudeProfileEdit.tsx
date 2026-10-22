@@ -453,14 +453,14 @@ function ClaudeProfileEditor({
           </div>
           <div className="apple-panel-section flex flex-col">
             <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-              <button type="button" className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-(--active-bg) px-3 text-[13px] font-semibold text-accent transition-colors" aria-pressed="true" title="settings.json">
+              <button type="button" className="relative flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] bg-(--active-bg) px-3 text-[13px] font-semibold text-accent transition-colors" aria-pressed="true" title="settings.json">
                 <FileBraces className="h-3.5 w-3.5" strokeWidth={2} />
                 <span>settings.json</span>
                 {envDirty ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}
               </button>
-              <div className="editor-ghost-group ml-auto bg-(--active-bg) px-2">
-                <span className="field-label font-normal! flex items-center gap-1">
-                  <LayoutTemplate size={16} strokeWidth={2} aria-hidden="true" />
+              <div className="editor-ghost-group ml-auto h-8 shrink-0 gap-1 whitespace-nowrap bg-(--active-bg) px-2">
+                <span className="field-label font-normal! flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                  <LayoutTemplate className="shrink-0" size={16} strokeWidth={2} aria-hidden="true" />
                   {t("commonTemplate.title")}
                 </span>
                 <span className="editor-ghost-group__separator" aria-hidden="true" />
