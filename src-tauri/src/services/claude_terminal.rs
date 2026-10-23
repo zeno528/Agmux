@@ -18,7 +18,7 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 use base64::Engine;
 use serde_json::Value;
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, target_os = "macos"))]
 use std::path::PathBuf;
 
 use super::claude::claude_settings_bytes;
@@ -316,23 +316,86 @@ fn ps_quote(value: &str) -> String {
 
 /// 两套 macOS 启动路径共用的 claude 调用行（posix 单引号字面量）。
 #[cfg(target_os = "macos")]
-fn claude_invocation(arguments: &str) -> String {
+fn claude_invocation(arguments: &str, executable: Option<&Path>) -> String {
+    let executable = executable
+        .map(|path| posix_quote(&path.to_string_lossy()))
+        .unwrap_or_else(|| "claude".into());
     format!(
-        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude{arguments}"
+        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL {executable}{arguments}"
     )
 }
 
 /// Ghostty 走官方 CLI `-e`（文档 config/reference：common -e flag）：脚本交给
-/// `zsh -c`，工作目录用进程 current_dir 传递，脚本里不需要 cd。单实例时 CLI 经
+/// 用户的登录 shell 加载 PATH，工作目录用进程 current_dir 传递。单实例时 CLI 经
 /// IPC 转发给已有实例后立即退出；无实例时本进程常驻为 GUI——因此 spawn 发射
 /// 不等待（与 Windows ShellExecuteW 同语义）。
 #[cfg(target_os = "macos")]
-fn ghostty_launch_script(banner: &str, arguments: &str) -> String {
+fn ghostty_launch_script(banner: &str, arguments: &str, executable: Option<&Path>) -> String {
     format!(
         "echo {}; {}",
         posix_quote(banner),
-        claude_invocation(arguments)
+        claude_invocation(arguments, executable)
     )
+}
+
+#[cfg(target_os = "macos")]
+const GHOSTTY_SHELL_FLAGS: &str = "-lic";
+
+#[cfg(target_os = "macos")]
+fn macos_login_shell(
+    inherited: Option<&std::ffi::OsStr>,
+    user_record: impl FnOnce() -> AppResult<String>,
+) -> AppResult<PathBuf> {
+    if let Some(path) = inherited.map(PathBuf::from) {
+        if path.is_absolute() && path.is_file() {
+            return Ok(path);
+        }
+    }
+    // Finder 启动时可能没有 SHELL，向系统用户记录读取登录 shell。
+    let record = user_record()?;
+    let path = record
+        .lines()
+        .find_map(|line| line.strip_prefix("UserShell:"))
+        .map(|shell| PathBuf::from(shell.trim()))
+        .filter(|path| path.is_absolute() && path.is_file());
+    path.ok_or_else(|| app_err!("无法识别用户登录 shell"))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_shell_record() -> AppResult<String> {
+    let user = Command::new("/usr/bin/id")
+        .arg("-un")
+        .output()
+        .map_err(|error| app_err!("读取当前用户失败: {error}"))?;
+    if !user.status.success() {
+        return Err(app_err!("读取当前用户失败"));
+    }
+    let record = Command::new("/usr/bin/dscl")
+        .args([
+            "/Search",
+            "-read",
+            &format!("/Users/{}", String::from_utf8_lossy(&user.stdout).trim()),
+            "UserShell",
+        ])
+        .output()
+        .map_err(|error| app_err!("读取用户登录 shell 失败: {error}"))?;
+    if !record.status.success() {
+        return Err(app_err!("读取用户登录 shell 失败"));
+    }
+    Ok(String::from_utf8_lossy(&record.stdout).into_owned())
+}
+
+#[cfg(target_os = "macos")]
+fn ghostty_shell_script(shell: &Path, script: &str) -> String {
+    if shell.file_name().is_some_and(|name| name == "fish") {
+        // fish 的单引号转义不同；仅加载其 PATH，原有 POSIX 脚本仍由 sh 执行。
+        format!(
+            "exec /bin/sh -c '{}'",
+            script.replace('\\', "\\\\").replace('\'', "\\'")
+        )
+    } else {
+        script.into()
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -341,8 +404,27 @@ fn launch_ghostty(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult
     if !Path::new(GHOSTTY_BIN).is_file() {
         return Err(app_err!("未安装 Ghostty（/Applications/Ghostty.app）"));
     }
+    let shell = macos_login_shell(std::env::var_os("SHELL").as_deref(), macos_shell_record)?;
+    // nushell/tcsh 等解析不了 POSIX 启动脚本，回退系统 zsh（PATH 靠 -l 登录态加载）
+    let shell = if matches!(
+        shell.file_name().and_then(|name| name.to_str()),
+        Some("sh" | "bash" | "zsh" | "dash" | "fish")
+    ) {
+        shell
+    } else {
+        PathBuf::from("/bin/zsh")
+    };
+    let native = super::claude_cli::native_path(&crate::paths::home_dir());
+    let script = ghostty_launch_script(
+        banner,
+        arguments,
+        native.is_file().then_some(native.as_path()),
+    );
     let mut command = Command::new(GHOSTTY_BIN);
-    command.args(["-e", "zsh", "-c", &ghostty_launch_script(banner, arguments)]);
+    command
+        .arg("-e")
+        .arg(&shell)
+        .args([GHOSTTY_SHELL_FLAGS, &ghostty_shell_script(&shell, &script)]);
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
@@ -355,7 +437,7 @@ fn launch_ghostty(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult
 /// 未装 Ghostty 时的兜底：Terminal.app 系统必带。
 #[cfg(target_os = "macos")]
 fn launch_macos(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<()> {
-    let claude = claude_invocation(arguments);
+    let claude = claude_invocation(arguments, None);
     let line = match dir {
         Some(dir) => format!("cd {} && {claude}", posix_quote(dir)),
         None => claude,
@@ -657,6 +739,7 @@ mod tests {
                 Some("/Users/u's home/.claude.json"),
                 "/Users/u/.agmux/terminal/shared",
             ),
+            None,
         );
         assert!(!script.contains('\n') && !script.contains('\r'));
         // posix_quote 用 '\'' 嵌入撇号：POSIX 单引号内无转义，相邻 '' 拼接会丢撇号
@@ -671,10 +754,115 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn active_terminal_uses_default_claude_settings() {
-        let script = ghostty_launch_script("banner", "");
+        let script = ghostty_launch_script("banner", "", None);
         assert!(script.ends_with(" claude"));
         assert!(!script.contains("--settings"));
         assert!(!script.contains("--model"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_login_shell_uses_user_record_when_environment_is_missing_or_invalid() {
+        let root = tempfile::tempdir().unwrap();
+        let fish = root.path().join("fish");
+        std::fs::write(&fish, "fixture").unwrap();
+        for inherited in [None, Some("/missing/shell"), Some("bin/zsh")] {
+            assert_eq!(
+                macos_login_shell(inherited.map(std::ffi::OsStr::new), || {
+                    Ok(format!("UserShell: {}\n", fish.display()))
+                })
+                .unwrap(),
+                fish
+            );
+        }
+        assert_eq!(
+            macos_login_shell(Some(std::ffi::OsStr::new("/bin/bash")), || {
+                panic!("valid SHELL must not query the directory service")
+            })
+            .unwrap(),
+            Path::new("/bin/bash")
+        );
+        for record in ["", "UserShell: bin/bash", "UserShell: /missing/shell"] {
+            assert!(macos_login_shell(None, || Ok(record.into())).is_err());
+        }
+        assert!(macos_login_shell(None, || Err(app_err!("directory unavailable"))).is_err());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn ghostty_fish_wraps_posix_script_without_expanding_its_literals() {
+        let script = r"printf '%s' 'a\b'";
+        assert_eq!(
+            ghostty_shell_script(Path::new("/opt/homebrew/bin/fish"), script),
+            r"exec /bin/sh -c 'printf \'%s\' \'a\\b\''"
+        );
+        assert_eq!(ghostty_shell_script(Path::new("/bin/bash"), script), script);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn ghostty_loads_claude_path_from_user_shell_startup_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("user bin's");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(
+            root.path().join(".zprofile"),
+            format!(
+                "export AGMUX_TEST_CLAUDE_BIN={}\n",
+                posix_quote(bin.to_str().unwrap())
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join(".zshrc"),
+            "export PATH=\"$AGMUX_TEST_CLAUDE_BIN:$PATH\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join(".bash_profile"),
+            format!("export PATH={}:$PATH\n", posix_quote(bin.to_str().unwrap())),
+        )
+        .unwrap();
+        let claude = bin.join("claude");
+        std::fs::write(&claude, "#!/bin/sh\nprintf 'claude found:%s' \"$*\"\n").unwrap();
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            let shell = macos_login_shell(None, || Ok(format!("UserShell: {shell}"))).unwrap();
+            for executable in [None, Some(claude.as_path())] {
+                let script =
+                    ghostty_launch_script("banner", " --model 'fixture model'", executable);
+                let output = Command::new(&shell)
+                    .args([GHOSTTY_SHELL_FLAGS, &ghostty_shell_script(&shell, &script)])
+                    .env("HOME", root.path())
+                    .env("ZDOTDIR", root.path())
+                    .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}: {}",
+                    shell.display(),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(String::from_utf8_lossy(&output.stdout)
+                    .contains("claude found:--model fixture model"));
+            }
+        }
+        let output = Command::new("/bin/sh")
+            .args([
+                "-c",
+                &ghostty_launch_script("banner", " --model 'fixture model'", Some(&claude)),
+            ])
+            .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("claude found:--model fixture model")
+        );
     }
 
     #[test]
