@@ -1,4 +1,4 @@
-//! 使用 Codex 官方 stdio 协议读取安装清单，不读取凭证或修改账号。
+//! 使用 Codex 官方 stdio 协议读取安装清单与 MCP 状态，不读取凭证或修改账号。
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, Stdio};
@@ -10,10 +10,10 @@ use serde_json::{json, Value};
 
 use crate::error::{app_err, AppResult};
 
-use super::cli::{drain_pipe, find_codex_cli};
+use super::cli::{drain_pipe, find_codex_cli, CODEX_RUNTIME_NOT_FOUND};
 use super::{CodexAppSummary, MarketplacePlugin, PluginSummary};
 
-struct AppServer {
+pub(crate) struct AppServer {
     child: Child,
     responses: Receiver<Result<Value, serde_json::Error>>,
     next_id: u64,
@@ -29,12 +29,17 @@ impl Drop for AppServer {
 
 impl AppServer {
     fn start(home: &Path) -> AppResult<Self> {
-        let executable = find_codex_cli(home).ok_or_else(|| app_err!("未找到 Codex CLI"))?;
+        Self::start_with_codex_home(home, &home.join(".codex"))
+    }
+
+    pub(crate) fn start_with_codex_home(home: &Path, codex_home: &Path) -> AppResult<Self> {
+        let executable =
+            find_codex_cli(home).ok_or_else(|| app_err!("{CODEX_RUNTIME_NOT_FOUND}"))?;
         let mut command = crate::services::cli::command(&executable);
         command
             .args(["app-server", "--listen", "stdio://"])
             .current_dir(home)
-            .env("CODEX_HOME", home.join(".codex"))
+            .env("CODEX_HOME", codex_home)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -87,7 +92,7 @@ impl AppServer {
             .map_err(|error| app_err!("Codex 请求发送失败: {error}"))
     }
 
-    fn request(&mut self, method: &str, params: Value) -> AppResult<Value> {
+    pub(crate) fn request(&mut self, method: &str, params: Value) -> AppResult<Value> {
         self.next_id += 1;
         let id = self.next_id;
         self.send(json!({"id": id, "method": method, "params": params}))?;

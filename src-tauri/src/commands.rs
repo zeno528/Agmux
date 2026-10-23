@@ -1063,12 +1063,14 @@ pub fn restore_mcp_from_database(state: State<'_, AppContext>) -> AppResult<usiz
     state.restore_mcp_from_database()
 }
 
-/// 对比 live config.toml 与数据库镜像的 MCP 差异（只读不写），供同步前人工裁决。
+/// 自动收录新增 MCP，再对比 live config.toml 与数据库镜像，供同步前人工裁决。
 /// 窗口激活时会与 get_state 一起被调用，而它会等 operation 锁——重启/切换持锁数秒，
 /// 同步命令在主线程等锁会把窗口消息泵占死。与 restart_codex 同理丢到 blocking 线程：
 /// 这里确实会阻塞数秒，不能占着 async runtime 的工作线程。
 #[tauri::command]
-pub async fn codex_mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<McpSyncPreview> {
+pub async fn codex_mcp_sync_preview(
+    state: State<'_, AppContext>,
+) -> Result<McpSyncPreview, crate::error::McpSyncError> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || state.codex_mcp_sync_preview())
         .await
@@ -1076,7 +1078,9 @@ pub async fn codex_mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<M
 }
 
 #[tauri::command]
-pub async fn claude_mcp_sync_preview(state: State<'_, AppContext>) -> AppResult<McpSyncPreview> {
+pub async fn claude_mcp_sync_preview(
+    state: State<'_, AppContext>,
+) -> Result<McpSyncPreview, crate::error::McpSyncError> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || state.mcp_sync_preview(SkillTool::Claude))
         .await

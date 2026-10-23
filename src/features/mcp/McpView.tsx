@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { Trans, useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
-import { deleteCachedMcpProbe, getCachedClaudeMcpServers, getCachedMcpProbe, getCachedMcpServers, getMcpDiffBadge, loadClaudeMcpServers, loadMcpServers, mcpDiffBadgeText, setCachedMcpProbe, setClaudeMcpServersCache, setMcpDiffBadge, setMcpServersCache, subscribeMcpDiffBadge, type McpProbeScope } from "../../app/managementDataCache";
+import { beginMcpProbe, deleteCachedMcpProbe, getCachedClaudeMcpServers, getCachedMcpProbe, getCachedMcpServers, getMcpDiffBadge, loadClaudeMcpServers, loadMcpServers, mcpDiffBadgeText, setCachedMcpProbe, setClaudeMcpServersCache, setMcpDiffBadge, setMcpServersCache, subscribeMcpDiffBadge, type McpProbeScope } from "../../app/managementDataCache";
 import { AppSwitch } from "../../components/AppSwitch";
 import { ClientTargetSwitch } from "../../components/ClientTargetSwitch";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -14,12 +14,19 @@ import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { McpIcon } from "../../components/McpIcon";
 import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
 import { useMenuDismiss } from "../../components/useMenuDismiss";
-import type { McpDiffEntryAction, McpProbeResult, McpServerSpec, McpSyncDiffEntry, McpSyncPreview } from "../../types";
+import type { McpDiffEntryAction, McpProbeResult, McpServerSpec, McpSyncDiffEntry, McpSyncError, McpSyncPreview } from "../../types";
 import ClaudeMcpEdit from "./ClaudeMcpEdit";
 import McpDiffPage from "./McpDiffPage";
 import McpEdit from "./McpEdit";
 
 type Transport = "http" | "stdio" | "unknown";
+
+export function mcpSyncFailure(error: unknown): McpSyncError {
+  if (error !== null && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return { message: error.message, config_invalid: "config_invalid" in error && error.config_invalid === true };
+  }
+  return { message: String(error), config_invalid: false };
+}
 
 export type McpDiffVerb = "adopt" | "revert";
 export type McpTarget = "codex" | "claude";
@@ -97,9 +104,9 @@ function cachedProbeState(servers: McpServerSpec[], scope: McpProbeScope = "code
 
 /// MCP 探测状态机：Codex 与 Claude 两页共用同一套探测/工具清单/缓存逻辑，缓存按 scope 隔离。
 /// probe 一条函数覆盖两条路径：includeTools=false 只验连通（结果连同细节入库缓存），
-/// includeTools=true 拉工具清单（失败不覆盖既有连通结论，只报错——灯反映的是连通性，不是清单拉取）。
+/// includeTools=true 拉工具清单，同时更新连接状态；工具清单自身的错误不改变连通结论。
 /// manual 控制是否给用户反馈与后端 manual 标记，静默重探传 false；showLoading 默认跟随 manual。
-function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
+export function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
   const feedback = useFeedback();
   const { t } = useTranslation("mcp");
   const [probingNames, setProbingNames] = useState<Record<string, boolean>>({});
@@ -107,9 +114,12 @@ function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
   const [toolsOpen, setToolsOpen] = useState<Record<string, boolean>>({});
   const [toolsLoading, setToolsLoading] = useState<Record<string, boolean>>({});
   const [toolsLoaded, setToolsLoaded] = useState<Record<string, boolean>>(() => cachedProbeState(initialServers, scope).toolsLoaded);
+  const loadingRequests = useRef<Record<string, () => boolean>>({});
 
-  const notifyFailure = (name: string, message: string) => {
-    if (/(超时|timeout|timed out)/i.test(message)) feedback.warning(t("list.connectionTimeout", { name })); // i18n-exempt: 匹配后端错误原文
+  const notifyFailure = (name: string, message: string, state?: McpProbeResult["connection_state"]) => {
+    if (state === "unknown") feedback.warning(t("list.connectionUnknown", { name }));
+    else if (state === "authentication_required") feedback.warning(t("list.authenticationRequired", { name }));
+    else if (/(超时|timeout|timed out)/i.test(message)) feedback.warning(t("list.connectionTimeout", { name })); // i18n-exempt: 匹配后端错误原文
     else feedback.error(t("list.connectionFailed", { name }));
   };
 
@@ -125,6 +135,9 @@ function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
   const probe = async (server: McpServerSpec, { includeTools = false, manual = true, showLoading = manual }: { includeTools?: boolean; manual?: boolean; showLoading?: boolean } = {}) => {
     const name = server.name;
     const fingerprint = mcpServerFingerprint(server);
+    const isCurrent = beginMcpProbe(name, scope);
+    const loadingKey = `${includeTools ? "tools" : "connection"}:${name}`;
+    loadingRequests.current[loadingKey] = isCurrent;
     // 连通探测不带工具清单：之前取到的工具列表跨探测保留，不因一次重探清空
     const keepTools = (result: McpProbeResult) => {
       const cached = getCachedMcpProbe(name, fingerprint, scope);
@@ -145,7 +158,9 @@ function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
     }
     try {
       const result = await api.probeMcpServer(name, includeTools, manual, scope);
+      if (!isCurrent()) return;
       if (includeTools) {
+        remember(keepTools(result), false);
         if (!result.ok) throw new Error(result.error ?? t("list.connectionFailed", { name }));
         if (result.tools_error) throw new Error(result.tools_error);
         remember(result, true);
@@ -154,22 +169,26 @@ function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec[]) {
         remember(next, getCachedMcpProbe(name, fingerprint, scope)?.toolsLoaded ?? false);
         if (manual) {
           if (next.ok) feedback.success(t("list.connectionSuccess", { name, ms: next.latency_ms ?? "-" }));
-          else notifyFailure(name, next.error ?? "");
+          else notifyFailure(name, next.error ?? "", next.connection_state);
         }
       }
     } catch (error) {
+      if (!isCurrent()) return;
       if (includeTools) {
         if (manual) feedback.error(String(error));
       } else {
-        const result = keepTools({ ok: false, latency_ms: null, status: null, protocol_version: null, server_info: null, tools: [], tools_truncated: false, error: String(error), tools_error: null });
+        const result = keepTools({ ok: false, connection_state: "unknown", latency_ms: null, status: null, protocol_version: null, server_info: null, tools: [], tools_truncated: false, error: String(error), tools_error: null });
         remember(result, getCachedMcpProbe(name, fingerprint, scope)?.toolsLoaded ?? false);
-        if (manual) notifyFailure(name, String(error));
+        if (manual) notifyFailure(name, String(error), result.connection_state);
       }
     } finally {
-      if (includeTools) {
-        if (showLoading) setToolsLoading((current) => { const next = { ...current }; delete next[name]; return next; });
-      } else if (showLoading) {
-        setProbingNames((current) => { const next = { ...current }; delete next[name]; return next; });
+      if (loadingRequests.current[loadingKey] === isCurrent) {
+        delete loadingRequests.current[loadingKey];
+        if (includeTools) {
+          setToolsLoading((current) => { const next = { ...current }; delete next[name]; return next; });
+        } else {
+          setProbingNames((current) => { const next = { ...current }; delete next[name]; return next; });
+        }
       }
     }
   };
@@ -275,6 +294,9 @@ type McpServerRowProps = {
 
 export function McpServerRow({ server, result, probing, detailsVisible, toolsBusy, toolsLoaded, onEdit, onDelete, onProbe, onToggleTools, onToggleEnabled }: McpServerRowProps) {
   const { t } = useTranslation("mcp");
+  const unknown = result?.connection_state === "unknown";
+  const needsAuth = result?.connection_state === "authentication_required";
+  const connectionLabel = t(server.enabled === false ? "list.testConnectionDisabled" : probing ? "list.connectionStateChecking" : unknown || !result ? "list.connectionStateUnknown" : needsAuth ? "list.connectionStateAuthRequired" : result.ok ? "list.connectionStateConnected" : "list.connectionStateUnavailable");
   const testTitle = t(server.enabled === false ? "list.testConnectionDisabled" : "list.testConnection");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -314,17 +336,21 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span
-                className={`h-2 w-2 shrink-0 rounded-full ${server.enabled === false || !result ? "bg-(--text-secondary)" : result.ok ? "bg-success" : "bg-(--danger)"}`}
+                className={`h-2 w-2 shrink-0 rounded-full ${server.enabled === false || !result || unknown ? "bg-(--text-secondary)" : needsAuth ? "bg-(--warning)" : result.ok ? "bg-success" : "bg-(--danger)"}`}
                 role="img"
-                aria-label={t(server.enabled === false ? "list.testConnectionDisabled" : probing ? "list.connectionStateChecking" : result?.ok ? "list.connectionStateConnected" : "list.connectionStateUnavailable")}
+                aria-label={connectionLabel}
+                title={result?.error ?? connectionLabel}
               />
               <span className="min-w-0 truncate font-semibold">{server.name}</span>
               <MetaChip>{server?.url ? "HTTP" : server?.command ? "STDIO" : t("transport.unknown")}</MetaChip>
+              {needsAuth ? <MetaChip>{t("list.connectionStateAuthRequired")}</MetaChip> : result?.auth_status === "oAuth" ? <MetaChip>{t("list.oauthAuthorized")}</MetaChip> : null}
+              {unknown ? <MetaChip>{t("list.connectionStateUnknown")}</MetaChip> : null}
               {result?.server_info?.version ? <MetaChip>{result.server_info.version}</MetaChip> : null}
               {toolsLoaded ? <MetaChip>{t("list.toolCount", { count: result?.tools.length ?? 0 })}</MetaChip> : null}
               {toolsBusy ? <span className="muted shrink-0"><LoadingSpinner /></span> : null}
             </div>
             <div className="mono muted meta-xs truncate">{metaOf(server)}</div>
+            {result?.error ? <div className="muted meta-xs">{result.error}</div> : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -356,7 +382,7 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
   );
 }
 
-function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: McpClientViewProps & { target: McpTarget }) {
+export function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: McpClientViewProps & { target: McpTarget }) {
   const feedback = useFeedback();
   const { t } = useTranslation("mcp");
   const cachedServers = target === "codex" ? getCachedMcpServers() : getCachedClaudeMcpServers();
@@ -369,6 +395,7 @@ function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: Mc
   const optimisticToggle = optimisticToggleEnabled(setServers, target === "codex" ? setMcpServersCache : setClaudeMcpServersCache);
   const [syncPreview, setSyncPreview] = useState<McpSyncPreview | null>(null);
   const [previewError, setPreviewError] = useState("");
+  const [previewConfigInvalid, setPreviewConfigInvalid] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [resolving, setResolving] = useState(false);
   const previewInFlight = useRef(false);
@@ -388,15 +415,17 @@ function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: Mc
       const preview = await (target === "codex" ? api.codexMcpSyncPreview() : api.claudeMcpSyncPreview());
       setSyncPreview(preview);
       setPreviewError("");
+      setPreviewConfigInvalid(false);
       if (!preview.entries.length) setDiffOpen(false);
       // 侧栏角标与页面同源：页面查到就写回共享缓存
       setMcpDiffBadge({ count: preview.entries.length, error: false }, target);
     }
     catch (error) {
-      setPreviewError(String(error));
+      const failure = mcpSyncFailure(error);
+      setPreviewError(failure.message);
+      setPreviewConfigInvalid(failure.config_invalid);
       setSyncPreview(null);
-      // 差异算不出来本身就是一种状态：写回 error 让侧栏跟着亮，
-      // 否则用户不点进 MCP 页就不知道 config.toml 坏了
+      // 检查失败也写回侧栏；只有后端确认解析失败才允许重建。
       setMcpDiffBadge({ count: 0, error: true }, target);
     }
     finally { previewInFlight.current = false; }
@@ -434,9 +463,14 @@ function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: Mc
     void refresh(true);
   }, []);
 
-  // 窗口激活时刷新当前客户端的差异预览。
-  // epoch=0 表示尚未激活过（含首次挂载，此时上面的 refresh 已经取过预览），不重复请求。
-  useEffect(() => { if (activationEpoch === 0) return; if (target === "claude") void refresh(true, []); else void loadPreview(); }, [activationEpoch]);
+  // 窗口激活时刷新列表和差异，并复查 Codex 远程服务的外部授权变化。
+  const previousActivation = useRef(activationEpoch);
+  useEffect(() => {
+    if (previousActivation.current === activationEpoch) return;
+    previousActivation.current = activationEpoch;
+    // 浏览器授权后回到窗口，重新经 Codex 验证远程 MCP 的最新授权与连接。
+    void refresh(true, target === "codex" ? servers.filter((server) => server.url).map((server) => server.name) : []);
+  }, [activationEpoch]);
 
   const removeServer = async (server: McpServerSpec) => {
     const confirmed = await feedback.confirm({ title: t("confirm.deleteTitle"), description: <Trans ns="mcp" i18nKey="confirm.deleteDescription" values={{ name: server.name }} components={{ strong: <strong /> }} />, confirmText: t("confirm.delete"), destructive: true });
@@ -525,6 +559,7 @@ function McpClientView({ target, activationEpoch, popEpoch, onHeaderChange }: Mc
         target={target}
         preview={syncPreview}
         previewError={previewError}
+        configInvalid={previewConfigInvalid}
         resolving={resolving}
         onBack={() => setDiffOpen(false)}
         onResolve={(entry, verb) => void resolveEntry(entry, verb)}

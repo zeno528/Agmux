@@ -264,6 +264,7 @@ const proxyStatus = createManagementCache<ProxyStatus>(async () => {
   }
 }, { key: "agmux.proxy-status-v1", restore: restoreProxyStatus });
 const mcpProbes = new Map<string, McpProbeCacheEntry>();
+const mcpProbeRequests = new Map<string, symbol>();
 let mcpProbeStorageLoaded = false;
 
 function mcpProbeCacheKey(name: string, scope: McpProbeScope): string {
@@ -618,6 +619,13 @@ export function getCachedMcpProbe(name: string, fingerprint: string, scope: McpP
   return entry?.fingerprint === fingerprint ? entry : null;
 }
 
+export function beginMcpProbe(name: string, scope: McpProbeScope): () => boolean {
+  const key = mcpProbeCacheKey(name, scope);
+  const request = Symbol();
+  mcpProbeRequests.set(key, request);
+  return () => mcpProbeRequests.get(key) === request;
+}
+
 export function setCachedMcpProbe(name: string, entry: McpProbeCacheEntry, scope: McpProbeScope = "codex"): void {
   loadMcpProbeStorage();
   mcpProbes.set(mcpProbeCacheKey(name, scope), entry);
@@ -626,5 +634,6 @@ export function setCachedMcpProbe(name: string, entry: McpProbeCacheEntry, scope
 
 export function deleteCachedMcpProbe(name: string, scope: McpProbeScope = "codex"): void {
   loadMcpProbeStorage();
+  mcpProbeRequests.delete(mcpProbeCacheKey(name, scope));
   if (mcpProbes.delete(mcpProbeCacheKey(name, scope))) persistMcpProbeStorage();
 }

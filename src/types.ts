@@ -103,6 +103,8 @@ export interface McpTool {
 
 export interface McpProbeResult {
   ok: boolean;
+  connection_state?: "connected" | "authentication_required" | "failed" | "unknown" | null;
+  auth_status?: string | null;
   latency_ms: number | null;
   status: number | null;
   protocol_version: string | null;
@@ -135,6 +137,11 @@ export interface McpSyncPreview {
   entries: McpSyncDiffEntry[];
   live_count: number;
   db_count: number;
+}
+
+export interface McpSyncError {
+  message: string;
+  config_invalid: boolean;
 }
 
 export interface TomlDiagnostic {

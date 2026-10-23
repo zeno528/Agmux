@@ -15,6 +15,31 @@ impl Serialize for AppError {
 
 pub type AppResult<T> = Result<T, AppError>;
 
+#[derive(Debug, Serialize, thiserror::Error)]
+#[error("{message}")]
+pub struct McpSyncError {
+    pub message: String,
+    pub config_invalid: bool,
+}
+
+impl McpSyncError {
+    pub fn invalid_config(error: AppError) -> Self {
+        Self {
+            message: error.0,
+            config_invalid: true,
+        }
+    }
+}
+
+impl From<AppError> for McpSyncError {
+    fn from(error: AppError) -> Self {
+        Self {
+            message: error.0,
+            config_invalid: false,
+        }
+    }
+}
+
 macro_rules! app_err {
     ($($arg:tt)*) => {
         crate::error::AppError(format!($($arg)*))

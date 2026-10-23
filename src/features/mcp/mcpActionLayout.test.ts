@@ -15,6 +15,28 @@ const sharedFormSource = readFileSync(new URL("./McpConnectionForm.tsx", import.
 
 describe("MCP 操作入口", () => {
   it.each([
+    { connection_state: "unknown" as const, auth_status: null, label: "状态未知", color: "bg-(--text-secondary)" },
+    { connection_state: "authentication_required" as const, auth_status: "notLoggedIn", label: "需要授权", color: "bg-(--warning)" },
+    { connection_state: "connected" as const, auth_status: "oAuth", label: "已连通", color: "bg-success" },
+  ])("客户端检测结果显示 $connection_state", ({ connection_state, auth_status, label, color }) => {
+    setupI18n("zh-CN");
+    const noop = () => undefined;
+    const html = renderToStaticMarkup(createElement(McpServerRow, {
+      server: { name: "cloudflare", enabled: true, command: null, args: [], env: {}, url: "https://mcp.cloudflare.com/mcp",
+        startup_timeout_sec: null, tool_timeout_sec: null, bearer_token_env_var: null, http_headers: {}, env_http_headers: {} },
+      result: { ok: connection_state === "connected", connection_state, auth_status,
+        latency_ms: 1, status: null, protocol_version: null, server_info: null, tools: [], tools_truncated: false,
+        error: connection_state === "unknown" ? "无法通过 Codex 确认状态" : null, tools_error: null },
+      probing: false, detailsVisible: false, toolsBusy: false, toolsLoaded: false,
+      onEdit: noop, onDelete: noop, onProbe: noop, onToggleTools: noop,
+    }));
+    const indicator = html.match(/<span\b[^>]*role="img"[^>]*>/)![0];
+    expect(indicator).toContain(color);
+    expect(indicator).toContain(`aria-label="${label}"`);
+    if (auth_status === "oAuth") expect(html).toContain("OAuth 已授权");
+    if (connection_state === "unknown") expect(html).toContain("无法通过 Codex 确认状态");
+  });
+  it.each([
     { enabled: false, ok: true, probing: true, color: "bg-(--text-secondary)", label: "已禁用" },
     { enabled: false, ok: false, probing: false, color: "bg-(--text-secondary)", label: "已禁用" },
     { enabled: true, ok: undefined, probing: false, color: "bg-(--text-secondary)" },
@@ -201,10 +223,10 @@ describe("MCP 操作入口", () => {
     expect(viewSource).not.toContain("setProbeResults({});");
   });
 
-  it("Claude MCP 进页和激活强刷列表，单条保存、删除和开关不全量重探", () => {
+  it("MCP 进页和激活强刷列表，单条保存、删除和开关不全量重探", () => {
     const claude = viewSource.slice(viewSource.indexOf("function McpClientView("));
     expect(claude).toContain("void refresh(true);");
-    expect(claude).toContain('if (target === "claude") void refresh(true, []);');
+    expect(claude).toContain('target === "codex" ? servers.filter((server) => server.url).map((server) => server.name) : []');
     expect(claude).toContain("await refresh(true, []);");
     expect(claude).toContain("void refresh(true, [name]);");
     expect(claude).toContain("refresh(true, enabled ? [target.name] : [])");

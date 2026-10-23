@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use super::plugins::SkillTool;
 use super::{app_err, AppContext, AppResult};
-use crate::models::{McpProbeResult, McpServerInfo, McpServerSpec, McpTool};
+use crate::models::{McpConnectionState, McpProbeResult, McpServerInfo, McpServerSpec, McpTool};
 
 /// 我们声明支持的最高协议版本。2026-07-28 那版把 initialize 握手取消了，改成每个请求
 /// 自带版本号，所以能声明的最高版就是最后一个握手式 revision。报低会被服务端降级迁就
@@ -55,6 +55,8 @@ fn failed_result(
 ) -> McpProbeResult {
     McpProbeResult {
         ok: false,
+        connection_state: None,
+        auth_status: None,
         latency_ms: Some(start.elapsed().as_millis()),
         status,
         protocol_version: None,
@@ -536,6 +538,8 @@ async fn probe_http_inner(
     };
     McpProbeResult {
         ok: true,
+        connection_state: None,
+        auth_status: None,
         latency_ms: handshake_latency_ms,
         status: Some(status),
         protocol_version: Some(protocol_version),
@@ -795,6 +799,8 @@ fn probe_stdio(spec: &McpServerSpec, include_tools: bool) -> McpProbeResult {
                     };
                     McpProbeResult {
                         ok: true,
+                        connection_state: None,
+                        auth_status: None,
                         latency_ms: Some(handshake_start.elapsed().as_millis()),
                         status: None,
                         protocol_version: Some(protocol_version),
@@ -820,6 +826,126 @@ fn probe_stdio(spec: &McpServerSpec, include_tools: bool) -> McpProbeResult {
     result
 }
 
+fn codex_status_result(status: &Value, start: Instant, include_tools: bool) -> McpProbeResult {
+    let auth = status.get("authStatus").and_then(Value::as_str);
+    let runtime = status.get("runtimeStatus").and_then(Value::as_str);
+    let initialized = status
+        .get("serverCapabilities")
+        .is_some_and(Value::is_object);
+    let state = match runtime {
+        Some("connected") => McpConnectionState::Connected,
+        Some("authenticationRequired") => McpConnectionState::AuthenticationRequired,
+        Some("failed") => McpConnectionState::Failed,
+        // 旧版本不返回 runtimeStatus，能力对象只在握手成功后才存在。
+        None if initialized => McpConnectionState::Connected,
+        None if auth == Some("notLoggedIn") => McpConnectionState::AuthenticationRequired,
+        None if status
+            .get("toolsError")
+            .is_some_and(|error| !error.is_null()) =>
+        {
+            McpConnectionState::Failed
+        }
+        _ => McpConnectionState::Unknown,
+    };
+    let message = match state {
+        McpConnectionState::Connected => "",
+        McpConnectionState::AuthenticationRequired => {
+            "Codex MCP 需要授权或重新授权，请在 Codex 中完成登录后重新检测"
+        }
+        McpConnectionState::Failed => "Codex 无法连接此 MCP，请检查客户端中的连接错误后重试",
+        McpConnectionState::Unknown => "Codex 未能确认此 MCP 的连接状态，请重新检测",
+    };
+    let mut result = failed_result(start, None, message);
+    result.connection_state = Some(state);
+    result.auth_status = auth
+        .filter(|auth| {
+            matches!(
+                *auth,
+                "oAuth" | "bearerToken" | "notLoggedIn" | "unsupported" | "unknown"
+            )
+        })
+        .map(str::to_owned);
+    result.ok = state == McpConnectionState::Connected;
+    result.error = (!result.ok).then(|| message.to_owned());
+    result.server_info = parse_server_info(status);
+    if include_tools && result.ok {
+        if let Some(tools) = status.get("tools").and_then(Value::as_object) {
+            result.tools_truncated = tools.len() > MAX_TOOLS;
+            for tool in tools.values().take(MAX_TOOLS) {
+                let Ok(tool) = serde_json::from_value::<RawTool>(tool.clone()) else {
+                    result.tools_error = Some("Codex 返回的 MCP 工具格式无效".into());
+                    break;
+                };
+                result.tools.push(McpTool {
+                    name: tool.name,
+                    title: tool.title,
+                    description: tool.description,
+                    input_schema: tool.input_schema,
+                });
+            }
+        } else {
+            result.tools_error = Some("Codex 未返回 MCP 工具列表".into());
+        }
+        if status
+            .get("toolsError")
+            .is_some_and(|error| !error.is_null())
+        {
+            // 客户端错误可能内嵌配置或凭据，不传回原文。
+            result.tools_error = Some("Codex 已连接，但 MCP 工具列表读取失败，请重试".into());
+        }
+    }
+    result
+}
+
+fn probe_codex(codex_home: &std::path::Path, name: &str, include_tools: bool) -> McpProbeResult {
+    let start = Instant::now();
+    let read = || -> AppResult<Value> {
+        let home = codex_home
+            .parent()
+            .ok_or_else(|| app_err!("Codex 配置目录无父目录"))?;
+        let mut server =
+            super::plugins::appserver::AppServer::start_with_codex_home(home, codex_home)?;
+        server.request(
+            "mcpServerStatus/list",
+            json!({
+                "serverName": name, "detail": "toolsAndAuthOnly",
+            }),
+        )
+    };
+    match read() {
+        Ok(response) => {
+            if let Some(status) =
+                response
+                    .get("data")
+                    .and_then(Value::as_array)
+                    .and_then(|servers| {
+                        servers
+                            .iter()
+                            .find(|status| status.get("name").and_then(Value::as_str) == Some(name))
+                    })
+            {
+                return codex_status_result(status, start, include_tools);
+            }
+            let mut result = failed_result(
+                start,
+                None,
+                "Codex 未返回此 MCP 的状态，请更新客户端后重新检测",
+            );
+            result.connection_state = Some(McpConnectionState::Unknown);
+            result
+        }
+        Err(error) => {
+            let mut result = failed_result(
+                start,
+                None,
+                format!("无法通过 Codex 确认 MCP 状态：{error}"),
+            );
+            result.connection_state = Some(McpConnectionState::Unknown);
+            result
+        }
+    }
+}
+
 impl AppContext {
     pub async fn probe_mcp_server(
         &self,
@@ -839,6 +965,17 @@ impl AppContext {
         .ok_or_else(|| app_err!("找不到 MCP 服务器: {name}"))?;
         if server.enabled == Some(false) {
             return Err(app_err!("MCP 服务器已禁用: {name}"));
+        }
+        if matches!(tool, SkillTool::Codex) {
+            let codex_home = self.paths.codex_home.clone();
+            let name = name.to_owned();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                probe_codex(&codex_home, &name, include_tools)
+            })
+            .await
+            .map_err(|error| app_err!("Codex MCP 测试任务失败: {error}"))?;
+            log_probe_outcome(&server.name, include_tools, manual, &result, " via=codex");
+            return Ok(result);
         }
         let is_http = server.url.is_some() && server.command.is_none();
         // HTTP 探测需要代理归因；stdio 子进程的网络不受应用控制，日志不标注走向
@@ -895,7 +1032,11 @@ fn log_probe_outcome(
         // 静默探测失败也记：状态点错过仍可在日志溯源
         let error = result.error.as_deref().unwrap_or("未知错误");
         // 版本协商失败优先判：它走 HTTP 时 status 是 200，会被兜底成 http_error——那是谎报军情
-        let failure_kind = if error.contains("不支持协议版本") {
+        let failure_kind = if result.connection_state == Some(McpConnectionState::Unknown) {
+            "unknown"
+        } else if result.connection_state == Some(McpConnectionState::AuthenticationRequired) {
+            "auth_error"
+        } else if error.contains("不支持协议版本") {
             "protocol_error"
         } else {
             match result.status {
@@ -948,6 +1089,120 @@ mod tests {
     };
     use crate::models::McpTool;
     use serde_json::{json, Value};
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_probe_uses_client_protocol_and_rejects_missing_server_status() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().unwrap();
+        let codex_home = home.path().join(".codex");
+        let cli = codex_home.join("bin/codex");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$CODEX_HOME/requests.jsonl"
+  case "$line" in
+    *'"method":"initialize"'*) printf '%s\n' '{"id":1,"result":{}}' ;;
+    *'"method":"mcpServerStatus/list"'*) printf '{"id":2,"result":'; cat "$CODEX_HOME/status.json"; printf '}\n' ;;
+  esac
+done
+"#).unwrap();
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(
+            codex_home.join("status.json"),
+            json!({"data":[{
+                "name":"cloudflare", "authStatus":"oAuth", "serverCapabilities":{}, "tools":{}
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let result = super::probe_codex(&codex_home, "cloudflare", true);
+        assert!(result.ok);
+        assert_eq!(result.auth_status.as_deref(), Some("oAuth"));
+        let requests = std::fs::read_to_string(codex_home.join("requests.jsonl")).unwrap();
+        let request: Value = requests
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find(|request| request["method"] == "mcpServerStatus/list")
+            .unwrap();
+        assert_eq!(request["params"]["serverName"], "cloudflare");
+        assert_eq!(request["params"]["detail"], "toolsAndAuthOnly");
+        std::fs::write(codex_home.join("status.json"), r#"{"data":[]}"#).unwrap();
+        let result = super::probe_codex(&codex_home, "cloudflare", false);
+        assert!(!result.ok);
+        assert_eq!(
+            result.connection_state,
+            Some(crate::models::McpConnectionState::Unknown)
+        );
+    }
+
+    #[test]
+    fn codex_oauth_probe_requires_connection_evidence_and_keeps_auth_separate() {
+        use crate::models::McpConnectionState;
+        use std::time::Instant;
+        let connected = json!({
+            "authStatus": "oAuth", "runtimeStatus": null,
+            "serverCapabilities": {"tools": {}},
+            "serverInfo": {"name": "cloudflare-api", "version": "0.1.0"},
+            "tools": {"whoami": {"name": "whoami", "inputSchema": {"type":"object"}}},
+            "toolsError": null,
+        });
+        let result = super::codex_status_result(&connected, Instant::now(), true);
+        assert!(result.ok);
+        assert_eq!(result.auth_status.as_deref(), Some("oAuth"));
+        assert_eq!(result.tools[0].name, "whoami");
+        for (runtime, expected) in [
+            (
+                "authenticationRequired",
+                McpConnectionState::AuthenticationRequired,
+            ),
+            ("failed", McpConnectionState::Failed),
+            ("starting", McpConnectionState::Unknown),
+            ("futureStatus", McpConnectionState::Unknown),
+        ] {
+            let mut status = connected.clone();
+            status["runtimeStatus"] = runtime.into();
+            let result = super::codex_status_result(&status, Instant::now(), true);
+            assert!(!result.ok);
+            assert_eq!(result.connection_state, Some(expected));
+            assert!(result.tools.is_empty());
+        }
+        let result =
+            super::codex_status_result(&json!({"authStatus":"oAuth"}), Instant::now(), false);
+        assert!(!result.ok, "仅保存 OAuth 凭据不能证明已连接");
+        assert_eq!(result.connection_state, Some(McpConnectionState::Unknown));
+        let result =
+            super::codex_status_result(&json!({"authStatus":"notLoggedIn"}), Instant::now(), false);
+        assert_eq!(
+            result.connection_state,
+            Some(McpConnectionState::AuthenticationRequired)
+        );
+        let mut tools_failed = connected;
+        tools_failed["toolsError"] = "sensitive-client-error".into();
+        let result = super::codex_status_result(&tools_failed, Instant::now(), true);
+        assert!(result.ok, "工具清单错误不覆盖已成功的连接");
+        assert!(!result
+            .tools_error
+            .unwrap()
+            .contains("sensitive-client-error"));
+        let startup_failed = json!({
+            "authStatus": "unsupported", "runtimeStatus": null, "serverCapabilities": null,
+            "tools": {}, "toolsError": "MCP startup failed: sensitive-client-error",
+        });
+        for include_tools in [false, true] {
+            let result = super::codex_status_result(&startup_failed, Instant::now(), include_tools);
+            assert!(!result.ok);
+            assert_eq!(result.connection_state, Some(McpConnectionState::Failed));
+            assert!(!result.error.unwrap().contains("sensitive-client-error"));
+        }
+        let mut needs_auth = startup_failed;
+        needs_auth["authStatus"] = "notLoggedIn".into();
+        let result = super::codex_status_result(&needs_auth, Instant::now(), false);
+        assert_eq!(
+            result.connection_state,
+            Some(McpConnectionState::AuthenticationRequired)
+        );
+    }
 
     /// 假 tools/list 数据源：按顺序吐页，fail_from 起模拟请求失败。
     struct FakeTools {

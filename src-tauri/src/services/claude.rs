@@ -1550,9 +1550,9 @@ mod tests {
     }
 
     #[test]
-    fn claude_mcp_diff_empty_database_adopt_and_revert_preserve_native_json() {
+    fn claude_mcp_import_and_diff_revert_preserve_native_json() {
         let (home, context) = test_context();
-        // 先让 seed 静默建立基线，native 才能以"外部新增"的身份进入差异页
+        // 已有 seed 后新增 native 也应静默入库。
         let seed =
             r#"{"mcpServers":{"seed":{"type":"http","url":"https://seed.example.test/mcp"}}}"#;
         std::fs::write(context.paths.claude_mcp_config(), seed).unwrap();
@@ -1564,21 +1564,9 @@ mod tests {
         let external = r#"{"mcpServers":{"native":{"type":"sse","url":"https://example.test/mcp","custom":1},"seed":{"type":"http","url":"https://seed.example.test/mcp"}},"projects":{"keep":true}}"#;
         std::fs::write(context.paths.claude_mcp_config(), external).unwrap();
         let preview = context.mcp_sync_preview(SkillTool::Claude).unwrap();
-        assert_eq!(preview.entries.len(), 1);
-        assert_eq!(
-            preview.entries[0].kind,
-            crate::models::McpSyncEntryKind::LiveOnly
-        );
-        assert!(context
-            .database
-            .mcp_server_record("native")
-            .unwrap()
-            .is_none());
-        let adopt = crate::models::McpDiffEntryAction {
-            name: "native".into(),
-            fragment: preview.entries[0].live_toml.clone(),
-        };
-        context.claude_resolve_mcp_entries(&[adopt], true).unwrap();
+        assert!(preview.entries.is_empty());
+        assert_eq!(preview.live_count, 2);
+        assert_eq!(preview.db_count, 2);
         assert_eq!(
             std::fs::read_to_string(context.paths.claude_mcp_config()).unwrap(),
             external
@@ -1590,6 +1578,10 @@ mod tests {
             .unwrap();
         assert!(!record.codex_installed && !record.codex_enabled);
         assert!(record.claude_installed && record.claude_enabled);
+        let native: serde_json::Value =
+            serde_json::from_str(record.claude_json.as_deref().unwrap()).unwrap();
+        assert_eq!(native["custom"], 1);
+        assert_eq!(native["type"], "sse");
         assert!(context
             .mcp_sync_preview(SkillTool::Claude)
             .unwrap()

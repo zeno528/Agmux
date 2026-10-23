@@ -3,6 +3,7 @@ use super::{
     McpDiffEntryAction, McpServerSpec, McpSyncDiffEntry, McpSyncEntryKind, McpSyncPreview,
 };
 use crate::database::{Database, McpServerRecord};
+use crate::error::McpSyncError;
 use crate::paths::AppPaths;
 use crate::services::plugins::SkillTool;
 
@@ -331,26 +332,26 @@ impl AppContext {
     }
 
     /// 对比 live config.toml 与数据库镜像的 MCP 差异，供同步前人工裁决。
-    /// 首次进入（该端在镜像里没有基线）时先把现场静默导入镜像。
+    /// 新增条目先静默导入镜像，已有条目的修改和删除仍需裁决。
     /// live 无法解析时返回错误，前端进入“仅可从数据库恢复”降级模式。
-    pub fn codex_mcp_sync_preview(&self) -> AppResult<McpSyncPreview> {
+    pub fn codex_mcp_sync_preview(&self) -> Result<McpSyncPreview, McpSyncError> {
         self.mcp_sync_preview(SkillTool::Codex)
     }
 
-    pub fn mcp_sync_preview(&self, tool: SkillTool) -> AppResult<McpSyncPreview> {
+    pub fn mcp_sync_preview(&self, tool: SkillTool) -> Result<McpSyncPreview, McpSyncError> {
         let _guard = self
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
         let mut records = self.database.mcp_server_records()?;
-        // 首次进入该端：现场静默成为基线，避免"库为空 ⇒ 全是新增"的必然差异。
-        if self.establish_mcp_baseline(tool, &records)? {
+        if self.import_new_mcp_servers(tool, &records)? {
             records = self.database.mcp_server_records()?;
         }
         // 每侧只保存一份名称 -> (展示片段, 建模字段, Claude JSON)，不另建索引。
         let (live, db) = match tool {
             SkillTool::Codex => {
-                let document = codex_config::parse_document(&self.read_live_config()?)?;
+                let document = codex_config::parse_document(&self.read_live_config()?)
+                    .map_err(McpSyncError::invalid_config)?;
                 let convert = |fragments: Vec<(String, String)>| -> BTreeMap<_, _> {
                     fragments
                         .into_iter()
@@ -367,7 +368,9 @@ impl AppContext {
                 )
             }
             SkillTool::Claude => {
-                let document = self.read_claude_mcp_document()?;
+                let document = self
+                    .read_claude_mcp_document()
+                    .map_err(McpSyncError::invalid_config)?;
                 let convert = |name: &str, entry: &serde_json::Value| -> AppResult<_> {
                     let spec = super::claude::claude_entry_to_spec(name, entry)?;
                     // 复用投影规则比较 JSON，键顺序和缺省字段不会产生伪差异。
@@ -449,39 +452,44 @@ impl AppContext {
         })
     }
 
-    /// 首次进入某端 MCP 页（该端在镜像里没有任何安装行）时，把现场静默导入为基线：
-    /// 只写镜像、不碰 live，避免"库为空 ⇒ 全是新增"的必然差异。残缺条目跳过，
-    /// 留给随后的正常差异计算暴露。返回是否建立了基线。
-    fn establish_mcp_baseline(
+    /// 只导入该端尚未安装的条目，不碰 live 或覆盖已有快照；残缺条目留给差异处理。
+    fn import_new_mcp_servers(
         &self,
         tool: SkillTool,
         records: &[McpServerRecord],
-    ) -> AppResult<bool> {
-        if !records.iter().all(|record| match tool {
-            SkillTool::Codex => !record.codex_installed,
-            SkillTool::Claude => !record.claude_installed,
-        }) {
-            return Ok(false);
-        }
+    ) -> Result<bool, McpSyncError> {
         let (imported, skipped) = match tool {
             SkillTool::Codex => {
-                let document = codex_config::parse_document(&self.read_live_config()?)?;
+                let document = codex_config::parse_document(&self.read_live_config()?)
+                    .map_err(McpSyncError::invalid_config)?;
                 let (fragments, invalid): (Vec<_>, Vec<_>) =
                     codex_config::mcp_server_fragments_from_document(&document)
                         .into_iter()
                         .filter(|(name, _)| !codex_config::is_managed_mcp_name(name))
+                        .filter(|(name, _)| {
+                            !records
+                                .iter()
+                                .any(|record| record.name == *name && record.codex_installed)
+                        })
                         .partition(|(name, fragment)| {
                             codex_config::spec_from_fragment(name, fragment)
                                 .is_some_and(|spec| validate_mcp_connection(&spec).is_ok())
                         });
                 let imported = fragments.len();
                 if imported > 0 {
-                    self.replace_mcp_mirror(&fragments)?;
+                    let mut combined = Self::codex_active_fragments(records);
+                    combined.extend(fragments.iter().cloned());
+                    self.replace_mcp_mirror(&combined)?;
+                    for (name, _) in &fragments {
+                        self.database.set_codex_mcp_enabled(name, true)?;
+                    }
                 }
                 (imported, invalid.len())
             }
             SkillTool::Claude => {
-                let document = self.read_claude_mcp_document()?;
+                let document = self
+                    .read_claude_mcp_document()
+                    .map_err(McpSyncError::invalid_config)?;
                 let Some(servers) = document
                     .get("mcpServers")
                     .and_then(serde_json::Value::as_object)
@@ -491,7 +499,11 @@ impl AppContext {
                 let mut imported = 0;
                 let mut skipped = 0;
                 for (name, entry) in servers {
-                    if codex_config::is_managed_mcp_name(name) {
+                    if codex_config::is_managed_mcp_name(name)
+                        || records
+                            .iter()
+                            .any(|record| record.name == *name && record.claude_installed)
+                    {
                         continue;
                     }
                     if super::claude::claude_entry_to_spec(name, entry).is_err() {
@@ -528,7 +540,7 @@ impl AppContext {
             return Ok(false);
         }
         tauri_plugin_log::log::info!(
-            "[mcp.baseline] client={} count={imported} skipped={skipped} outcome=success msg=\"首次进入，现场 MCP 已导入为镜像基线\"",
+            "[mcp.import] client={} count={imported} skipped={skipped} outcome=success msg=\"新增 MCP 已导入数据库镜像\"",
             match tool {
                 SkillTool::Codex => "Codex",
                 SkillTool::Claude => "Claude Code",

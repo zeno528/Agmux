@@ -12,6 +12,7 @@ interface McpDiffPageProps {
   target: McpTarget;
   preview: McpSyncPreview | null;
   previewError: string;
+  configInvalid?: boolean;
   resolving: boolean;
   onBack: () => void;
   onResolve: (entry: McpSyncDiffEntry, verb: McpDiffVerb) => void;
@@ -107,7 +108,7 @@ function McpDiffRow({ entry, busy, onResolve }: McpDiffRowProps) {
   );
 }
 
-export default function McpDiffPage({ target, preview, previewError, resolving, onBack, onResolve, onResolveAll, onRebuild }: McpDiffPageProps) {
+export default function McpDiffPage({ target, preview, previewError, configInvalid = false, resolving, onBack, onResolve, onResolveAll, onRebuild }: McpDiffPageProps) {
   const { t } = useTranslation("mcp");
   const entries = preview?.entries ?? [];
   return (
@@ -134,11 +135,11 @@ export default function McpDiffPage({ target, preview, previewError, resolving, 
           <div className="apple-group p-4">
             {/* 图标放标题右侧：标题、描述、按钮、报错盒子左边缘对齐，不留悬挂缩进 */}
             <div className="flex items-center gap-2">
-              <div className="setting-title">{t("diff.parseFailedTitle")}</div>
+              <div className="setting-title">{t(configInvalid ? "diff.parseFailedTitle" : "diff.checkFailedTitle")}</div>
               <CircleAlert className="h-[18px] w-[18px] shrink-0 text-[var(--danger)]" strokeWidth={2} aria-hidden="true" />
             </div>
-            <p className="setting-description mt-1">{t(onRebuild ? "diff.parseFailedImpact" : "diff.claudeParseFailedImpact")}</p>
-            {onRebuild ? <button type="button" className="apple-action-button app-button--primary mt-3" disabled={resolving} onClick={onRebuild}>{t("diff.rebuild")}</button> : null}
+            <p className="setting-description mt-1">{t(configInvalid ? target === "codex" ? "diff.parseFailedImpact" : "diff.claudeParseFailedImpact" : "diff.checkFailedImpact")}</p>
+            {configInvalid && target === "codex" && onRebuild ? <button type="button" className="apple-action-button app-button--primary mt-3" disabled={resolving} onClick={onRebuild}>{t("diff.rebuild")}</button> : null}
             {/* 报错原文是唯一能定位到行的信息，默认摊开——这页就是为它存在的 */}
             <div className="field-label mt-3">{t("diff.rawError")}</div>
             <pre className="mono meta-xs muted m-0 mt-1.5 whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--panel-border)] bg-(--profile-chip-bg) px-2.5 py-2">{previewError}</pre>

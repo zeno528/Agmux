@@ -161,6 +161,8 @@ pub struct McpTool {
 #[derive(Debug, Clone, Serialize)]
 pub struct McpProbeResult {
     pub ok: bool,
+    pub connection_state: Option<McpConnectionState>,
+    pub auth_status: Option<String>,
     pub latency_ms: Option<u128>,
     pub status: Option<u16>,
     pub protocol_version: Option<String>,
@@ -169,6 +171,15 @@ pub struct McpProbeResult {
     pub tools_truncated: bool,
     pub error: Option<String>,
     pub tools_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpConnectionState {
+    Connected,
+    AuthenticationRequired,
+    Failed,
+    Unknown,
 }
 
 /// MCP 同步预览的一条差异（live = ~/.codex/config.toml，db = 数据库镜像）。

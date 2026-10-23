@@ -3000,19 +3000,14 @@ fn mcp_adopt_external_readd_clears_diff_and_reenables() {
         .unwrap();
 
     // 外部把同名片段写回 live：应报告"仅 live 有"
-    let external = "[mcp_servers.a]\nurl = \"https://a/mcp\"\ncommand = \"node\"\n";
+    let external = "[mcp_servers.a]\nurl = \"https://a/mcp\"\n";
     std::fs::write(context.paths.codex_config(), external).unwrap();
     let preview = context.codex_mcp_sync_preview().unwrap();
     assert_eq!(preview.entries.len(), 1);
     assert_eq!(preview.entries[0].kind, McpSyncEntryKind::LiveOnly);
 
     // 采纳后差异清空，codex 开关翻开（live 里有条目 = on 的事实源）
-    context
-        .set_mcp_mirror_entry(
-            "a",
-            Some("[mcp_servers.a]\nurl = \"https://a/mcp\"\ncommand = \"node\"\n"),
-        )
-        .unwrap();
+    context.set_mcp_mirror_entry("a", Some(external)).unwrap();
     let preview = context.codex_mcp_sync_preview().unwrap();
     assert!(
         preview.entries.is_empty(),
@@ -3573,11 +3568,11 @@ fn mcp_mirror_rewrite_preserves_engine_flags_across_saves() {
 }
 
 #[test]
-fn mcp_preview_flags_live_only_db_only_and_changed() {
+fn mcp_preview_imports_new_entries_and_flags_db_only_and_changed() {
     let (context, _home) = mcp_test_context("[mcp_servers.a]\nurl = \"https://a/mcp\"\n");
     import_mcp_from_live(&context);
 
-    // 外部改 a 的 url、新增 b，且不再触发 list：预览应报“内容不同”与“仅配置文件”
+    // 外部改 a 的 url、新增 b：只导入 b，a 仍显示差异。
     std::fs::write(
         context.paths.codex_config(),
         "[mcp_servers.a]\nurl = \"https://a/v2\"\n\n[mcp_servers.b]\nurl = \"https://b/mcp\"\n",
@@ -3585,8 +3580,8 @@ fn mcp_preview_flags_live_only_db_only_and_changed() {
     .unwrap();
     let preview = context.codex_mcp_sync_preview().unwrap();
     assert_eq!(preview.live_count, 2);
-    assert_eq!(preview.db_count, 1);
-    assert_eq!(preview.entries.len(), 2, "{:?}", preview.entries);
+    assert_eq!(preview.db_count, 2);
+    assert_eq!(preview.entries.len(), 1, "{:?}", preview.entries);
 
     let changed = preview
         .entries
@@ -3595,12 +3590,12 @@ fn mcp_preview_flags_live_only_db_only_and_changed() {
         .unwrap();
     assert_eq!(changed.kind, McpSyncEntryKind::Changed);
 
-    let live_only = preview
-        .entries
-        .iter()
-        .find(|entry| entry.name == "b")
-        .unwrap();
-    assert_eq!(live_only.kind, McpSyncEntryKind::LiveOnly);
+    let b = context.database.mcp_server_record("b").unwrap().unwrap();
+    assert!(b.codex_installed && b.codex_enabled);
+    assert!(!b.claude_installed);
+    assert!(b.toml.contains("https://b/mcp"));
+    let a = context.database.mcp_server_record("a").unwrap().unwrap();
+    assert!(a.toml.contains("https://a/mcp"));
 
     // live 整段换成 c：a 变成“仅数据库”
     std::fs::write(
@@ -3658,10 +3653,10 @@ fn mcp_diff_verbs_are_surgical_to_one_entry() {
     assert!(live_text.contains("https://b/mcp"), "{live_text}");
     assert!(!live_text.contains("https://b/v2"), "{live_text}");
 
-    // live_only 的撤销 = 从 live 移除单条，镜像中其他条目保留
+    // 残缺新增条目仍需人工裁决；撤销只从 live 移除该条。
     std::fs::write(
         context.paths.codex_config(),
-        "[mcp_servers.a]\nurl = \"https://a/v2\"\n\n[mcp_servers.c]\nurl = \"https://c/mcp\"\n",
+        "[mcp_servers.a]\nurl = \"https://a/v2\"\n\n[mcp_servers.c]\ncustom = \"keep\"\n",
     )
     .unwrap();
     let preview = context.codex_mcp_sync_preview().unwrap();
@@ -3931,6 +3926,119 @@ fn mcp_first_entry_imports_live_as_baseline_without_diff() {
         .iter()
         .filter(|record| record.name != "c")
         .all(|record| record.codex_installed));
+}
+
+#[test]
+fn mcp_new_entries_import_without_diff_and_preserve_other_client() {
+    for tool in [SkillTool::Codex, SkillTool::Claude] {
+        let a = "[mcp_servers.a]\nurl = \"https://a/mcp\"\n";
+        let b = "\n[mcp_servers.b]\n# native comment\ncommand = \"echo\"\ncustom = \"keep\"\n";
+        let (context, _home) = mcp_test_context(a);
+        let claude_a = serde_json::json!({"url": "https://a/mcp"});
+        let claude_b = serde_json::json!({"command": "echo", "custom": "keep"});
+        let mut claude = serde_json::json!({"mcpServers": {"a": claude_a}});
+        // b 已在另一端安装，本端新增时不能覆盖另一端的原生快照。
+        if tool == SkillTool::Codex {
+            claude["mcpServers"]["b"] = claude_b.clone();
+        } else {
+            std::fs::write(context.paths.codex_config(), format!("{a}{b}")).unwrap();
+        }
+        std::fs::write(context.paths.claude_mcp_config(), claude.to_string()).unwrap();
+        for client in [SkillTool::Codex, SkillTool::Claude] {
+            assert!(context.mcp_sync_preview(client).unwrap().entries.is_empty());
+        }
+        let before = context.database.mcp_server_record("b").unwrap().unwrap();
+        if tool == SkillTool::Codex {
+            std::fs::write(context.paths.codex_config(), format!("{a}{b}")).unwrap();
+        } else {
+            claude["mcpServers"]["b"] = claude_b;
+            std::fs::write(context.paths.claude_mcp_config(), claude.to_string()).unwrap();
+        }
+        let codex_live = std::fs::read(context.paths.codex_config()).unwrap();
+        let claude_live = std::fs::read(context.paths.claude_mcp_config()).unwrap();
+        for _ in 0..2 {
+            let preview = context.mcp_sync_preview(tool).unwrap();
+            assert!(preview.entries.is_empty(), "{:?}", preview.entries);
+            assert_eq!(preview.live_count, 2);
+            assert_eq!(preview.db_count, 2);
+        }
+        let after = context.database.mcp_server_record("b").unwrap().unwrap();
+        assert!(after.codex_installed && after.codex_enabled);
+        assert!(after.claude_installed && after.claude_enabled);
+        if tool == SkillTool::Codex {
+            assert_eq!(after.claude_json, before.claude_json);
+            assert!(after.toml.contains("# native comment"));
+            assert!(after.toml.contains("custom = \"keep\""));
+        } else {
+            assert_eq!(after.toml, before.toml);
+        }
+        assert_eq!(
+            std::fs::read(context.paths.codex_config()).unwrap(),
+            codex_live
+        );
+        assert_eq!(
+            std::fs::read(context.paths.claude_mcp_config()).unwrap(),
+            claude_live
+        );
+    }
+}
+
+#[test]
+fn mcp_import_storage_failure_does_not_claim_invalid_config_or_touch_live() {
+    for tool in [SkillTool::Codex, SkillTool::Claude] {
+        let (context, _home) = mcp_test_context("[mcp_servers.a]\nurl = \"https://a/mcp\"\n");
+        let (path, seed, added) = match tool {
+            SkillTool::Codex => (context.paths.codex_config(),
+                "[mcp_servers.a]\nurl = \"https://a/mcp\"\n",
+                "[mcp_servers.a]\nurl = \"https://a/mcp\"\n[mcp_servers.b]\nurl = \"https://b/mcp\"\n"),
+            SkillTool::Claude => (context.paths.claude_mcp_config(),
+                r#"{"mcpServers":{"a":{"url":"https://a/mcp"}}}"#,
+                r#"{"mcpServers":{"a":{"url":"https://a/mcp"},"b":{"url":"https://b/mcp"}}}"#),
+        };
+        std::fs::write(&path, seed).unwrap();
+        context.mcp_sync_preview(tool).unwrap();
+        std::fs::write(&path, added).unwrap();
+        let connection = Connection::open(&context.paths.database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TRIGGER reject_mcp_import BEFORE INSERT ON mcp_servers
+            BEGIN SELECT RAISE(FAIL, 'fixture storage failure'); END;",
+            )
+            .unwrap();
+        let error = context.mcp_sync_preview(tool).unwrap_err();
+        assert!(!error.config_invalid);
+        assert!(error.message.contains("fixture storage failure"));
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["config_invalid"],
+            false
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), added);
+        assert_eq!(context.database.mcp_server_records().unwrap().len(), 1);
+        assert!(context.database.mcp_server_record("b").unwrap().is_none());
+    }
+}
+
+#[test]
+fn mcp_preview_marks_only_confirmed_config_parse_errors_as_invalid() {
+    let (context, _home) = mcp_test_context("[mcp_servers.broken\n");
+    let error = context.codex_mcp_sync_preview().unwrap_err();
+    assert!(error.config_invalid);
+    assert_eq!(
+        serde_json::to_value(&error).unwrap()["config_invalid"],
+        true
+    );
+    std::fs::remove_file(context.paths.codex_config()).unwrap();
+    std::fs::create_dir(context.paths.codex_config()).unwrap();
+    assert!(!context.codex_mcp_sync_preview().unwrap_err().config_invalid);
+    // Claude 侧同理：.claude.json 解析失败才算配置损坏，能拿到专属修复文案。
+    let (context, _home) = mcp_test_context("[mcp_servers.a]\nurl = \"https://a/mcp\"\n");
+    std::fs::write(context.paths.claude_mcp_config(), "{broken").unwrap();
+    let error = context.mcp_sync_preview(SkillTool::Claude).unwrap_err();
+    assert!(error.config_invalid);
+    assert_eq!(
+        serde_json::to_value(&error).unwrap()["config_invalid"],
+        true
+    );
 }
 
 /// 基线建立后，外部改动照常报差异：差异语义只属于漂移。

@@ -164,7 +164,7 @@ pub(super) const SKILL_BACKUP_DIRECTORY: &str = ".backups";
 /// Codex marketplace 插件的物化缓存（仅用于补充文件元数据）。
 pub(super) const PLUGIN_CACHE_RELATIVE_PATH: &str = "plugins/cache";
 
-mod appserver;
+pub(super) mod appserver;
 mod catalog;
 mod claude;
 mod cli;

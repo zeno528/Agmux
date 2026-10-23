@@ -1717,7 +1717,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "restore_mcp_from_database":
       return webMcpServers.length as T;
     case "codex_mcp_sync_preview": {
-      // web 调试样例：一条“内容不同”+ 一条“仅配置文件”，便于在 pnpm dev 里走查差异页
+      // web 调试样例：新增条目直接导入，差异页只保留已有条目的修改。
       const first = webMcpServers[0];
       const changed = first
         ? {
@@ -1729,30 +1729,10 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
             db_toml: `[mcp_servers.${first.name}]\nurl = "${first.url ? first.url + "-old" : ""}"`,
           }
         : null;
-      const liveOnly = {
-        name: "web-demo-live-only",
-        kind: "live_only" as const,
-        live_spec: {
-          name: "web-demo-live-only",
-          enabled: null,
-          startup_timeout_sec: null,
-          tool_timeout_sec: null,
-          command: "npx",
-          args: ["-y", "web-demo"],
-          env: {},
-          url: null,
-          bearer_token_env_var: null,
-          http_headers: {},
-          env_http_headers: {},
-        },
-        db_spec: null,
-        live_toml: '[mcp_servers.web-demo-live-only]\ncommand = "npx"\nargs = ["-y", "web-demo"]',
-        db_toml: null,
-      };
-      const entries = [changed, liveOnly].filter((entry) => entry !== null);
+      const entries = changed ? [changed] : [];
       return {
         entries,
-        live_count: webMcpServers.length + 1,
+        live_count: webMcpServers.length,
         db_count: webMcpServers.length,
       } as T;
     }

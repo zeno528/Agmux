@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SkillTargetLogo } from "../../components/SkillTargetLogo";
 import { setupI18n } from "../../i18n";
 import McpDiffPage, { mcpDiffLines } from "./McpDiffPage";
-import { mcpEntryAction } from "./McpView";
+import { mcpEntryAction, mcpSyncFailure } from "./McpView";
 import type { McpSyncDiffEntry } from "../../types";
 
 const viewSource = readFileSync(new URL("./McpView.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -106,8 +106,8 @@ describe("MCP 差异二级页", () => {
     expect(viewSource).not.toContain("McpSyncDialog");
   });
 
-  it("窗口激活时刷新差异预览（差异只可能来自 Codex 侧先改），首次挂载不重复请求", () => {
-    expect(viewSource).toContain('useEffect(() => { if (activationEpoch === 0) return; if (target === "claude") void refresh(true, []); else void loadPreview(); }, [activationEpoch]);');
+  it("窗口激活时刷新列表和差异，显示静默导入的新增条目且不重新探测，首次挂载不重复请求", () => {
+    expect(viewSource).toContain('target === "codex" ? servers.filter((server) => server.url).map((server) => server.name) : []');
   });
 
   it("差异始终展开，保留 MCP 卡片头部", () => {
@@ -148,24 +148,33 @@ describe("MCP 差异二级页", () => {
     expect(pageSource).toContain('<AppTooltip label={t("diff.help.title")}>');
   });
 
-  it("解析失败时先讲后果与重建边界，报错原文默认摊开", () => {
-    // 用户要知道的是"Codex 起不来"，不是解析器报错原文
-    expect(pageSource).toContain('{t("diff.parseFailedTitle")}');
-    expect(pageSource).toContain('{t(onRebuild ? "diff.parseFailedImpact" : "diff.claudeParseFailedImpact")}');
-    expect(pageSource).toContain('{t("diff.rebuild")}');
-    // 报错原文是唯一能定位到行的信息，这页就是为它存在的：摊开，不藏进折叠
-    expect(pageSource).toContain('{t("diff.rawError")}');
-    expect(pageSource).toContain("{previewError}</pre>");
-    expect(pageSource).not.toContain("<details");
-    expect(pageSource).not.toContain("diff.rebuildDescription");
-    expect(pageSource).not.toContain("diff.rebuildScope");
+  it.each([false, true])("只有明确的配置解析失败才展示重建按钮：%s", (config_invalid) => {
+    setupI18n("zh-CN");
+    const failure = mcpSyncFailure({ message: "fixture failure", config_invalid });
+    const html = renderToStaticMarkup(createElement(McpDiffPage, {
+      target: "codex", preview: null, previewError: failure.message, configInvalid: failure.config_invalid,
+      resolving: false, onBack: () => undefined, onResolve: () => undefined,
+      onResolveAll: () => undefined, onRebuild: () => undefined,
+    }));
+    expect(html).toContain(config_invalid ? "实时配置无法解析" : "MCP 状态检查失败");
+    expect(html.includes("从数据库重建 MCP 段")).toBe(config_invalid);
+    expect(html.includes("Codex 无法启动")).toBe(config_invalid);
+    expect(html).toContain("fixture failure");
+    expect(html).not.toContain("<details");
+  });
+
+  it("旧版字符串错误、普通异常和无效标记都不允许重建", () => {
+    for (const error of ["storage error", new Error("storage error"), null, { message: "storage error", config_invalid: "true" }]) {
+      expect(mcpSyncFailure(error).config_invalid).toBe(false);
+    }
+    expect(mcpSyncFailure(new Error("storage error")).message).toBe("storage error");
   });
 
   it("图标锚在标题行右侧，不随内容高度拉伸、也不产生悬挂缩进", () => {
     // self-stretch 是账号卡那种多行文本块的处理；这里图标跟的是单行标题，拉伸会让它飘到卡片中间
     expect(pageSource).not.toContain("self-stretch");
     // 图标在标题之后：卡片里所有文本左边缘对齐
-    expect(pageSource).toContain('<div className="setting-title">{t("diff.parseFailedTitle")}</div>\n              <CircleAlert className="h-[18px] w-[18px] shrink-0 text-[var(--danger)]" strokeWidth={2} aria-hidden="true" />');
+    expect(pageSource.indexOf('className="setting-title"')).toBeLessThan(pageSource.indexOf("<CircleAlert"));
   });
 
   it("页脚提供全部同步/全部撤销批量动作", () => {
