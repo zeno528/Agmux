@@ -407,7 +407,7 @@ export default function CodexPluginsView({
     <div className="space-y-4">
       {sections}
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
-      {catalogError ? <p className="muted text-sm">{catalogError}</p> : null}
+      {catalogError && catalogError !== loadError ? <p className="muted text-sm">{catalogError}</p> : null}
       {thirdPartyProfile ? (
         <div className="apple-edit-surface">
           <div className="apple-panel-section">

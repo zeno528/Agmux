@@ -10,13 +10,15 @@ import { PluginCard } from "./components/PluginCard";
 import type { AppState, MarketplacePlugin, PluginSummary } from "../../types";
 import CodexPluginsView from "./CodexPluginsView";
 
-const ui = vi.hoisted(() => ({ filter: "installed" }));
+const ui = vi.hoisted(() => ({ filter: "installed", errors: [] as string[] }));
 // 当前渲染树中只有筛选器以 "installed" 初始化状态。
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
-  return { ...actual, useState: (initial: unknown) => actual.useState(initial === "installed" ? ui.filter : initial) };
+  return { ...actual, useState: (initial: unknown) => actual.useState(
+    initial === "installed" ? ui.filter : initial === "" && ui.errors.length ? ui.errors.shift() : initial,
+  ) };
 });
-beforeEach(() => { ui.filter = "installed"; });
+beforeEach(() => { ui.filter = "installed"; ui.errors = []; });
 
 const feedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), confirm: vi.fn() }));
 vi.mock("../../app/Feedback", () => ({ useFeedback: () => feedback }));
@@ -30,6 +32,17 @@ vi.mock("../../app/managementDataCache", async (original) => ({
   getCachedCodexApps: () => [{ id: "app-one", name: "App one", enabled: false, description: null, icon_path: null }],
   loadPlugins: vi.fn().mockResolvedValue([]),
 }));
+
+it("插件清单和目录的相同错误只显示一次，不同错误仍保留", async () => {
+  setupI18n("zh-CN");
+  const state = await webInvoke<AppState>("get_state");
+  for (const catalogError of ["runtime missing", "catalog unavailable"]) {
+    ui.errors = ["runtime missing", "", catalogError];
+    const html = renderToStaticMarkup(<CodexPluginsView state={state} activationEpoch={0} popEpoch={0} query="" onHeaderChange={() => undefined} />);
+    expect(html.match(/runtime missing/g)).toHaveLength(1);
+    if (catalogError !== "runtime missing") expect(html).toContain(catalogError);
+  }
+});
 
 it("Codex 首次读取可安装目录时显示加载反馈", async () => {
   ui.filter = "available";
