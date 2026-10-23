@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 use crate::error::{app_err, AppResult};
 // ==================== codex CLI 执行层 ====================
 
+pub(super) const CODEX_RUNTIME_NOT_FOUND: &str =
+    "未找到 Codex 运行程序，请安装 Codex 桌面端或独立 CLI 后重试";
+
 pub(super) fn cli_candidates(
     home: &Path,
     path_dirs: impl IntoIterator<Item = PathBuf>,
@@ -20,10 +23,23 @@ pub(super) fn cli_candidates(
             .join(".plugin-appserver")
             .join(file_name),
     );
+    #[cfg(target_os = "macos")]
+    for applications in [home.join("Applications"), PathBuf::from("/Applications")] {
+        for app in [
+            "ChatGPT.app",
+            "Codex.app",
+            "OpenAI Codex.app",
+            "OpenAI.Codex.app",
+        ] {
+            let resources = applications.join(app).join("Contents/Resources");
+            candidates.push(resources.join("codex-cli/CodexCLI.app/Contents/MacOS/codex"));
+            candidates.push(resources.join("codex"));
+        }
+    }
     candidates
 }
 
-/// codex CLI 探测链：`~/.codex/bin`、PATH 中的独立 CLI、Desktop appserver 自带副本兜底。
+/// 独立 CLI 优先，插件运行时缓存与桌面端内置程序兜底；不接管桌面端的安装或升级。
 pub(super) fn find_codex_cli(home: &Path) -> Option<PathBuf> {
     if let Some(path) = super::super::codex_cli::find_standalone(home) {
         return Some(path);
@@ -331,11 +347,7 @@ pub(super) fn run_codex_plugin(home: &Path, args: &[&str]) -> AppResult<String> 
 }
 
 fn run_codex_plugin_inner(home: &Path, args: &[&str]) -> AppResult<String> {
-    let cli = find_codex_cli(home).ok_or_else(|| {
-        app_err!(
-            "未找到 codex CLI（已尝试 ~/.codex/bin、PATH 与桌面版 appserver 目录），无法管理插件"
-        )
-    })?;
+    let cli = find_codex_cli(home).ok_or_else(|| app_err!("{CODEX_RUNTIME_NOT_FOUND}"))?;
     let mut command = super::super::cli::command(&cli);
     command.env("CODEX_HOME", home.join(".codex"));
     run_plugin_cli_process(
@@ -419,6 +431,28 @@ mod tests {
             candidates[3],
             home.join(".codex/plugins/.plugin-appserver").join(filename)
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn desktop_only_installation_is_found_after_standalone_cli() {
+        let home = tempfile::tempdir().unwrap();
+        for relative in [
+            "Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+            "Applications/Codex.app/Contents/Resources/codex",
+        ] {
+            let desktop = home.path().join(relative);
+            std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
+            std::fs::write(&desktop, "fixture").unwrap();
+            let standalone = home.path().join("bin/codex");
+            let candidates = || cli_candidates(home.path(), [home.path().join("bin")]);
+            assert_eq!(candidates().into_iter().find(|path| path.is_file()), Some(desktop.clone()));
+            std::fs::create_dir_all(standalone.parent().unwrap()).unwrap();
+            std::fs::write(&standalone, "fixture").unwrap();
+            assert_eq!(candidates().into_iter().find(|path| path.is_file()), Some(standalone.clone()));
+            std::fs::remove_file(standalone).unwrap();
+            std::fs::remove_file(desktop).unwrap();
+        }
     }
 
     #[test]
