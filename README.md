@@ -49,6 +49,7 @@ Codex and Claude Code are managed side by side: each client has its own provider
 - Rename, duplicate, reorder, delete, and use profiles.
 - Keep unrelated Codex configuration such as MCP and plugin sections when switching to a provider where possible.
 - Set a custom display name, provider icon, administration URL, optional description, and optional ChatGPT account binding. The description stays inside Agmux and is not written into the Codex configuration.
+- Create the official Codex provider from a desktop sign-in you already have: the auth file is read automatically and saved with the profile, so no ChatGPT account has to be bound. The editor shows the desktop identity, and switching such a profile picks up a refreshed desktop token.
 
 ### Supported provider presets
 
