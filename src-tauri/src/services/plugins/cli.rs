@@ -218,7 +218,7 @@ fn plugin_cli_action(args: &[&str]) -> &'static str {
 
 /// Claude Code CLI 探测链：`~/.local/bin` 原生安装优先，PATH 中的独立 CLI 兜底。
 /// npm/winget 等包装安装不是原生形态（CLI 管理页同样不接管），这里不做它们的入口。
-pub(super) fn find_claude_cli(home: &Path) -> Option<PathBuf> {
+pub(crate) fn find_claude_cli(home: &Path) -> Option<PathBuf> {
     let native = super::super::claude_cli::native_path(home);
     let file_name = native.file_name()?.to_os_string();
     if native.is_file() {

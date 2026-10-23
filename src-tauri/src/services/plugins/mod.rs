@@ -176,6 +176,7 @@ pub use claude::{
     ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory,
     ClaudePluginUpdate, ClaudePluginUpdateResult,
 };
+pub(super) use cli::find_claude_cli;
 pub(crate) use cli::{wait_child_with_timeout, ChildOutput};
 
 #[cfg(test)]

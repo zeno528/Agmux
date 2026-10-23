@@ -605,9 +605,16 @@ fn spawn_stdio(spec: &McpServerSpec, deadline: Instant) -> Result<StdioSession, 
         return Err("MCP 启动命令为空".to_string());
     };
     let mut command = Command::new(resolve_command(command_name));
+    command.args(&spec.args).envs(&spec.env);
+    spawn_session(command, deadline, spec.env.values().cloned().collect())
+}
+
+fn spawn_session(
+    mut command: Command,
+    deadline: Instant,
+    secrets: Vec<String>,
+) -> Result<StdioSession, String> {
     command
-        .args(&spec.args)
-        .envs(&spec.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -652,12 +659,49 @@ fn spawn_stdio(spec: &McpServerSpec, deadline: Instant) -> Result<StdioSession, 
         messages,
         stderr,
         deadline,
-        secrets: spec.env.values().cloned().collect(),
+        secrets,
         next_id: 1,
     })
 }
 
 impl StdioSession {
+    // Claude Agent SDK 的控制协议；只查询状态，不发送 user 消息或执行工具。
+    fn claude_request(&mut self, request: Value) -> Result<Value, String> {
+        let id = self.next_id.to_string();
+        self.next_id += 1;
+        let body = json!({
+            "type": "control_request", "request_id": id,
+            "request": request,
+        });
+        let input = self.stdin.as_mut().ok_or("Claude 输入管道不可用")?;
+        writeln!(input, "{body}")
+            .and_then(|_| input.flush())
+            .map_err(|_| "Claude 状态请求发送失败")?;
+        loop {
+            let line = self
+                .messages
+                .recv_timeout(self.deadline.saturating_duration_since(Instant::now()))
+                .map_err(|_| "Claude 状态请求超时或进程已退出")?;
+            let message: Value =
+                serde_json::from_str(&line).map_err(|_| "Claude 返回了无效状态消息")?;
+            let response = &message["response"];
+            if message["type"] != "control_response" || response["request_id"] != id {
+                if Instant::now() >= self.deadline {
+                    return Err("Claude 状态请求超时".into());
+                }
+                continue;
+            }
+            if response["subtype"] != "success" {
+                // 客户端原文可能含配置和凭据，只显示固定提示。
+                return Err("Claude 无法完成状态查询，请更新 Claude Code 后重试".into());
+            }
+            return response
+                .get("response")
+                .cloned()
+                .ok_or_else(|| "Claude 状态响应缺少结果".into());
+        }
+    }
+
     fn request(&mut self, method: &str, params: Value) -> Result<Value, ProbeFailure> {
         let id = self.next_id;
         self.next_id += 1;
@@ -946,6 +990,137 @@ fn probe_codex(codex_home: &std::path::Path, name: &str, include_tools: bool) ->
     }
 }
 
+fn claude_status_result(status: &Value, start: Instant, include_tools: bool) -> McpProbeResult {
+    let state = match status["status"].as_str() {
+        Some("connected") => McpConnectionState::Connected,
+        Some("needs-auth") => McpConnectionState::AuthenticationRequired,
+        Some("failed") => McpConnectionState::Failed,
+        _ => McpConnectionState::Unknown,
+    };
+    let message = match state {
+        McpConnectionState::Connected => "",
+        McpConnectionState::AuthenticationRequired => {
+            "Claude MCP 需要授权或重新授权，请在 Claude Code 中完成登录后重新检测"
+        }
+        McpConnectionState::Failed => "Claude Code 无法连接此 MCP，请检查客户端中的连接错误后重试",
+        McpConnectionState::Unknown => "Claude Code 未能确认此 MCP 的连接状态，请重新检测",
+    };
+    let mut result = failed_result(start, None, message);
+    result.connection_state = Some(state);
+    result.ok = state == McpConnectionState::Connected;
+    result.error = (!result.ok).then(|| message.into());
+    result.server_info = parse_server_info(status);
+    if result.ok && include_tools {
+        match parse_tools_page(status.clone()) {
+            Ok((mut tools, _)) => {
+                result.tools_truncated = tools.len() > MAX_TOOLS;
+                tools.truncate(MAX_TOOLS);
+                result.tools = tools;
+            }
+            Err(_) => {
+                result.tools_error = Some("Claude 已连接，但未返回有效的 MCP 工具列表".into())
+            }
+        }
+    }
+    result
+}
+
+fn probe_claude(claude_home: &std::path::Path, name: &str, include_tools: bool) -> McpProbeResult {
+    let start = Instant::now();
+    let read = || -> Result<McpProbeResult, String> {
+        let home = claude_home.parent().ok_or("Claude 配置目录无父目录")?;
+        let cli =
+            super::plugins::find_claude_cli(home).ok_or("未找到 Claude Code，无法确认 MCP 状态")?;
+        let document: Value = serde_json::from_slice(
+            &std::fs::read(home.join(".claude.json")).map_err(|_| "无法读取 Claude MCP 配置")?,
+        )
+        .map_err(|_| "无法解析 Claude MCP 配置")?;
+        let entry = document["mcpServers"]
+            .get(name)
+            .ok_or("Claude MCP 配置中没有此服务器")?;
+        let mut command = super::cli::command(&cli);
+        command
+            .args([
+                "--print",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--no-session-persistence",
+                "--setting-sources",
+                "",
+                "--strict-mcp-config",
+                "--mcp-config",
+                &json!({"mcpServers": {name: entry}}).to_string(),
+            ])
+            .current_dir(home)
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .env_remove("CLAUDECODE");
+        // 默认安装沿用 Claude 的配置与凭据目录，不创建另一套登录环境。
+        if claude_home != crate::paths::home_dir().join(".claude") {
+            command.env("CLAUDE_CONFIG_DIR", claude_home);
+        }
+        crate::network::Network::detect()
+            .map_err(|_| "网络设置无效")?
+            .apply(&mut command);
+        let deadline = start + PROBE_TIMEOUT;
+        let mut session = spawn_session(command, deadline, Vec::new())?;
+        let result = (|| {
+            session.claude_request(json!({"subtype":"initialize"}))?;
+            let mut reconnected = false;
+            loop {
+                let response = session.claude_request(json!({"subtype":"mcp_status"}))?;
+                let status = response["mcpServers"]
+                    .as_array()
+                    .and_then(|servers| servers.iter().find(|status| status["name"] == name))
+                    .ok_or("Claude 未返回此 MCP 的状态")?;
+                // Claude 可能沿用旧的 needs-auth 缓存，重连一次才是对现有授权的实际检查。
+                if status["status"] == "needs-auth" && !reconnected {
+                    reconnected = true;
+                    session
+                        .claude_request(json!({"subtype":"mcp_reconnect", "serverName":name}))?;
+                    continue;
+                }
+                if status["status"] != "pending" || Instant::now() >= deadline {
+                    let mut result = claude_status_result(status, start, include_tools);
+                    if result.ok && reconnected {
+                        result.auth_status = Some("oAuth".into());
+                    }
+                    return Ok(result);
+                }
+                thread::sleep(
+                    Duration::from_millis(200)
+                        .min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+        })();
+        session.stop();
+        result
+    };
+    read().unwrap_or_else(|error| {
+        let mut result = failed_result(
+            start,
+            None,
+            format!("无法通过 Claude Code 确认 MCP 状态：{error}"),
+        );
+        result.connection_state = Some(McpConnectionState::Unknown);
+        result
+    })
+}
+
+fn needs_claude_auth(spec: &McpServerSpec) -> bool {
+    spec.url.is_some()
+        && spec.command.is_none()
+        && spec.bearer_token_env_var.is_none()
+        && !spec
+            .http_headers
+            .keys()
+            .chain(spec.env_http_headers.keys())
+            .any(|name| name.eq_ignore_ascii_case("authorization"))
+}
+
 impl AppContext {
     pub async fn probe_mcp_server(
         &self,
@@ -978,6 +1153,30 @@ impl AppContext {
             return Ok(result);
         }
         let is_http = server.url.is_some() && server.command.is_none();
+        // 显式 token 仍直接探测；浏览器授权交给 Claude，不能以匿名 HTTP 判断它的认证状态。
+        if needs_claude_auth(&server) {
+            let claude_home = self.paths.claude_home.clone();
+            let name = name.to_owned();
+            let mut result = tauri::async_runtime::spawn_blocking(move || {
+                probe_claude(&claude_home, &name, include_tools)
+            })
+            .await
+            .map_err(|error| app_err!("Claude MCP 测试任务失败: {error}"))?;
+            if result.ok && result.auth_status.is_none() {
+                // Claude 状态接口不返回认证类型；匿名 401 + 客户端连通才足以确认沿用了 OAuth。
+                if let Ok(network) = crate::network::Network::current().await {
+                    if probe_http(&server, false, network.proxy.as_deref())
+                        .await
+                        .status
+                        == Some(401)
+                    {
+                        result.auth_status = Some("oAuth".into());
+                    }
+                }
+            }
+            log_probe_outcome(&server.name, include_tools, manual, &result, " via=claude");
+            return Ok(result);
+        }
         // HTTP 探测需要代理归因；stdio 子进程的网络不受应用控制，日志不标注走向
         let proxy = if is_http {
             match crate::network::Network::current().await {
@@ -1089,6 +1288,218 @@ mod tests {
     };
     use crate::models::McpTool;
     use serde_json::{json, Value};
+
+    #[test]
+    fn claude_oauth_uses_client_state_and_separates_auth_from_connection() {
+        use crate::models::McpConnectionState;
+        let mut spec = crate::models::McpServerSpec {
+            url: Some("https://fixture.invalid/mcp".into()),
+            ..Default::default()
+        };
+        assert!(super::needs_claude_auth(&spec));
+        spec.http_headers
+            .insert("X-Custom".into(), "fixture".into());
+        assert!(super::needs_claude_auth(&spec));
+        spec.http_headers
+            .insert("aUtHoRiZaTiOn".into(), "fixture".into());
+        assert!(!super::needs_claude_auth(&spec));
+        spec.http_headers.clear();
+        spec.bearer_token_env_var = Some("FIXTURE_TOKEN".into());
+        assert!(!super::needs_claude_auth(&spec));
+        for (state, expected) in [
+            ("connected", McpConnectionState::Connected),
+            ("needs-auth", McpConnectionState::AuthenticationRequired),
+            ("failed", McpConnectionState::Failed),
+            ("pending", McpConnectionState::Unknown),
+            ("disabled", McpConnectionState::Unknown),
+            ("future-status", McpConnectionState::Unknown),
+        ] {
+            let result = super::claude_status_result(
+                &json!({"status":state, "error":"secret-canary"}),
+                std::time::Instant::now(),
+                false,
+            );
+            assert_eq!(result.connection_state, Some(expected));
+            assert_eq!(result.ok, expected == McpConnectionState::Connected);
+            assert!(!result.error.unwrap_or_default().contains("secret-canary"));
+        }
+        let result = super::claude_status_result(
+            &json!({"status":"connected"}),
+            std::time::Instant::now(),
+            true,
+        );
+        assert!(result.ok);
+        assert!(
+            result.auth_status.is_none(),
+            "不能把所有连通的服务都标成 OAuth"
+        );
+        assert!(result.tools_error.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_probe_uses_saved_auth_without_prompt_or_other_servers() {
+        use std::os::unix::fs::PermissionsExt;
+        let (home, context) = super::super::plugins::test_context();
+        let cli = home.path().join(".local/bin/claude");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, r#"#!/bin/sh
+printf '%s\n' "$@" > "$CLAUDE_CONFIG_DIR/args.txt"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$CLAUDE_CONFIG_DIR/requests.jsonl"
+  id=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+  case "$line" in
+    *'"subtype":"initialize"'*) result='{}' ;;
+    *'"subtype":"mcp_reconnect"'*) result='{}' ;;
+    *'"subtype":"mcp_status"'*)
+      if [ "$id" = 2 ]; then result='{"mcpServers":[{"name":"cloudflare","status":"pending"}]}'
+      elif [ "$id" = 3 ] && [ ! -f "$CLAUDE_CONFIG_DIR/no-auth-cache" ]; then result='{"mcpServers":[{"name":"cloudflare","status":"needs-auth"}]}'
+      else result=$(cat "$CLAUDE_CONFIG_DIR/status.json"); fi ;;
+    *) exit 1 ;;
+  esac
+  printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":%s}}\n' "$id" "$result"
+done
+"#).unwrap();
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(context.paths.claude_mcp_config(), r#"{"mcpServers":{"cloudflare":{"type":"http","url":"http://127.0.0.1:1/mcp"},"other":{"command":"must-not-run"}}}"#).unwrap();
+        let status_path = context.paths.claude_home.join("status.json");
+        std::fs::create_dir_all(&context.paths.claude_home).unwrap();
+        std::fs::write(&status_path, json!({"mcpServers":[{
+            "name":"cloudflare", "status":"connected", "serverInfo":{"name":"fixture","version":"1"},
+            "tools":[{"name":"whoami","description":"Read identity"}]
+        }]}).to_string()).unwrap();
+        let result = tauri::async_runtime::block_on(context.probe_mcp_server(
+            "cloudflare",
+            true,
+            true,
+            super::SkillTool::Claude,
+        ))
+        .unwrap();
+        assert!(result.ok, "{:?}", result.error);
+        assert_eq!(result.auth_status.as_deref(), Some("oAuth"));
+        assert_eq!(result.tools.len(), 1);
+        assert_eq!(result.tools[0].name, "whoami");
+        assert_eq!(result.server_info.unwrap().name.as_deref(), Some("fixture"));
+        let arguments =
+            std::fs::read_to_string(context.paths.claude_home.join("args.txt")).unwrap();
+        assert!(arguments.contains("--no-session-persistence"));
+        assert!(arguments.contains("--strict-mcp-config"));
+        assert!(!arguments.contains("must-not-run"));
+        let requests =
+            std::fs::read_to_string(context.paths.claude_home.join("requests.jsonl")).unwrap();
+        let requests: Vec<Value> = requests
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(requests.len() >= 3, "pending 必须重查，不能直接判失败");
+        assert!(requests
+            .iter()
+            .all(|request| request["type"] == "control_request"));
+        let reconnects: Vec<_> = requests
+            .iter()
+            .filter(|request| request["request"]["subtype"] == "mcp_reconnect")
+            .collect();
+        assert_eq!(reconnects.len(), 1);
+        assert_eq!(reconnects[0]["request"]["serverName"], "cloudflare");
+        std::fs::write(context.paths.claude_home.join("no-auth-cache"), "").unwrap();
+        for requires_auth in [false, true] {
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+            listener.set_nonblocking(true).unwrap();
+            std::fs::write(
+                context.paths.claude_mcp_config(),
+                json!({"mcpServers":{"cloudflare":{"type":"http","url":url}}}).to_string(),
+            )
+            .unwrap();
+            let request = std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && std::time::Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(10))
+                        }
+                        Err(error) => panic!("expected authentication check: {error}"),
+                    }
+                };
+                socket.set_nonblocking(false).unwrap();
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = [0; 4096];
+                let size = socket.read(&mut bytes).unwrap();
+                assert!(!String::from_utf8_lossy(&bytes[..size])
+                    .to_ascii_lowercase()
+                    .contains("authorization:"));
+                let body = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{}}}"#;
+                write!(socket, "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", if requires_auth {"401 Unauthorized"} else {"200 OK"}, body.len()).unwrap();
+            });
+            let result = tauri::async_runtime::block_on(context.probe_mcp_server(
+                "cloudflare",
+                false,
+                true,
+                super::SkillTool::Claude,
+            ))
+            .unwrap();
+            request.join().unwrap();
+            assert!(result.ok);
+            assert_eq!(
+                result.auth_status.as_deref(),
+                requires_auth.then_some("oAuth")
+            );
+        }
+        std::fs::write(&status_path, r#"{"mcpServers":[]}"#).unwrap();
+        let result = super::probe_claude(&context.paths.claude_home, "cloudflare", false);
+        assert!(!result.ok);
+        assert_eq!(
+            result.connection_state,
+            Some(crate::models::McpConnectionState::Unknown)
+        );
+        std::fs::write(
+            &status_path,
+            r#"{"mcpServers":[{"name":"cloudflare","status":"needs-auth"}]}"#,
+        )
+        .unwrap();
+        let result = super::probe_claude(&context.paths.claude_home, "cloudflare", false);
+        assert!(!result.ok);
+        assert_eq!(
+            result.connection_state,
+            Some(crate::models::McpConnectionState::AuthenticationRequired)
+        );
+        std::fs::write(&cli, r#"#!/bin/sh
+read request
+printf '%s\n' '{"type":"control_response","response":{"request_id":"1","subtype":"error","error":"secret-canary"}}'
+"#).unwrap();
+        let result = super::probe_claude(&context.paths.claude_home, "cloudflare", false);
+        assert_eq!(
+            result.connection_state,
+            Some(crate::models::McpConnectionState::Unknown)
+        );
+        assert!(!result.error.unwrap().contains("secret-canary"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_control_request_timeout_stops_the_client() {
+        let start = std::time::Instant::now();
+        let spec = crate::models::McpServerSpec {
+            command: Some("/bin/sh".into()),
+            args: vec!["-c".into(), "read first; read second".into()],
+            ..Default::default()
+        };
+        let mut session =
+            super::spawn_stdio(&spec, start + std::time::Duration::from_millis(100)).unwrap();
+        assert!(session
+            .claude_request(json!({"subtype":"initialize"}))
+            .unwrap_err()
+            .contains("超时"));
+        session.stop();
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    }
 
     #[cfg(unix)]
     #[test]

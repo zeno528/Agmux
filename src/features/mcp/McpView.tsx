@@ -118,7 +118,7 @@ export function useMcpProbes(scope: McpProbeScope, initialServers: McpServerSpec
 
   const notifyFailure = (name: string, message: string, state?: McpProbeResult["connection_state"]) => {
     if (state === "unknown") feedback.warning(t("list.connectionUnknown", { name }));
-    else if (state === "authentication_required") feedback.warning(t("list.authenticationRequired", { name }));
+    else if (state === "authentication_required") feedback.warning(t("list.authenticationRequired", { name, client: scope === "codex" ? "Codex" : "Claude Code" }));
     else if (/(超时|timeout|timed out)/i.test(message)) feedback.warning(t("list.connectionTimeout", { name })); // i18n-exempt: 匹配后端错误原文
     else feedback.error(t("list.connectionFailed", { name }));
   };

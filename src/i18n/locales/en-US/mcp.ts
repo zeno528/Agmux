@@ -21,7 +21,7 @@ export default {
     connectionStateAuthRequired: "Authorization required",
     oauthAuthorized: "OAuth authorized",
     connectionUnknown: "{{name}} · Status could not be confirmed",
-    authenticationRequired: "{{name}} · Authorize in Codex, then check again",
+    authenticationRequired: "{{name}} · Authorize in {{client}}, then check again",
     toolsButton: "Tool list",
     toolCount: "{{count}} tools",
     collapseTools: "Collapse",

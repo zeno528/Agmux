@@ -173,6 +173,69 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
   return null;
 }
 
+type SidebarGroup = { key: string; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeDot?: boolean; titleText?: string; onSelect: () => void }[] };
+
+// 收缩和悬停只更新侧栏，避免带着正文列表与编辑器一起重渲染。
+function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: SidebarGroup[] }) {
+  const sidebar = useSidebar();
+  const { t } = useTranslation();
+  const navClass = "apple-sidebar-nav-button app-selection-state";
+  return (
+    <aside className={`apple-sidebar relative flex h-full shrink-0 flex-col ${sidebar.sidebarCollapsed ? "apple-sidebar--collapsed" : ""}`}>
+      <div className="apple-sidebar-brand-row" data-tauri-drag-region onMouseLeave={() => sidebar.setSidebarFlyoutArmed(true)}>
+        <div
+          className="apple-sidebar-brand flex w-fit cursor-pointer items-center"
+          role="button"
+          tabIndex={0}
+          aria-label="Agmux"
+          onClick={sidebar.toggleSidebar}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") sidebar.toggleSidebar();
+          }}
+        >
+          <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
+          <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
+        </div>
+        {sidebar.sidebarFlyoutArmed ? (
+          <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
+        ) : null}
+        {!sidebar.sidebarCollapsed ? (
+          <>
+            <button
+              type="button"
+              className="apple-sidebar-collapse apple-icon-button muted absolute right-1.5 top-0"
+              aria-label={t("sidebar.collapse")}
+              onClick={sidebar.toggleSidebar}
+            >
+              <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
+            </button>
+            {sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span> : null}
+          </>
+        ) : null}
+      </div>
+      <nav className="mx-1.5 mt-3 flex flex-1 flex-col gap-3">
+        {sidebarGroups.map((group) => (
+          <div key={group.key} className={`apple-sidebar-group ${group.key === "common" ? "apple-sidebar-group--content" : ""} ${group.key === "footer" ? "mt-auto pb-3" : ""}`} role="group">
+            {group.key === "footer" ? <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} /> : null}
+            <div className="space-y-1">
+              {group.items.map((item) => (
+                <button key={item.view} type="button" className={navClass} data-active={view === item.view ? "true" : undefined} aria-label={t(item.labelKey)} title={item.titleText} onClick={item.onSelect} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}>
+                  <span className="relative flex shrink-0">
+                    {item.icon}
+                    {item.badgeDot ? <span className="apple-sidebar-update-dot" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="apple-sidebar-label" aria-hidden={sidebar.sidebarCollapsed}>{t(item.labelKey)}</span>
+                  {sidebar.sidebarCollapsed && sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t(item.labelKey)}</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 export default function AppShell() {
   // 冷启动落页：首帧同步读缓存直出（与 sidebar-collapsed 同款 localStorage 先例），
   // 第二次冷启动起首帧即目标页不闪；settings 到达后由下方 effect 校准真值并刷新缓存。
@@ -203,7 +266,6 @@ export default function AppShell() {
   }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id, state?.active_claude_profile_id]);
   const { start: startPolling, stop: stopPolling } = useCodexPolling(stateRef, updateCodex);
   const { activationEpoch, activate, deactivate } = useActivationRefresh();
-  const sidebar = useSidebar();
   // 页面进场动画：只监听页内内容切换，一级切页不补播（见 usePageEnterAnimation）。
   const mainRef = useRef<HTMLElement>(null);
   usePageEnterAnimation(mainRef, view);
@@ -382,8 +444,6 @@ export default function AppShell() {
 
   // 切页 = setView 换 Activity 的显隐，不强制重挂载：进入过的页面保住工作现场（编辑草稿、弹窗、页内滚动）；
   // 重复点击当前页由 navTo 弹回该页一级（popRequest），托盘等程序化跳转照旧 setView。
-  const navClass = "apple-sidebar-nav-button app-selection-state";
-
   // 各页内容唯一清单：Record 保证新增 AppView 分支时漏页是编译错误。
   // 渲染时只挂载进过的页面，当前页 visible、其余 hidden——hidden 的页面 effects 已
   // 清理（不加载、不轮询），state 与 DOM 保留，切回即恢复现场，effects 重跑后数据照常刷新。
@@ -408,7 +468,7 @@ export default function AppShell() {
   // 侧栏分组：客户端 / 功能入口 / 底部入口。新增页面 = 数组加一条，不再手写按钮块；
   // 客户端与功能入口沿用同一组按钮间距。icon 存 ReactNode 以保留各页现有图标形态。
   // labelKey 用本地 key 联合（与 common/nav 资源同步），既过 i18next 强类型又保持条目形状统一。
-  const sidebarGroups: { key: string; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeDot?: boolean; titleText?: string; onSelect: () => void }[] }[] = [
+  const sidebarGroups: SidebarGroup[] = [
     {
       key: "clients",
       items: [
@@ -458,58 +518,7 @@ export default function AppShell() {
         </div>
 
         <div className="apple-workspace flex min-h-0 flex-1">
-          <aside className={`apple-sidebar relative flex h-full shrink-0 flex-col ${sidebar.sidebarCollapsed ? "apple-sidebar--collapsed" : ""}`}>
-            <div className="apple-sidebar-brand-row" data-tauri-drag-region onMouseLeave={() => sidebar.setSidebarFlyoutArmed(true)}>
-              <div
-                className="apple-sidebar-brand flex w-fit cursor-pointer items-center"
-                role="button"
-                tabIndex={0}
-                aria-label="Agmux"
-                onClick={sidebar.toggleSidebar}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") sidebar.toggleSidebar();
-                }}
-              >
-                <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
-                <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
-              </div>
-              {sidebar.sidebarFlyoutArmed ? (
-                <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
-              ) : null}
-              {!sidebar.sidebarCollapsed ? (
-                <>
-                  <button
-                    type="button"
-                    className="apple-sidebar-collapse apple-icon-button muted absolute right-1.5 top-0"
-                    aria-label={t("sidebar.collapse")}
-                    onClick={sidebar.toggleSidebar}
-                  >
-                    <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
-                  </button>
-                  {sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span> : null}
-                </>
-              ) : null}
-            </div>
-            <nav className="mx-1.5 mt-3 flex flex-1 flex-col gap-3">
-              {sidebarGroups.map((group) => (
-                <div key={group.key} className={`apple-sidebar-group ${group.key === "common" ? "apple-sidebar-group--content" : ""} ${group.key === "footer" ? "mt-auto pb-3" : ""}`} role="group">
-                  {group.key === "footer" ? <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} /> : null}
-                  <div className="space-y-1">
-                    {group.items.map((item) => (
-                      <button key={item.view} type="button" className={navClass} data-active={view === item.view ? "true" : undefined} aria-label={t(item.labelKey)} title={item.titleText} onClick={item.onSelect} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}>
-                        <span className="relative flex shrink-0">
-                          {item.icon}
-                          {item.badgeDot ? <span className="apple-sidebar-update-dot" aria-hidden="true" /> : null}
-                        </span>
-                        <span className="apple-sidebar-label" aria-hidden={sidebar.sidebarCollapsed}>{t(item.labelKey)}</span>
-                        {sidebar.sidebarCollapsed && sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t(item.labelKey)}</span> : null}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </nav>
-          </aside>
+          <AppSidebar view={view} sidebarGroups={sidebarGroups} />
 
           <main ref={mainRef} className="apple-main-card min-w-0 flex-1 overflow-y-auto overflow-x-hidden pt-[var(--main-top-inset)]">
             {/* key 不含 view：view 变化只切 Activity 显隐，外层整树重挂载会清掉保活现场 */}

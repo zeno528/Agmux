@@ -21,7 +21,7 @@ export default {
     connectionStateAuthRequired: "需要授权",
     oauthAuthorized: "OAuth 已授权",
     connectionUnknown: "{{name}} · 无法确认状态",
-    authenticationRequired: "{{name}} · 请在 Codex 中完成授权后重新检测",
+    authenticationRequired: "{{name}} · 请在 {{client}} 中完成授权后重新检测",
     toolsButton: "工具列表",
     toolCount: "{{count}} 个工具",
     collapseTools: "收起",

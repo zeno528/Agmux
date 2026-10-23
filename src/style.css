@@ -1797,6 +1797,7 @@ body.drag-active * {
   padding: 0 var(--gap-card-inline);
 }
 
+.skills-table tbody td,
 .apple-list-card > * + * {
   border-top: 1px solid var(--panel-divider);
 }
@@ -2027,14 +2028,13 @@ button.plugin-card-name:hover {
 }
 
 /* Skill 管理表格：表头计数与客户端开关共用列宽，沿用列表的行距、分割线和按钮尺寸。 */
-.skills-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.skills-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 .skills-table-client { width: calc(var(--icon-button-size) * 2); }
 .skills-table-action { width: calc(var(--icon-button-size) + 0.5rem); }
-.skills-table th { padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--panel-border); }
+.skills-table th { padding: 0.75rem 0.25rem; }
 .skills-table td { padding-inline: 0.25rem; }
 .skills-table th, .skills-table td { text-align: center; }
 .skills-table th:first-child, .skills-table td:first-child { text-align: left; }
-.skills-table tbody tr + tr td { border-top: 1px solid var(--panel-border); }
 .skills-table .apple-icon-button { margin-inline: auto; }
 /* 名称按钮使用块布局，去掉行内基线空隙，避免额外撑高表格行。 */
 .skills-table td:first-child > button { display: block; }
