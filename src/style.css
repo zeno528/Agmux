@@ -3567,8 +3567,10 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   height: 12px;
 }
 
-/* 页内使用吸底同步条，弹窗继续使用自身的原生横向条。 */
-.apple-edit-content .cm-scroller::-webkit-scrollbar { height: 0; }
+/* 页内纵向滚动统一交由编辑页正文，横向走吸底同步条：
+   两种原生条都归零，避免 20.8px 小数行高取整出的 1px 假溢出常驻占掉 12px 槽宽。
+   弹窗里的编辑器不在 apple-edit-content 内，仍保留自身原生条。 */
+.apple-edit-content .cm-scroller::-webkit-scrollbar { width: 0; height: 0; }
 
 /* 横纵滚动条交汇处透出编辑器底色，避免深色主题出现原生白色角块。 */
 .apple-editor-shell .cm-scroller::-webkit-scrollbar-corner {

@@ -276,6 +276,13 @@ function syncEditorLayout(editor: EditorView) {
     documentWidth = Math.max(documentWidth, lineWidth);
   }
   editor.contentDOM.style.minWidth = `${Math.ceil(documentWidth)}px`;
+  // canvas 测量与 DOM 实际排版有逐字形小数误差（长行累积十几 px），真实文本会溢出内容盒
+  // 撑大 scrollWidth，滚到最右时行背景停在盒右缘露出空隙：读回真实溢出宽度二次校正。
+  // 只在真溢出时放宽（scrollWidth > clientWidth），否则视口宽于文档会把 min-width 钉死在视口宽。
+  const renderedWidth = editor.contentDOM.scrollWidth;
+  if (renderedWidth > editor.contentDOM.clientWidth) {
+    editor.contentDOM.style.minWidth = `${renderedWidth}px`;
+  }
   // 可见区底部的同步条沿用全文宽度，不依赖系统原生滚动条的自动显隐。
   const scrollbar = shell?.querySelector<HTMLInputElement>(".apple-editor-scrollbar");
   if (scrollbar) {

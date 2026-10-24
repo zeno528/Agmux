@@ -106,6 +106,8 @@ describe("ConfigTextEditor runtime", () => {
     expect(editorSource).toContain('document.createElement("canvas").getContext("2d")');
     expect(editorSource).toContain("editor.state.doc.lines; number += 1");
     expect(editorSource).toContain("editor.contentDOM.style.minWidth");
+    // canvas 估算偏小时真实文本溢出内容盒，滚到最右行背景会露缝：读回 scrollWidth 二次校正
+    expect(editorSource).toContain("if (renderedWidth > editor.contentDOM.clientWidth) {");
     expect(editorSource).toContain("syncEditorLayout(editor);");
   });
 

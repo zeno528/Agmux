@@ -443,7 +443,7 @@ describe("AppShell 布局", () => {
     expect(trayRule).toContain("box-shadow: none;");
     expect(trayRule).toContain("border: 0.5px solid var(--panel-border);");
     expect(styles).toContain("padding-bottom: calc(var(--gap-section) * 0.125);");
-    expect(styles).toContain(".apple-edit-content .cm-scroller::-webkit-scrollbar { height: 0; }");
+    expect(styles).toContain(".apple-edit-content .cm-scroller::-webkit-scrollbar { width: 0; height: 0; }");
   });
 
   it("取消编辑器外围的焦点发光描边", () => {
