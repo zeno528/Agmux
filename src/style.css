@@ -84,8 +84,8 @@
   --toolbar-control-height: calc(var(--control-height) + 2px);
   /* 输入类控件（.app-input/.app-select）最小高：行高 1.6 + 上下 padding + 边框，允许换行到两行 */
   --input-min-height: calc(1.6em + 1rem + 2px);
-  /* 弹窗沿用原限高；编辑页由共享编辑器按正文可用高度覆盖。 */
-  --editor-max-height: min(34rem, 60vh);
+  /* 短文件的共享占位预算；长文档自然撑高。 */
+  --editor-available-height: min(34rem, 60vh);
   /* Skill 内容预览随窗口变化的高度预算。 */
   --dialog-preview-height: 60vh;
   --icon-button-size: 2rem;
@@ -1287,7 +1287,7 @@ body.drag-active * {
   font-weight: 600;
 }
 
-/* 首卡片与页头的间距统一由 .apple-edit-content 的 padding-top（--gap-page）承担，
+/* 首卡片与页头的间距统一由正文共享布局（--gap-page）承担，
    各页面禁止再给首卡片包一层额外的 mt-[var(--gap-page)]（会叠算成两倍间距）。 */
 .apple-edit-toolbar--header {
   margin-bottom: 0;
@@ -1317,9 +1317,18 @@ body.drag-active * {
   overscroll-behavior: contain;
 }
 
-/* 代码编辑页底部留白减半，让编辑器更贴近操作栏。 */
+/* 吸顶页的顶部留白随内容滚走，滚动视口本身不留缝。 */
+.apple-edit-content:has(.apple-editor-toolbar) {
+  padding-top: 0;
+}
+
+.apple-edit-content:has(.apple-editor-toolbar) > .apple-edit-surface {
+  padding-top: var(--gap-page);
+}
+
+/* 代码编辑页底部仅保留少量留白，让横向条贴近保存栏。 */
 .apple-edit-page > .apple-edit-content:has(.apple-editor-shell) {
-  padding-bottom: calc(var(--gap-section) * 0.5);
+  padding-bottom: calc(var(--gap-section) * 0.125);
 }
 
 /* 滚动容器的直接子项永不压缩：overflow:hidden 的卡片 flex 自动最小高度为 0，
@@ -1334,7 +1343,7 @@ body.drag-active * {
 }
 
 /* 编辑正文统一容器 apple-edit-surface：无卡片外观（不带 apple-group 的底色/圆角/裁切），
-   横向内缩归零，让正文与分割线占满原卡片宽度。首分区顶部间距只由 apple-edit-content 提供，
+   横向内缩归零，让正文与分割线占满原卡片宽度。首分区顶部间距只由正文共享布局提供，
    图标网格（自身即分区）与表单（首个子分区）复用同一规则。 */
 .apple-edit-surface {
   --gap-card-inline: 0px;
@@ -2080,7 +2089,67 @@ pre.mcp-diff-line--add {
 
 .apple-editor-shell {
   min-width: 0;
+  isolation: isolate;
 }
+
+/* 文件标签与附属操作条作为整体吸顶，纵向滚动仍归编辑页正文。 */
+.apple-editor-toolbar {
+  position: sticky;
+  /* 与标题栏重叠一像素，避免分数物理像素边界的合成细缝；内边距保住控件位置。 */
+  top: -1px;
+  padding-top: 1px;
+  margin-top: -1px;
+  z-index: 1;
+  background: var(--main-surface-bg);
+}
+
+.apple-editor-toolbar .editor-attach-bar {
+  margin-top: 0.5rem;
+  border-radius: var(--radius-control-sm) var(--radius-control-sm) 0 0;
+  box-shadow: var(--card-edge-shadow);
+}
+
+.apple-editor-toolbar + .editor-attach-group {
+  border-radius: 0 0 var(--radius-control-sm) var(--radius-control-sm);
+}
+
+/* 可见区底部的横向条需相对正文吸底，托盘不再成为它的滚动祖先。 */
+.apple-edit-content .editor-attach-group {
+  overflow: visible;
+  box-shadow: none;
+  border: 0.5px solid var(--panel-border);
+  border-top: 0;
+}
+
+.apple-editor-scrollbar {
+  appearance: none;
+  position: sticky;
+  bottom: 0;
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  background: var(--main-surface-bg);
+}
+
+.apple-editor-scrollbar[hidden] { display: none; }
+.apple-editor-shell:hover .apple-editor-scrollbar,
+.apple-editor-scrollbar:active,
+.apple-editor-scrollbar:focus-visible { opacity: 1; }
+.apple-editor-scrollbar::-webkit-slider-runnable-track { height: 12px; }
+.apple-editor-scrollbar::-webkit-slider-thumb {
+  appearance: none;
+  width: max(12px, var(--editor-scrollbar-thumb-width));
+  height: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--scrollbar-thumb);
+}
+.apple-editor-scrollbar:hover::-webkit-slider-thumb { background: var(--scrollbar-thumb-hover); }
 
 /* 短文件不拉伸代码区；外层只负责在切换时保留最长文件的布局高度。 */
 .apple-editor-surface {
@@ -2355,7 +2424,7 @@ button:focus-visible {
   height: 80vh;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  --editor-max-height: 100%;
+  --editor-available-height: 100%;
 }
 
 .claude-template-dialog .app-dialog-body {
@@ -3440,7 +3509,6 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .cm-editor {
   /* 代码区按文档内容自适应，最长文件的共享占位由外层承担 */
   height: auto;
-  max-height: var(--editor-max-height);
   background: transparent;
   /* 缩进参考线复用分隔线 token，标记随行首空白绘制且不跟随光标变化 */
   --indent-marker-bg-color: var(--panel-divider);
@@ -3468,6 +3536,9 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 .cm-editor.cm-focused { outline: none; }
 
+/* 全文最小宽度已由 canvas 提供，覆盖 CM 的旧视口宽度缓存，文档变短时才能收缩。 */
+.cm-editor .cm-content { flex-basis: 0 !important; }
+
 .cm-editor .cm-scroller,
 .cm-editor .cm-content,
 .cm-editor .cm-line,
@@ -3482,6 +3553,9 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
    代码从其下穿过，不透明背景见下方 gutter 规则。 */
 .cm-editor .cm-scroller { overflow-x: auto; overflow-y: auto; overscroll-behavior: contain; }
 
+/* 页面代码区不设纵向限高，滚轮自然传给唯一的正文滚动容器。 */
+.apple-edit-content .cm-scroller { overscroll-behavior-y: auto; }
+
 /* 配置编辑器共用较宽的小圆角滚动条；auto 让 webkit 尺寸生效，颜色沿用全局主题。 */
 .apple-editor-shell .cm-scroller {
   scrollbar-width: auto;
@@ -3492,6 +3566,9 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   width: 12px;
   height: 12px;
 }
+
+/* 页内使用吸底同步条，弹窗继续使用自身的原生横向条。 */
+.apple-edit-content .cm-scroller::-webkit-scrollbar { height: 0; }
 
 /* 横纵滚动条交汇处透出编辑器底色，避免深色主题出现原生白色角块。 */
 .apple-editor-shell .cm-scroller::-webkit-scrollbar-corner {

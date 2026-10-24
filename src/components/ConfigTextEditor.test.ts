@@ -3,7 +3,8 @@ import profileEditSource from "../features/codex/CodexProfileEdit.tsx?raw";
 import editorSource from "./ConfigTextEditor.tsx?raw";
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { collectJsonDiagnostics, computeTextChange, findConfigFieldPosition, routeEditorWheel } from "./ConfigTextEditor";
+import { EditorView } from "@codemirror/view";
+import { collectJsonDiagnostics, computeTextChange, connectEditorScrollbar, editorToolbarScrollMargins, findConfigFieldPosition, syncEditorScrollbar } from "./ConfigTextEditor";
 import { patchEnvValue } from "../features/claude/profileEnvText";
 
 describe("ConfigTextEditor runtime", () => {
@@ -30,14 +31,14 @@ describe("ConfigTextEditor runtime", () => {
     expect(profileEditSource.match(/minLines=\{editorMinLines\}/g)).toHaveLength(3);
   });
 
-  it("编辑页按正文可用高度伸展，初次挂载和保活复显均监听正文尺寸", () => {
+  it("共享最小占位按正文可用高度伸展，初次挂载和保活复显均监听正文尺寸", () => {
     expect(editorSource).toContain('const scrollContent = parent.closest(".apple-edit-content");');
     expect(editorSource).toContain("if (scrollContent) resizeObserver.observe(scrollContent);");
     expect(editorSource).toContain("if (scrollContent) reattachedObserver.observe(scrollContent);");
     expect(editorSource).toContain("window.innerHeight - content.clientHeight + chromeHeight + bottomGap");
-    expect(editorSource).toContain('shell.style.setProperty("--editor-max-height",');
+    expect(editorSource).toContain('shell.style.setProperty("--editor-available-height",');
     expect(editorSource).toContain("max(0px, calc(100vh - ${reservedHeight}px))");
-    expect(editorSource).toContain("px, var(--editor-max-height))");
+    expect(editorSource).toContain("px, var(--editor-available-height))");
   });
 
   it("主题判定取当下 DOM 真值：Activity 隐藏期切主题后复显不会挂回配色过期的实例", () => {
@@ -91,11 +92,14 @@ describe("ConfigTextEditor runtime", () => {
     expect(editorSource).toContain("} else {\n        restoreScrollPosition();\n        restoreFrame = requestAnimationFrame(restoreScrollPosition);");
   });
 
-  it("横向滚动走原生滚动条：行号栏 sticky 固定，不再自绘同步滚动条", () => {
-    expect(editorSource).not.toContain("cm-horizontal-scrollbar");
+  it("横向使用吸底滑块，不拦截滚轮或改变纵向滚动", () => {
+    expect(editorSource).toContain('className="apple-editor-scrollbar"');
+    expect(editorSource).toContain('type="range"');
+    expect(editorSource).toContain("scrollbar.hidden = !content || editor.scrollDOM.scrollWidth <= editor.scrollDOM.clientWidth;");
     expect(editorSource).not.toContain("onEditorWheel");
     expect(editorSource).toContain("const previousScrollTop = editor.scrollDOM.scrollTop");
     expect(editorSource).toContain("editor.scrollDOM.scrollTop = previousScrollTop");
+    expect(editorSource).toContain("if (scrollContent) scrollContent.scrollTop = previousContentScrollTop;");
   });
 
   it("按整个文档的最长行在首屏预设 contentDOM 最小宽度（虚拟化下原生滚动才能到底）", () => {
@@ -127,6 +131,42 @@ describe("ConfigTextEditor runtime", () => {
   });
 });
 
+describe("connectEditorScrollbar", () => {
+  it("双向同步水平位置，保持纵向位置，并在卸载后移除监听", () => {
+    const scroller = Object.assign(new EventTarget(), { scrollLeft: 120, scrollTop: 75, scrollWidth: 1000, clientWidth: 500 }) as unknown as HTMLElement;
+    const properties: Record<string, string> = {};
+    const scrollbar = Object.assign(new EventTarget(), { value: "0", max: "0", style: {
+      setProperty: (key: string, value: string) => { properties[key] = value; },
+    } }) as unknown as HTMLInputElement;
+    const disconnect = connectEditorScrollbar(scroller, scrollbar);
+    expect(scrollbar.value).toBe("120");
+    expect(scrollbar.max).toBe("500");
+    expect(properties["--editor-scrollbar-thumb-width"]).toBe("250px");
+    scrollbar.value = "340";
+    scrollbar.dispatchEvent(new Event("input"));
+    expect(scroller.scrollLeft).toBe(340);
+    expect(scroller.scrollTop).toBe(75);
+    scroller.scrollLeft = 60;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(scrollbar.value).toBe("60");
+    disconnect();
+    scrollbar.value = "500";
+    scrollbar.dispatchEvent(new Event("input"));
+    expect(scroller.scrollLeft).toBe(60);
+    scroller.scrollLeft = 800;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(scrollbar.value).toBe("500");
+  });
+
+  it.each([{ scrollWidth: 500, clientWidth: 500, width: "500px" }, { scrollWidth: 0, clientWidth: 0, width: "0px" }])("无溢出或隐藏时范围归零，不产生无效宽度：%j", ({ scrollWidth, clientWidth, width }) => {
+    const properties: Record<string, string> = {};
+    const scrollbar = { style: { setProperty: (key: string, value: string) => { properties[key] = value; } } } as HTMLInputElement;
+    syncEditorScrollbar({ scrollWidth, clientWidth, scrollLeft: 0 } as HTMLElement, scrollbar);
+    expect(scrollbar.max).toBe("0");
+    expect(properties["--editor-scrollbar-thumb-width"]).toBe(width);
+  });
+});
+
 describe("collectJsonDiagnostics", () => {
   const stateOf = (doc: string) => EditorState.create({ doc });
 
@@ -143,18 +183,25 @@ describe("collectJsonDiagnostics", () => {
   });
 });
 
-describe("routeEditorWheel", () => {
-  it("向下滚且页面未到底时交给页面；上滑与已到底时滚编辑器", () => {
-    expect(routeEditorWheel(120, 300)).toBe(true);
-    expect(routeEditorWheel(120, 0)).toBe(false);
-    expect(routeEditorWheel(120, 1)).toBe(false);
-    expect(routeEditorWheel(-120, 300)).toBe(false);
-    expect(routeEditorWheel(0, 300)).toBe(false);
+describe("编辑页统一滚动", () => {
+  it("不再监听滚轮分配页面与编辑器的纵向滚动", () => {
+    expect(editorSource).not.toContain('addEventListener("wheel"');
+    expect(editorSource).not.toContain("routeEditorWheel");
   });
 
-  it("边界转发直接跟随当前滚轮增量，不保留反向滚动的旧动画目标", () => {
-    expect(editorSource).toContain("page.scrollTop = Math.max(0, Math.min(page.scrollTop + event.deltaY");
-    expect(editorSource).not.toContain("let smoothTarget");
-    expect(editorSource).not.toContain("const smoothStep");
+  const readMargins = EditorState.create({ extensions: editorToolbarScrollMargins }).facet(EditorView.scrollMargins)[0]!;
+
+  it("定位时留出整个吸顶栏高度，并跟随控件换行后的高度", () => {
+    let height = 80;
+    const toolbar = { getBoundingClientRect: () => ({ height }) };
+    const view = { dom: { closest: () => ({ querySelector: () => toolbar }) } } as unknown as EditorView;
+    expect(readMargins(view)).toEqual({ top: 80 });
+    height = 118;
+    expect(readMargins(view)).toEqual({ top: 118 });
+  });
+
+  it.each([null, { querySelector: () => null }])("没有吸顶栏的编辑器不增加定位留白：%j", (section) => {
+    const view = { dom: { closest: () => section } } as unknown as EditorView;
+    expect(readMargins(view)).toEqual({ top: 0 });
   });
 });

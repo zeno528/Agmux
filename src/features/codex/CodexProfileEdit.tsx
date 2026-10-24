@@ -713,29 +713,31 @@ function CodexProfileEditor({
           {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
             {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
           </div> : <div className="apple-panel-section flex flex-col">
+            <div className="apple-editor-toolbar">
               <div className="flex min-h-8 items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap gap-1">
                   {tabs.map((tab) => <button key={tab.id} type="button" className={`relative flex h-8 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-semibold transition-colors ${activeTab === tab.id ? "bg-(--active-bg) text-accent" : "muted hover:bg-(--hover-bg)"}`} aria-pressed={activeTab === tab.id} title={tab.title} onClick={() => { setActiveTab(tab.id); setEditorDiagnostics({ count: 0, firstLine: null }); }}>{tab.id === "config" ? <Settings className="h-3.5 w-3.5" strokeWidth={2} /> : <FileBraces className="h-3.5 w-3.5" strokeWidth={2} />}<span>{tab.label}</span>{((tab.id === "config" && configDirty) || (tab.id === "models" && catalogDirty) || (tab.id === "auth" && authDirty)) ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}</button>)}
                 </div>
                 {formatButton}
               </div>
-              {/* 附属条嵌进编辑器托盘顶部（editor chrome），随 tab 切换：config 快捷设置、models/auth 文件操作。 */}
-              <div className="editor-attach-group mt-2">
-                <div className="editor-attach-bar">
-                  {activeTab === "config" ? (
-                    <ProfileAdvancedControls advanced={advanced} saving={saving} />
-                  ) : (
-                    <TabFileControls
-                      kind={activeTab === "models" ? "models" : "auth"}
-                      editable={activeTab === "models" || !authPreviewOnly}
-                      disabled={saving}
-                      onClear={() => (activeTab === "models" ? setCatalogText("") : setAuthText(""))}
-                    />
-                  )}
-                </div>
-              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+              {/* 附属条随 tab 切换，与文件标签一起吸顶。 */}
+              <div className="editor-attach-bar">
+                {activeTab === "config" ? (
+                  <ProfileAdvancedControls advanced={advanced} saving={saving} />
+                ) : (
+                  <TabFileControls
+                    kind={activeTab === "models" ? "models" : "auth"}
+                    editable={activeTab === "models" || !authPreviewOnly}
+                    disabled={saving}
+                    onClear={() => (activeTab === "models" ? setCatalogText("") : setAuthText(""))}
+                  />
+                )}
               </div>
-            </div>}
+            </div>
+            <div className="editor-attach-group">
+              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+            </div>
+          </div>}
         </div>
       </div>
       <div className="apple-edit-toolbar apple-edit-toolbar--footer"><DiagnosticsChip diagnostics={editorDiagnostics} onFocusFirst={() => editorRef.current?.focusFirstDiagnostic()} /><button type="button" className="apple-action-button" onClick={onBack}>{t("dialog.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={saving || !canSave} onClick={() => void save()}><Save className="h-4 w-4" strokeWidth={2} />{saving ? t("edit.saving") : t("dialog.save")}</button></div>

@@ -390,10 +390,30 @@ describe("AppShell 布局", () => {
     expect(styles).toContain(".apple-count-badge {\n  position: absolute;\n  left: auto;\n  right: -3.4px;\n  top: -3.4px;");
   });
 
-  it("配置编辑器恢复原生横向滚动，不再自绘同步滚动条", () => {
-    expect(styles).toContain("max-height: var(--editor-max-height);");
+  it("配置编辑器随文档撑高，保留原生横向滚动且纵向滚轮交给页面", () => {
+    const editorRule = styles.match(/\n\.cm-editor \{([^}]+)\}/)?.[1];
+    expect(editorRule).toContain("height: auto;");
+    expect(editorRule).not.toContain("max-height:");
     expect(styles).toContain(".cm-editor .cm-scroller { overflow-x: auto; overflow-y: auto; overscroll-behavior: contain; }");
+    expect(styles).toContain(".apple-edit-content .cm-scroller { overscroll-behavior-y: auto; }");
+    expect(styles).toContain(".cm-editor .cm-content { flex-basis: 0 !important; }");
     expect(styles).not.toContain(".cm-horizontal-scrollbar");
+  });
+
+  it("操作栏在正文顶部吸顶，代码图层限制在其下方", () => {
+    const toolbarRule = styles.match(/\n\.apple-editor-toolbar \{([^}]+)\}/)?.[1];
+    expect(toolbarRule).toContain("position: sticky;");
+    expect(toolbarRule).toContain("top: -1px;");
+    expect(toolbarRule).toContain("padding-top: 1px;");
+    expect(toolbarRule).toContain("margin-top: -1px;");
+    expect(toolbarRule).toContain("z-index: 1;");
+    expect(toolbarRule).toContain("background: var(--main-surface-bg);");
+    const scrollportRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) \{([^}]+)\}/)?.[1];
+    const surfaceRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) > \.apple-edit-surface \{([^}]+)\}/)?.[1];
+    expect(scrollportRule).toContain("padding-top: 0;");
+    expect(surfaceRule).toContain("padding-top: var(--gap-page);");
+    expect(styles).not.toContain(".apple-editor-toolbar::before");
+    expect(styles).toContain(".apple-editor-shell {\n  min-width: 0;\n  isolation: isolate;");
   });
 
   it("通用模板弹窗按窗口宽高固定占比，编辑器占满正文剩余高度", () => {
@@ -403,13 +423,27 @@ describe("AppShell 布局", () => {
     expect(skillsSource.match(/h-\[var\(--dialog-preview-height\)\]/g)).toHaveLength(4);
     expect(templateRule).toContain("width: 80vw;");
     expect(templateRule).toContain("height: 80vh;");
-    expect(templateRule).toContain("--editor-max-height: 100%;");
-    expect(styles.includes("--editor-max-height: min(34rem, 60vh);")).toBe(true);
+    expect(templateRule).toContain("--editor-available-height: 100%;");
+    expect(styles.includes("--editor-available-height: min(34rem, 60vh);")).toBe(true);
   });
 
   it("编辑器滚动条在鼠标移出后隐藏，不受拖动留下的焦点影响", () => {
     expect(styles.includes(".apple-editor-shell:not(:hover) .cm-scroller::-webkit-scrollbar-thumb {\n  background: transparent;")).toBe(true);
     expect(styles.includes(".apple-editor-shell:not(:hover):not(:focus-within)")).toBe(false);
+    const scrollbarRule = styles.match(/\n\.apple-editor-scrollbar \{([^}]+)\}/)?.[1];
+    expect(scrollbarRule).toContain("position: sticky;");
+    expect(scrollbarRule).toContain("bottom: 0;");
+    expect(scrollbarRule).toContain("height: 12px;");
+    expect(scrollbarRule).toContain("opacity: 0;");
+    expect(styles).toContain(".apple-editor-shell:hover .apple-editor-scrollbar,");
+    expect(styles).toContain(".apple-editor-scrollbar:focus-visible { opacity: 1; }");
+    expect(styles).toContain(".apple-editor-scrollbar::-webkit-slider-thumb");
+    expect(styles).toContain(".apple-edit-content .editor-attach-group {\n  overflow: visible;");
+    const trayRule = styles.match(/\n\.apple-edit-content \.editor-attach-group \{([^}]+)\}/)?.[1];
+    expect(trayRule).toContain("box-shadow: none;");
+    expect(trayRule).toContain("border: 0.5px solid var(--panel-border);");
+    expect(styles).toContain("padding-bottom: calc(var(--gap-section) * 0.125);");
+    expect(styles).toContain(".apple-edit-content .cm-scroller::-webkit-scrollbar { height: 0; }");
   });
 
   it("取消编辑器外围的焦点发光描边", () => {

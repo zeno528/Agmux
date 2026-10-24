@@ -49,6 +49,7 @@ export default {
   },
   editor: {
     placeholder: "Edit the configuration here...",
+    horizontalScrollbar: "Editor horizontal scroll",
     jsonSyntaxError: "JSON syntax error. Check the comma, brackets, or value here",
   },
   preset: {

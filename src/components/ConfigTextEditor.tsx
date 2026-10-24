@@ -215,12 +215,28 @@ export function findConfigFieldPosition(text: string, field: string, from: numbe
   return match ? start + match.index + match[0].search(/\S/) : null;
 }
 
-/**
- * 滚轮路由决策：只有向下滚且页面未到底时才把滚动交给页面；上滑永远滚编辑器。
- * 页面距底 ≤1px 视为已到底。
- */
-export function routeEditorWheel(deltaY: number, pageDistanceToBottom: number): boolean {
-  return deltaY > 0 && pageDistanceToBottom > 1;
+// 跳转、搜索和键盘移动均避开页内吸顶操作栏，换行后的实际高度也要计入。
+export const editorToolbarScrollMargins = EditorView.scrollMargins.of((view) => ({
+  top: view.dom.closest(".apple-panel-section")?.querySelector(".apple-editor-toolbar")?.getBoundingClientRect().height ?? 0,
+}));
+
+export function syncEditorScrollbar(scroller: HTMLElement, scrollbar: HTMLInputElement) {
+  scrollbar.max = String(Math.max(0, scroller.scrollWidth - scroller.clientWidth));
+  scrollbar.value = String(scroller.scrollLeft);
+  const ratio = scroller.scrollWidth ? scroller.clientWidth / scroller.scrollWidth : 1;
+  scrollbar.style.setProperty("--editor-scrollbar-thumb-width", `${scroller.clientWidth * ratio}px`);
+}
+
+export function connectEditorScrollbar(scroller: HTMLElement, scrollbar: HTMLInputElement) {
+  const fromEditor = () => syncEditorScrollbar(scroller, scrollbar);
+  const fromScrollbar = () => { scroller.scrollLeft = Number(scrollbar.value); };
+  scroller.addEventListener("scroll", fromEditor);
+  scrollbar.addEventListener("input", fromScrollbar);
+  fromEditor();
+  return () => {
+    scroller.removeEventListener("scroll", fromEditor);
+    scrollbar.removeEventListener("input", fromScrollbar);
+  };
 }
 
 // canvas 文本测量上下文只读共享：多个编辑器、多次显隐重挂复用，不随 effect 重建
@@ -233,11 +249,11 @@ function syncEditorLayout(editor: EditorView) {
   const section = shell?.closest<HTMLElement>(".apple-panel-section");
   const content = shell?.closest<HTMLElement>(".apple-edit-content");
   if (shell && section && content) {
-    // 滚到底后，分区顶部保持原位；窗口新增高度全部用于代码区，不挤动页面滚动位置。
+    // 只限制切换文件时的共享最小占位，长文档仍自然撑高并由编辑页滚动。
     const chromeHeight = shell.getBoundingClientRect().top - section.getBoundingClientRect().top;
     const bottomGap = parseFloat(getComputedStyle(content).paddingBottom);
     const reservedHeight = window.innerHeight - content.clientHeight + chromeHeight + bottomGap;
-    shell.style.setProperty("--editor-max-height", `max(0px, calc(100vh - ${reservedHeight}px))`);
+    shell.style.setProperty("--editor-available-height", `max(0px, calc(100vh - ${reservedHeight}px))`);
   }
   // 语法树预热：CM 初始化只解析前 3000 字符，其余在空闲时补，快速滚动会先跑到未解析区间（无高亮）
   forceParsing(editor, editor.state.doc.length, 200);
@@ -260,6 +276,12 @@ function syncEditorLayout(editor: EditorView) {
     documentWidth = Math.max(documentWidth, lineWidth);
   }
   editor.contentDOM.style.minWidth = `${Math.ceil(documentWidth)}px`;
+  // 可见区底部的同步条沿用全文宽度，不依赖系统原生滚动条的自动显隐。
+  const scrollbar = shell?.querySelector<HTMLInputElement>(".apple-editor-scrollbar");
+  if (scrollbar) {
+    scrollbar.hidden = !content || editor.scrollDOM.scrollWidth <= editor.scrollDOM.clientWidth;
+    syncEditorScrollbar(editor.scrollDOM, scrollbar);
+  }
 }
 
 interface ConfigTextEditorProps {
@@ -280,6 +302,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
   const { t } = useTranslation();
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   const hostRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollbarRef = useRef<HTMLInputElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
@@ -294,7 +317,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
   const destroyCheckRef = useRef(0);
   const destroyedRef = useRef(false);
   const creationDepsRef = useRef<readonly unknown[] | null>(null);
-  const editorMinHeight = `min(${Math.max(1, minLines) * 19.2 + 8}px, var(--editor-max-height))`;
+  const editorMinHeight = `min(${Math.max(1, minLines) * 19.2 + 8}px, var(--editor-available-height))`;
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -416,6 +439,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
         doc: valueRef.current,
         extensions: [
           basicSetup,
+          editorToolbarScrollMargins,
           indentUnitCompartment.current.of(indentUnitFacet.of(docIndentUnit)),
           editingCompartment.current.of([
             EditorState.readOnly.of(readOnly),
@@ -438,21 +462,6 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
     viewRef.current = editor;
     destroyedRef.current = false;
     creationDepsRef.current = creationDeps;
-    // 滚轮路由：下滚页面优先（页面没到底先滚页面露出完整编辑器），上滚编辑器优先
-    // （编辑器没到顶先滚内容，到顶后滚页面）——合起来就是"滚轮滚还没到边的那个容器"。
-    // cm-scroller 自带边界链式滚动拦截（见 style.css 滚动容器规则），越界方向必须在这里
-    // 显式转发；横向滚动与缩放手势照常原生。直接写入页面滚动位置，避免反向滚动时
-    // 旧的平滑目标继续追赶造成跳动。监听挂在实例的 scrollDOM 上，保活复显原样挂回时随实例一起存活。
-    editor.scrollDOM.addEventListener("wheel", (event) => {
-      if (event.ctrlKey) return; // 缩放手势（触控板捏合）放行原生
-      const page = editor.dom.closest<HTMLElement>(".apple-edit-content");
-      if (!page) return;
-      const routeDown = routeEditorWheel(event.deltaY, page.scrollHeight - page.clientHeight - page.scrollTop);
-      const routeUp = event.deltaY < 0 && editor.scrollDOM.scrollTop <= 0 && page.scrollTop > 1;
-      if (!routeDown && !routeUp) return;
-      event.preventDefault();
-      page.scrollTop = Math.max(0, Math.min(page.scrollTop + event.deltaY, page.scrollHeight - page.clientHeight));
-    }, { passive: false });
     const resizeObserver = new ResizeObserver(() => scheduleContentWidthSync(editor));
     resizeObserver.observe(editor.dom);
     if (scrollContent) resizeObserver.observe(scrollContent);
@@ -460,6 +469,12 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
     reportDiagnostics(editor);
 
     return () => detachEditor(editor, resizeObserver);
+  }, [dark, language, placeholder, validateToml, t]);
+
+  useLayoutEffect(() => {
+    const editor = viewRef.current;
+    const scrollbar = horizontalScrollbarRef.current;
+    if (editor && scrollbar) return connectEditorScrollbar(editor.scrollDOM, scrollbar);
   }, [dark, language, placeholder, validateToml, t]);
 
   useEffect(() => {
@@ -497,6 +512,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
     const restoreScrollPosition = () => {
       editor.scrollDOM.scrollTop = previousScrollTop;
       editor.scrollDOM.scrollLeft = previousScrollLeft;
+      if (scrollContent) scrollContent.scrollTop = previousContentScrollTop;
     };
     syncingValueRef.current = true;
     try {
@@ -527,6 +543,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
       <div className="apple-editor-surface">
         <div ref={hostRef} />
       </div>
+      <input ref={horizontalScrollbarRef} className="apple-editor-scrollbar" type="range" min={0} step="any" defaultValue={0} aria-label={t("editor.horizontalScrollbar")} hidden />
     </div>
   );
 });

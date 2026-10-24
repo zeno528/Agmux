@@ -168,7 +168,8 @@ describe("ProfileEdit 用量查询", () => {
 describe("编辑器文件头布局", () => {
   it("tab 与格式化同一行，附属条嵌进编辑器托盘顶部并按 tab 切换：config 快捷设置、models/auth 文件操作", () => {
     expect(source).toContain('<div className="flex min-h-8 items-center justify-between gap-2">');
-    expect(source).toContain('<div className="editor-attach-group mt-2">');
+    expect(source).toContain('<div className="apple-editor-toolbar">');
+    expect(source).toContain('<div className="editor-attach-group">');
     expect(source).toContain('<div className="editor-attach-bar">');
     expect(source).toContain("<TabFileControls");
     expect(source).toContain('kind={activeTab === "models" ? "models" : "auth"}');

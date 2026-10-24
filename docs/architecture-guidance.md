@@ -84,7 +84,7 @@ Agmux 是同时管理 Codex 与 Claude Code 的本地桌面应用，支持 macOS
 - AppShell 聚合根 `AppState` 与导航，`managementDataCache` 共享管理数据、在途请求及持久化缓存；feature 保留编辑草稿等局部状态，不另造全局 store。接口类型同时检查 `src/types.ts` 与 Rust `models.rs`。
 - 页面通过 `<Activity>` 保活，未访问页面不渲染；新增页补 `renderPages` 的完整 `Record<AppView, ReactNode>`，不以重挂载、reset key 或含 view 的外层 key 清空草稿。重复点击当前侧栏经 `navTo` 弹回一级；托盘等程序化跳转仍用 `setView`。
 - 管理页进入时刷新；已有首帧后预热和全局定时任务允许复用，但不得前移到窗口显示或首帧。具体延时、冷却与缓存失效由实现和 `managementDataCache.test.ts` 维护。
-- 普通页由 AppShell `<main>` 纵向滚动，编辑页由 `.apple-edit-content` 滚动中间区，不另造滚动容器或 sticky；页头/操作分别复用 `.apple-page-bar` / `.apple-action-button`，排版归共享样式。
+- 普通页由 AppShell `<main>` 纵向滚动，编辑页由 `.apple-edit-content` 滚动中间区，代码区随内容撑高；配置编辑器操作栏复用 `.apple-editor-toolbar` 吸顶，不另造纵向滚动容器。页头/操作分别复用 `.apple-page-bar` / `.apple-action-button`，排版归共享样式。
 - 组件优先用现有 App 包装；Radix 只在 `components/App*.tsx` 与 `Feedback.tsx` 内使用。反馈/确认走 `useFeedback()`，配置编辑走 `ConfigTextEditor`，等宽分段走 `AppSegmentedControl` 并保持选中索引与 ARIA 状态一致；图标用 lucide，默认 18、按钮内 16、strokeWidth 2。
 - 字号、颜色、字体、间距、主题使用 `style.css` token；新增主题 token 同时维护浅深两套，新增全局类注释说明意图。CSS 使用逻辑像素，不固定套用某台机器的截图缩放比。
 - 具体禁用 class、页头与滚动约束由 `check-style-leaks.mjs` 执行；例外精确到文件/class 并说明理由。文案遵循中英 locale 与术语表，`check-i18n-leaks.mjs`、键对齐和类型检查共同约束，不在根规则抄录 token 与文案清单。

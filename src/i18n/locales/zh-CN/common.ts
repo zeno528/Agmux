@@ -48,6 +48,7 @@ export default {
   },
   editor: {
     placeholder: "在此编辑配置…",
+    horizontalScrollbar: "编辑器横向滚动",
     jsonSyntaxError: "JSON 语法错误，请检查此处的逗号、括号或值",
   },
   preset: {

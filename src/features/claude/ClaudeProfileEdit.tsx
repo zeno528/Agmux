@@ -452,115 +452,115 @@ function ClaudeProfileEditor({
             />
           </div>
           <div className="apple-panel-section flex flex-col">
-            <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-              <button type="button" className="relative flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] bg-(--active-bg) px-3 text-[13px] font-semibold text-accent transition-colors" aria-pressed="true" title="settings.json">
-                <FileBraces className="h-3.5 w-3.5" strokeWidth={2} />
-                <span>settings.json</span>
-                {envDirty ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}
-              </button>
-              <div className="editor-ghost-group ml-auto h-8 shrink-0 gap-1 whitespace-nowrap bg-(--active-bg) px-2">
-                <span className="field-label font-normal! flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-                  <LayoutTemplate className="shrink-0" size={16} strokeWidth={2} aria-hidden="true" />
-                  {t("commonTemplate.title")}
-                </span>
-                <span className="editor-ghost-group__separator" aria-hidden="true" />
-                <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => void fillCommonTemplate()}>
-                  {t("commonTemplate.fill")}
+            <div className="apple-editor-toolbar">
+              <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+                <button type="button" className="relative flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] bg-(--active-bg) px-3 text-[13px] font-semibold text-accent transition-colors" aria-pressed="true" title="settings.json">
+                  <FileBraces className="h-3.5 w-3.5" strokeWidth={2} />
+                  <span>settings.json</span>
+                  {envDirty ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" /> : null}
                 </button>
-                <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setTemplateOpen(true)}>
-                  {t("commonTemplate.edit")}
+                <div className="editor-ghost-group ml-auto h-8 shrink-0 gap-1 whitespace-nowrap bg-(--active-bg) px-2">
+                  <span className="field-label font-normal! flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                    <LayoutTemplate className="shrink-0" size={16} strokeWidth={2} aria-hidden="true" />
+                    {t("commonTemplate.title")}
+                  </span>
+                  <span className="editor-ghost-group__separator" aria-hidden="true" />
+                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => void fillCommonTemplate()}>
+                    {t("commonTemplate.fill")}
+                  </button>
+                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setTemplateOpen(true)}>
+                    {t("commonTemplate.edit")}
+                  </button>
+                </div>
+                <button type="button" className="editor-ghost editor-ghost--format shrink-0" disabled={saving} title={tProfiles("edit.formatTitle", { label: "settings.json", format: "JSON" })} onClick={formatEnv}>
+                  <CodeXml className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                  <span className="whitespace-nowrap font-medium">{tProfiles("edit.format")}</span>
                 </button>
               </div>
-              <button type="button" className="editor-ghost editor-ghost--format shrink-0" disabled={saving} title={tProfiles("edit.formatTitle", { label: "settings.json", format: "JSON" })} onClick={formatEnv}>
-                <CodeXml className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-                <span className="whitespace-nowrap font-medium">{tProfiles("edit.format")}</span>
-              </button>
+              <div className="editor-attach-bar flex-nowrap! items-start!">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                  <div className="editor-ghost-group pl-1">
+                    <label className="editor-ghost" title={t("advanced.autoCompactTitle")}>
+                      <input type="checkbox" checked={!autoCompactDisabled} onChange={(event) => updateEnvValue("DISABLE_AUTO_COMPACT", event.target.checked ? null : "1", "autoCompactEnabled")} />
+                      <span className="whitespace-nowrap font-medium">{t("advanced.autoCompactLabel")}</span>
+                    </label>
+                    <span className="editor-ghost-group__separator" aria-hidden="true" />
+                    <label className={`editor-ghost ${autoCompactDisabled ? "opacity-40 pointer-events-none" : ""}`} title={t("advanced.compactThresholdTitle")}>
+                      <span className="whitespace-nowrap">{t("advanced.compactThresholdLabel")}</span>
+                      <input className={`app-input app-input--compact compact-token-input ${autoCompactDisabled ? "" : "compact-token-input--on"} h-6 text-center`} type="number" min={100000} max={1000000} step={100000} inputMode="numeric" value={autoCompactWindow} placeholder={t("advanced.compactWindowPlaceholder")} disabled={autoCompactDisabled} onChange={(event) => updateEnvValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW", event.target.value, "autoCompactWindow")} />
+                    </label>
+                  </div>
+                  <label className="editor-ghost" title={t("advanced.gitAttributionTitle")}>
+                    <input type="checkbox" checked={gitAttributionHidden} onChange={(event) => toggleGitAttribution(event.target.checked)} />
+                    <span className="whitespace-nowrap font-medium">{t("advanced.gitAttributionLabel")}</span>
+                  </label>
+                  <label className="editor-ghost" title={t("advanced.agentTeamsTitle")}>
+                    <input type="checkbox" checked={agentTeamsEnabled} onChange={(event) => updateEnvValue("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", event.target.checked ? "1" : null)} />
+                    <span className="whitespace-nowrap font-medium">{t("advanced.agentTeamsLabel")}</span>
+                  </label>
+                  <div
+                    className="inline-flex h-7 items-center gap-2 px-2.5 field-label muted"
+                    title={t("advanced.effortTitle")}
+                    onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}
+                  >
+                    <span className="whitespace-nowrap font-medium">{t("advanced.effortLabel")}</span>
+                    <div className="editor-ghost--format bg-transparent! w-20 shrink-0 rounded-md">
+                      <AppSelect
+                        value={effortLevel}
+                        options={[
+                          { value: "", label: "Default" },
+                          ...(effortLevel && !effortLevels.some((level) => level === effortLevel)
+                            ? [{ value: effortLevel, label: effortLevel }] : []),
+                          ...effortLevels.map((level) => ({ value: level, label: level })),
+                        ]}
+                        onChange={(value) => updateEnvValue("CLAUDE_CODE_EFFORT_LEVEL", value || null, "effortLevel")}
+                        placeholder={t("advanced.effortLabel")}
+                        disabled={saving}
+                        menuWidth="7rem"
+                        compact
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="shrink-0" onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}>
+                  <AppSelect
+                    value={null}
+                    options={[
+                      { value: "bypassPermissions", label: t("advanced.bypassPermissionsLabel") },
+                      { value: "bashEditDiff", label: t("advanced.bashEditDiffLabel") },
+                      { value: "autoMemory", label: t("advanced.autoMemoryLabel") },
+                    ]}
+                    checkedValues={[
+                      ...(!autoMemoryEnabled ? ["autoMemory"] : []),
+                      ...(bashEditDiffEnabled ? ["bashEditDiff"] : []),
+                      ...(bypassPermissionsEnabled ? ["bypassPermissions"] : []),
+                    ]}
+                    onChange={(value) => {
+                      if (value === "autoMemory") updateEnvValue("CLAUDE_CODE_DISABLE_AUTO_MEMORY", autoMemoryEnabled ? "1" : null, "autoMemoryEnabled");
+                      else if (value === "bashEditDiff") updateEnvValue("CLAUDE_CODE_BASH_EDIT_DIFF", bashEditDiffEnabled ? null : "1", "bashEditDiffEnabled");
+                      else if (value === "bypassPermissions") {
+                        const next = patchBypassPermissions(envText, !bypassPermissionsEnabled);
+                        if (!bypassPermissionsEnabled) editorRef.current?.revealField(next, "defaultMode");
+                        setEnvText(next);
+                      }
+                    }}
+                    renderLabel={(option) => (
+                      <span title={t(option.value === "autoMemory" ? "advanced.autoMemoryTitle"
+                        : option.value === "bashEditDiff" ? "advanced.bashEditDiffTitle" : "advanced.bypassPermissionsTitle")}>
+                        {option.label}
+                      </span>
+                    )}
+                    placeholder={t("advanced.moreLabel")}
+                    disabled={saving}
+                    iconOnly
+                    compact
+                  />
+                </div>
+              </div>
             </div>
-            <div className="mt-2 flex flex-col">
-              <div className="editor-attach-group">
-                <div className="editor-attach-bar flex-nowrap! items-start!">
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                    <div className="editor-ghost-group pl-1">
-                      <label className="editor-ghost" title={t("advanced.autoCompactTitle")}>
-                        <input type="checkbox" checked={!autoCompactDisabled} onChange={(event) => updateEnvValue("DISABLE_AUTO_COMPACT", event.target.checked ? null : "1", "autoCompactEnabled")} />
-                        <span className="whitespace-nowrap font-medium">{t("advanced.autoCompactLabel")}</span>
-                      </label>
-                      <span className="editor-ghost-group__separator" aria-hidden="true" />
-                      <label className={`editor-ghost ${autoCompactDisabled ? "opacity-40 pointer-events-none" : ""}`} title={t("advanced.compactThresholdTitle")}>
-                        <span className="whitespace-nowrap">{t("advanced.compactThresholdLabel")}</span>
-                        <input className={`app-input app-input--compact compact-token-input ${autoCompactDisabled ? "" : "compact-token-input--on"} h-6 text-center`} type="number" min={100000} max={1000000} step={100000} inputMode="numeric" value={autoCompactWindow} placeholder={t("advanced.compactWindowPlaceholder")} disabled={autoCompactDisabled} onChange={(event) => updateEnvValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW", event.target.value, "autoCompactWindow")} />
-                      </label>
-                    </div>
-                    <label className="editor-ghost" title={t("advanced.gitAttributionTitle")}>
-                      <input type="checkbox" checked={gitAttributionHidden} onChange={(event) => toggleGitAttribution(event.target.checked)} />
-                      <span className="whitespace-nowrap font-medium">{t("advanced.gitAttributionLabel")}</span>
-                    </label>
-                    <label className="editor-ghost" title={t("advanced.agentTeamsTitle")}>
-                      <input type="checkbox" checked={agentTeamsEnabled} onChange={(event) => updateEnvValue("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", event.target.checked ? "1" : null)} />
-                      <span className="whitespace-nowrap font-medium">{t("advanced.agentTeamsLabel")}</span>
-                    </label>
-                    <div
-                      className="inline-flex h-7 items-center gap-2 px-2.5 field-label muted"
-                      title={t("advanced.effortTitle")}
-                      onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}
-                    >
-                      <span className="whitespace-nowrap font-medium">{t("advanced.effortLabel")}</span>
-                      <div className="editor-ghost--format bg-transparent! w-20 shrink-0 rounded-md">
-                        <AppSelect
-                          value={effortLevel}
-                          options={[
-                            { value: "", label: "Default" },
-                            ...(effortLevel && !effortLevels.some((level) => level === effortLevel)
-                              ? [{ value: effortLevel, label: effortLevel }] : []),
-                            ...effortLevels.map((level) => ({ value: level, label: level })),
-                          ]}
-                          onChange={(value) => updateEnvValue("CLAUDE_CODE_EFFORT_LEVEL", value || null, "effortLevel")}
-                          placeholder={t("advanced.effortLabel")}
-                          disabled={saving}
-                          menuWidth="7rem"
-                          compact
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0" onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}>
-                    <AppSelect
-                      value={null}
-                      options={[
-                        { value: "bypassPermissions", label: t("advanced.bypassPermissionsLabel") },
-                        { value: "bashEditDiff", label: t("advanced.bashEditDiffLabel") },
-                        { value: "autoMemory", label: t("advanced.autoMemoryLabel") },
-                      ]}
-                      checkedValues={[
-                        ...(!autoMemoryEnabled ? ["autoMemory"] : []),
-                        ...(bashEditDiffEnabled ? ["bashEditDiff"] : []),
-                        ...(bypassPermissionsEnabled ? ["bypassPermissions"] : []),
-                      ]}
-                      onChange={(value) => {
-                        if (value === "autoMemory") updateEnvValue("CLAUDE_CODE_DISABLE_AUTO_MEMORY", autoMemoryEnabled ? "1" : null, "autoMemoryEnabled");
-                        else if (value === "bashEditDiff") updateEnvValue("CLAUDE_CODE_BASH_EDIT_DIFF", bashEditDiffEnabled ? null : "1", "bashEditDiffEnabled");
-                        else if (value === "bypassPermissions") {
-                          const next = patchBypassPermissions(envText, !bypassPermissionsEnabled);
-                          if (!bypassPermissionsEnabled) editorRef.current?.revealField(next, "defaultMode");
-                          setEnvText(next);
-                        }
-                      }}
-                      renderLabel={(option) => (
-                        <span title={t(option.value === "autoMemory" ? "advanced.autoMemoryTitle"
-                          : option.value === "bashEditDiff" ? "advanced.bashEditDiffTitle" : "advanced.bypassPermissionsTitle")}>
-                          {option.label}
-                        </span>
-                      )}
-                      placeholder={t("advanced.moreLabel")}
-                      disabled={saving}
-                      iconOnly
-                      compact
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col">
-                  <ConfigTextEditor ref={editorRef} value={envText} language="json" minLines={envMinLines} placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
-                </div>
+            <div className="editor-attach-group">
+              <div className="flex flex-col">
+                <ConfigTextEditor ref={editorRef} value={envText} language="json" minLines={envMinLines} placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
               </div>
             </div>
           </div>
