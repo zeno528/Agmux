@@ -2990,7 +2990,7 @@ fn mcp_app_operations_leave_no_sync_diff() {
     );
 }
 
-/// 外部把已关条目加回 live 后，差异页"同步"必须真正消掉差异：片段进镜像、开关翻开。
+/// 外部重新启用时若同时改了连接配置，仍需采纳配置修改。
 #[test]
 fn mcp_adopt_external_readd_clears_diff_and_reenables() {
     let (context, _home) = mcp_test_context("[mcp_servers.a]\nurl = \"https://a/mcp\"\n");
@@ -2999,12 +2999,12 @@ fn mcp_adopt_external_readd_clears_diff_and_reenables() {
         .set_mcp_server_enabled("a", SkillTool::Codex, false)
         .unwrap();
 
-    // 外部把同名片段写回 live：应报告"仅 live 有"
-    let external = "[mcp_servers.a]\nurl = \"https://a/mcp\"\n";
+    // 外部重新启用并修改地址：只报告连接配置变化。
+    let external = "[mcp_servers.a]\nurl = \"https://a/v2\"\n";
     std::fs::write(context.paths.codex_config(), external).unwrap();
     let preview = context.codex_mcp_sync_preview().unwrap();
     assert_eq!(preview.entries.len(), 1);
-    assert_eq!(preview.entries[0].kind, McpSyncEntryKind::LiveOnly);
+    assert_eq!(preview.entries[0].kind, McpSyncEntryKind::Changed);
 
     // 采纳后差异清空，codex 开关翻开（live 里有条目 = on 的事实源）
     context.set_mcp_mirror_entry("a", Some(external)).unwrap();
@@ -3800,6 +3800,163 @@ fn mcp_batch_mirror_adopt_writes_once_and_keeps_untouched_entries() {
     assert_eq!(server("b").url.as_deref(), Some("https://b/v2"));
     assert_eq!(server("c").url.as_deref(), Some("https://c/mcp"));
     assert!(context.codex_mcp_sync_preview().unwrap().entries.is_empty());
+}
+
+#[test]
+fn mcp_preview_silently_tracks_codex_enabled_state() {
+    let base = "[mcp_servers.a]\n# keep comment\nurl = \"https://a/mcp\"\ncustom = \"keep\"\n";
+    let (context, _home) = mcp_test_context(base);
+    import_mcp_from_live(&context);
+    context
+        .claude_save_mcp_server(None, "a", r#"{"url":"https://claude/mcp","custom":1}"#)
+        .unwrap();
+    let before = context.database.mcp_server_record("a").unwrap().unwrap();
+    let claude_live = std::fs::read(context.paths.claude_mcp_config()).unwrap();
+    let backups = config_backup_count(&context);
+
+    for enabled in [Some(false), Some(true), None] {
+        let setting = enabled
+            .map(|value| format!("enabled = {value}\n"))
+            .unwrap_or_default();
+        let live = format!("{base}{setting}");
+        std::fs::write(context.paths.codex_config(), &live).unwrap();
+        for _ in 0..2 {
+            let preview = context.codex_mcp_sync_preview().unwrap();
+            assert!(preview.entries.is_empty(), "{:?}", preview.entries);
+        }
+        let record = context.database.mcp_server_record("a").unwrap().unwrap();
+        assert_eq!(
+            codex_config::spec_from_fragment("a", &record.toml)
+                .unwrap()
+                .enabled,
+            enabled
+        );
+        assert!(record.toml.contains("# keep comment"));
+        assert!(record.toml.contains("custom = \"keep\""));
+        assert!(record.codex_installed && record.codex_enabled);
+        assert_eq!(record.claude_json, before.claude_json);
+        assert_eq!(record.claude_enabled, before.claude_enabled);
+        assert_eq!(record.claude_installed, before.claude_installed);
+        assert_eq!(read_config_text(&context), live);
+        assert_eq!(config_backup_count(&context), backups);
+        assert_eq!(
+            std::fs::read(context.paths.claude_mcp_config()).unwrap(),
+            claude_live
+        );
+    }
+}
+
+#[test]
+fn mcp_preview_enabled_changes_do_not_hide_connection_changes() {
+    for (old, new) in [
+        ("url = \"https://a/mcp\"", "url = \"https://a/v2\""),
+        ("command = \"old\"", "command = \"new\""),
+        (
+            "command = \"echo\"\nargs = [\"old\"]",
+            "command = \"echo\"\nargs = [\"new\"]",
+        ),
+        (
+            "command = \"echo\"\nenv = { MODE = \"old\" }",
+            "command = \"echo\"\nenv = { MODE = \"new\" }",
+        ),
+    ] {
+        let seed = format!("[mcp_servers.a]\nenabled = true\n{old}\n");
+        let (context, _home) = mcp_test_context(&seed);
+        import_mcp_from_live(&context);
+        let live = format!("[mcp_servers.a]\nenabled = false\n{new}\n");
+        std::fs::write(context.paths.codex_config(), &live).unwrap();
+        let preview = context.codex_mcp_sync_preview().unwrap();
+        assert_eq!(preview.entries.len(), 1);
+        let entry = &preview.entries[0];
+        assert_eq!(entry.kind, McpSyncEntryKind::Changed);
+        assert_eq!(entry.live_spec.as_ref().unwrap().enabled, Some(false));
+        assert_eq!(entry.db_spec.as_ref().unwrap().enabled, Some(false));
+        let mut expected = codex_config::spec_from_fragment("a", &seed).unwrap();
+        expected.enabled = Some(false);
+        assert_eq!(entry.db_spec.as_ref(), Some(&expected));
+        context
+            .revert_mcp_live_entry("a", entry.db_toml.as_deref())
+            .unwrap();
+        assert_eq!(context.codex_list_mcp_servers().unwrap()[0], expected);
+        assert!(context.codex_mcp_sync_preview().unwrap().entries.is_empty());
+    }
+}
+
+#[test]
+fn mcp_preview_silently_tracks_external_reenable() {
+    let codex = "[mcp_servers.a]\nurl = \"https://a/mcp\"\n";
+    let claude = r#"{"mcpServers":{"a":{"url":"https://claude/mcp"}}}"#;
+    for tool in [SkillTool::Codex, SkillTool::Claude] {
+        let (context, _home) = mcp_test_context(codex);
+        std::fs::write(context.paths.claude_mcp_config(), claude).unwrap();
+        context.mcp_sync_preview(SkillTool::Codex).unwrap();
+        context.mcp_sync_preview(SkillTool::Claude).unwrap();
+        context.set_mcp_server_enabled("a", tool, false).unwrap();
+        let (path, live) = match tool {
+            SkillTool::Codex => (context.paths.codex_config(), codex),
+            SkillTool::Claude => (context.paths.claude_mcp_config(), claude),
+        };
+        std::fs::write(&path, live).unwrap();
+        let preview = context.mcp_sync_preview(tool).unwrap();
+        assert!(
+            preview.entries.is_empty(),
+            "{tool:?}: {:?}",
+            preview.entries
+        );
+        let record = context.database.mcp_server_record("a").unwrap().unwrap();
+        assert!(record.codex_enabled && record.claude_enabled);
+        assert!(record.codex_installed && record.claude_installed);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), live);
+    }
+}
+
+#[test]
+fn mcp_preview_ignores_claude_toggle_preferences_but_keeps_config_diffs() {
+    let (context, _home) = mcp_test_context("");
+    let mut live = serde_json::json!({
+        "mcpServers": {"a": {"url": "https://a/mcp", "custom": "keep"}},
+        "projects": {"/fixture": {"disabledMcpServers": [], "enabledMcpServers": []}}
+    });
+    std::fs::write(context.paths.claude_mcp_config(), live.to_string()).unwrap();
+    context.mcp_sync_preview(SkillTool::Claude).unwrap();
+    let before = context.database.mcp_server_record("a").unwrap().unwrap();
+    for disabled in [true, false] {
+        live["projects"]["/fixture"]["disabledMcpServers"] = if disabled {
+            serde_json::json!(["a"])
+        } else {
+            serde_json::json!([])
+        };
+        let text = live.to_string();
+        std::fs::write(context.paths.claude_mcp_config(), &text).unwrap();
+        assert!(context
+            .mcp_sync_preview(SkillTool::Claude)
+            .unwrap()
+            .entries
+            .is_empty());
+        assert_eq!(
+            context
+                .database
+                .mcp_server_record("a")
+                .unwrap()
+                .unwrap()
+                .claude_json,
+            before.claude_json
+        );
+        assert_eq!(
+            std::fs::read_to_string(context.paths.claude_mcp_config()).unwrap(),
+            text
+        );
+    }
+    live["mcpServers"]["a"]["url"] = serde_json::json!("https://a/v2");
+    live["projects"]["/fixture"]["disabledMcpServers"] = serde_json::json!(["a"]);
+    std::fs::write(context.paths.claude_mcp_config(), live.to_string()).unwrap();
+    let preview = context.mcp_sync_preview(SkillTool::Claude).unwrap();
+    assert_eq!(preview.entries.len(), 1);
+    assert_eq!(preview.entries[0].kind, McpSyncEntryKind::Changed);
+    assert_eq!(
+        preview.entries[0].db_spec.as_ref().unwrap().url.as_deref(),
+        Some("https://a/mcp")
+    );
 }
 
 #[test]

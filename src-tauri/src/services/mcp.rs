@@ -332,7 +332,7 @@ impl AppContext {
     }
 
     /// 对比 live config.toml 与数据库镜像的 MCP 差异，供同步前人工裁决。
-    /// 新增条目先静默导入镜像，已有条目的修改和删除仍需裁决。
+    /// 新增条目与开关状态静默跟随现场，其余修改和删除仍需裁决。
     /// live 无法解析时返回错误，前端进入“仅可从数据库恢复”降级模式。
     pub fn codex_mcp_sync_preview(&self) -> Result<McpSyncPreview, McpSyncError> {
         self.mcp_sync_preview(SkillTool::Codex)
@@ -352,6 +352,9 @@ impl AppContext {
             SkillTool::Codex => {
                 let document = codex_config::parse_document(&self.read_live_config()?)
                     .map_err(McpSyncError::invalid_config)?;
+                for spec in codex_config::mcp_servers_from_document(&document) {
+                    self.sync_external_mcp_toggle(tool, &mut records, &spec)?;
+                }
                 let convert = |fragments: Vec<(String, String)>| -> BTreeMap<_, _> {
                     fragments
                         .into_iter()
@@ -387,6 +390,11 @@ impl AppContext {
                     .filter(|(name, _)| !codex_config::is_managed_mcp_name(name))
                     .map(|(name, entry)| convert(name, entry))
                     .collect::<AppResult<_>>()?;
+                for (_, spec, _) in live.values() {
+                    if let Some(spec) = spec {
+                        self.sync_external_mcp_toggle(tool, &mut records, spec)?;
+                    }
+                }
                 let db: BTreeMap<_, _> = records
                     .iter()
                     .filter(|record| {
@@ -450,6 +458,51 @@ impl AppContext {
             live_count: live.len(),
             db_count: db.len(),
         })
+    }
+
+    /// 两端开关属于用户操作，只更新镜像状态，连接配置仍留给差异裁决。
+    fn sync_external_mcp_toggle(
+        &self,
+        tool: SkillTool,
+        records: &mut [McpServerRecord],
+        live: &McpServerSpec,
+    ) -> AppResult<()> {
+        let Some(record) = records.iter_mut().find(|record| {
+            record.name == live.name
+                && !codex_config::is_managed_mcp_name(&record.name)
+                && match tool {
+                    SkillTool::Codex => record.codex_installed,
+                    SkillTool::Claude => record.claude_installed,
+                }
+        }) else {
+            return Ok(());
+        };
+        match tool {
+            SkillTool::Codex => {
+                let Some(mut db) = codex_config::spec_from_fragment(&record.name, &record.toml)
+                else {
+                    return Ok(());
+                };
+                if record.codex_enabled && db.enabled == live.enabled {
+                    return Ok(());
+                }
+                db.enabled = live.enabled;
+                record.toml = codex_config::patch_mcp_fragment(&record.toml, &db)?;
+                record.codex_enabled = true;
+            }
+            SkillTool::Claude => {
+                if record.claude_enabled {
+                    return Ok(());
+                }
+                record.claude_enabled = true;
+            }
+        }
+        self.database.save_mcp_server_record(
+            Some(&record.name),
+            record,
+            &now_ms().to_string(),
+            tool,
+        )
     }
 
     /// 只导入该端尚未安装的条目，不碰 live 或覆盖已有快照；残缺条目留给差异处理。
