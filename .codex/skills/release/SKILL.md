@@ -1,9 +1,11 @@
 ---
 name: release
-description: Agmux 发版流水线（**默认仅本地 commit 为止**）：AI 读 CHANGELOG 历史与 git 三态（最新 tag / HEAD VERSION / working tree VERSION），CHANGELOG 草稿以**实际代码 diff**（`git diff <上一tag>..HEAD` 逐文件阅读）为唯一依据、commit 信息不可信，**单次弹窗合并确认** bump 级别 + CHANGELOG 草稿（一次 AskUserQuestion 问完）→ 确认后**一次性执行**：跑 `node scripts/bump-version.mjs <level>`（**禁止手写**）→ 写入 CHANGELOG + 本地 commit。**写入本地 commit 即终止**；AI 不主动询问、不主动执行任何 push / 盯构建 / 发布动作。Release 工作流**只手动触发**：push main / push tag 都不自动构建；dispatch 传 `release_mode` 三选一——draft（默认）构建完停在草稿、公开发布仍须用户确认，prerelease=构建完自动预发行，latest=构建完自动正式发行并通知关注者。当用户说"发版"、"发行"、"release"、"发个新版本"、"发布新版本"时使用。
+description: 用户要求 Agmux 发版、版本递增或发行准备时使用；合并确认 bump 与 CHANGELOG 后默认只到本地 commit，推送和公开发布须另有授权。
 ---
 
 # Agmux 发版
+
+工具链沿用根 `AGENTS.md`；当前 Mac 的 `pnpm …` 命令通过 `./work/dev-env/run.sh …` 执行，原生命令使用同一项目环境。
 
 分工：本 skill 做需要判断的部分——bump 级别建议、CHANGELOG 整段内容草稿（不是只改版本标题）、本地 commit、跑 bump-version 命令；`.github/workflows/release.yml` 做确定性的部分——校验（含 CHANGELOG 第一段版本号 == VERSION 的 fail-fast 校验）、三平台构建、创建 tag 与发行页（发行说明 = CHANGELOG 第一段原文照抄）、上传资产。**工作流不回写 main**；CHANGELOG 无归档步骤。草稿不会通知关注者；执行发布那一刻 GitHub 才给关注者发通知邮件。
 
@@ -131,7 +133,7 @@ CHANGELOG 段落模板（分区按实际变更从可用分区里取，有几段�
    - **干预直接预发行**：`gh workflow run release.yml --ref main -f release_mode=prerelease` → 构建完自动预发行（不占 latest 指针），无 Step 4。
 3. dispatch 前确认工作区已推齐（`git status` 干净、`git log origin/main..HEAD` 为空）——构建跑的是远端 main 最新 commit，本地未推的 commit 不参与。
 4. 等 10 秒后取 run：`gh run list --workflow=Release --limit 1 --json databaseId,status,headBranch`——只有一条 run（headBranch=main），盯它即可。
-5. 推送前可选本地预检 `pnpm check`（与工作流 verify job 同一条链），失败就地修复并补充提交；⚠️ 项目 node_modules 是 Windows 平台构建的，必须在 **Windows 侧**执行（WSL 里跑会触发 corepack 重建依赖、破坏 Windows 开发环境）；跳过也可，工作流 verify 会兜底。
+5. 按用户要求在当前原生开发环境执行本地预检，失败先区分本次改动与环境问题。node_modules 必须匹配实际系统，不跨 Windows / WSL / macOS 复用；本地通过不代表另一平台的远端验证。
 
 ### Step 3: 盯 Release 工作流 — 需用户明确启动才执行
 

@@ -4,6 +4,43 @@ import { extractClaudeCommonSettings, fillClaudeCommonSettings } from "../featur
 import type { AppState, ClaudeProfileDetail, ClaudeProfileSummary, MarketplacePlugin, McpServerSpec, PluginMarketplace, PluginSkill, PluginSummary, PluginUpdate, CodexProfileDetail, CodexProfileSummary, SkillSummary, CliStatus, CliUpdate } from "../types";
 
 describe("web mock", () => {
+  it("两端默认只展示登录、智谱和 DeepSeek 三个内置模板，名称与配置沿用预设", async () => {
+    vi.resetModules();
+    const { default: i18next, resources } = await import("../i18n");
+    await i18next.init({ lng: "zh-CN", defaultNS: "common", resources });
+    const { webInvoke: invoke } = await import("./web-mock");
+    const { codexPresetByKind, claudePresetByKind, presetConnectionName } = await import("../presets");
+    const codex = (await invoke<AppState>("get_state")).codex_profiles;
+    const claude = await invoke<ClaudeProfileSummary[]>("claude_list_profiles");
+    expect(codex).toHaveLength(3);
+    expect(claude).toHaveLength(3);
+    for (const [index, kind] of ["chatgpt", "zhipu", "deepseek"].entries()) {
+      const preset = codexPresetByKind(kind)!;
+      const profile = codex[index];
+      expect(profile).toMatchObject({ name: presetConnectionName(preset), provider: preset.provider, icon: preset.icon, show_balance: true });
+      const detail = await invoke<CodexProfileDetail>("codex_get_profile", { id: profile.id });
+      expect(detail.base_url).toBe(preset.base_url || null);
+      expect(detail.config_fragment).toBe(await invoke("codex_get_builtin_config", { kind, apiKey: "sk-demo" }));
+    }
+    for (const [index, kind] of ["claude-account", "zhipu", "deepseek"].entries()) {
+      const preset = claudePresetByKind(kind)!;
+      const profile = claude[index];
+      expect(profile).toMatchObject({ kind, name: presetConnectionName(preset), icon: preset.icon,
+        show_balance: kind === "zhipu" || kind === "deepseek" });
+      const detail = await invoke<ClaudeProfileDetail>("claude_get_profile", { id: profile.id });
+      expect(detail.show_balance).toBe(profile.show_balance);
+      expect(detail.base_url).toBe(preset.base_url || null);
+      expect(detail.model).toBeNull();
+      const settings = JSON.parse(detail.raw_settings!);
+      if (preset.base_url) {
+        expect(settings.env).toMatchObject({ ANTHROPIC_BASE_URL: preset.base_url, ANTHROPIC_AUTH_TOKEN: detail.auth_token });
+      } else {
+        expect(detail.auth_token).toBeNull();
+        expect(settings.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      }
+    }
+  });
+
   it.each(["set_mcp_mirror_entries", "revert_mcp_live_entries"])("%s 保留批量增删和处理数量", async (command) => {
     const name = "fixture-batch-cleanup";
     const list = () => webInvoke<McpServerSpec[]>("codex_list_mcp_servers");

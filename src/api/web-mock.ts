@@ -1,5 +1,5 @@
-import { balanceQueryProviders, codexBuiltinHasCatalog, codexPresetByKind, type ClientPreset } from "../presets";
-import { buildSettingsText, readAdvancedSettings, splitEnvExtras } from "../features/claude/profileEnvText";
+import { balanceQueryProviders, claudeBalanceQueryKinds, claudePresetByKind, codexBuiltinHasCatalog, codexPresetByKind, presetConnectionName, type ClientPreset } from "../presets";
+import { buildSettingsText, patchEnvFields, readAdvancedSettings, splitEnvExtras } from "../features/claude/profileEnvText";
 import { patchModelValue, readCatalogOptions, readModelValue } from "../features/codex/profileEditText";
 import type {
   AppState,
@@ -27,46 +27,27 @@ import type {
   CliUpdate,
 } from "../types";
 
-const webProfiles: CodexProfileSummary[] = [
-  {
-    id: "profile-zai-glm-high",
-    name: "ZAI GLM 高推理",
-    kind: "third_party",
-    account_id: null,
-    plan_type: null,
-    model: "glm-5.3",
-    provider: "ZAI",
-    reasoning_effort: "high",
-    fast_mode: false,
-    has_base_url: true,
-    has_key: true,
-    admin_url: "https://open.bigmodel.cn/console",
-    show_balance: true,
-    icon: "zhipu",
-    created_at: "2026-08-15 10:00:00",
-    updated_at: "2026-08-15 10:00:00",
-  },
-  {
-    id: "profile-official",
-    name: "官方默认",
-    kind: "official",
-    account_id: null,
-    auth_source: "desktop",
-    auth_account_id: "web-codex-account",
-    plan_type: "plus",
-    model: "gpt-5.6",
-    provider: null,
-    reasoning_effort: "medium",
-    fast_mode: false,
-    has_base_url: false,
-    has_key: false,
-    admin_url: "https://chatgpt.com",
-    show_balance: true,
-    icon: "openai-chatgpt",
-    created_at: "2026-08-15 10:02:00",
-    updated_at: "2026-08-15 10:02:00",
-  },
-];
+const webCodexPresets = ["chatgpt", "zhipu", "deepseek"].map((kind) => codexPresetByKind(kind)!);
+const webProfiles: CodexProfileSummary[] = webCodexPresets.map((preset) => ({
+  id: `profile-${preset.kind}`,
+  name: presetConnectionName(preset),
+  kind: preset.provider ? "third_party" : "official",
+  account_id: null,
+  auth_source: preset.provider ? null : "desktop",
+  auth_account_id: preset.provider ? null : "web-codex-account",
+  plan_type: preset.provider ? null : "plus",
+  model: preset.model || null,
+  provider: preset.provider,
+  reasoning_effort: "high",
+  fast_mode: false,
+  has_base_url: Boolean(preset.base_url),
+  has_key: Boolean(preset.provider),
+  admin_url: preset.admin_url,
+  show_balance: !preset.provider || balanceQueryProviders.has(preset.provider),
+  icon: preset.icon,
+  created_at: "2026-08-15 10:00:00",
+  updated_at: "2026-08-15 10:00:00",
+}));
 
 const webDescriptions = new Map<string, string>();
 
@@ -274,30 +255,28 @@ const webSkills: SkillSummary[] = [
 const webLocalSkillPath = "C:\\Users\\<user>\\.agents\\skills\\local-skill";
 
 // Claude Code 供应商 fixture：与后端 claude_profiles 表同构，save/apply/delete 有状态
-const webClaudeProfiles: ClaudeProfileDetail[] = [
-  {
-    id: "cla-demo-1",
-    name: "BigModel 中转",
-    base_url: "https://open.bigmodel.cn/api/anthropic",
-    auth_token: "demo-token",
-    model: "glm-5.3[1m]",
-    description: "演示配置",
-    fetched_models: ["glm-5.3", "glm-5.3-air", "glm-5.3[1m]"],
-    kind: "zhipu",
-    admin_url: "https://open.bigmodel.cn",
+const webClaudeProfiles: ClaudeProfileDetail[] = ["claude-account", "zhipu", "deepseek"].map((kind, sortOrder) => {
+  const preset = claudePresetByKind(kind)!;
+  const authToken = preset.base_url ? "demo-token" : "";
+  return {
+    id: `cla-${kind}`,
+    name: presetConnectionName(preset),
+    base_url: preset.base_url || null,
+    auth_token: authToken || null,
+    model: null,
+    description: null,
+    fetched_models: [],
+    kind: preset.kind,
+    admin_url: preset.admin_url,
     extra_env: null,
-    raw_settings: JSON.stringify({ model: "sonnet", env: {
-      ANTHROPIC_BASE_URL: "https://open.bigmodel.cn/api/anthropic",
-      ANTHROPIC_AUTH_TOKEN: "demo-token",
-      ANTHROPIC_MODEL: "glm-5.3[1m]",
-    } }, null, 2),
-    icon: "zhipu",
-    show_balance: false,
-    sort_order: 0,
+    raw_settings: patchEnvFields("{}", { baseUrl: preset.base_url, authToken, model: "" }, preset.kind),
+    icon: preset.icon,
+    show_balance: claudeBalanceQueryKinds.has(preset.kind),
+    sort_order: sortOrder,
     updated_at: "1700000000000",
-  },
-];
-let webActiveClaudeProfileId: string | null = "cla-demo-1";
+  };
+});
+let webActiveClaudeProfileId: string | null = webClaudeProfiles[0].id;
 let webClaudeCommonSettings: string | null = null;
 
 let webMarketplaces: PluginMarketplace[] = [
@@ -483,29 +462,18 @@ interface WebDetail {
   fetched_model_defaults?: Record<string, string>;
 }
 
-const webDetails: Record<string, WebDetail> = {
-  "profile-zai-glm-high": {
-    base_url: "https://open.bigmodel.cn/api/v1",
-    api_key: "sk-demo",
+const webDetails: Record<string, WebDetail> = Object.fromEntries(webCodexPresets.map((preset) => [
+  `profile-${preset.kind}`,
+  {
+    base_url: preset.base_url || null,
+    api_key: preset.provider ? "sk-demo" : null,
     model_values: {
-      model: '"glm-5.3"',
+      ...(preset.model ? { model: JSON.stringify(preset.model) } : {}),
       model_reasoning_effort: '"high"',
-      model_catalog_json: '"zai.json"',
     },
-    config_fragment:
-      'model = "glm-5.3"\nmodel_reasoning_effort = "high"\nmodel_catalog_json = "zai.json"\n\n[model_providers.ZAI]\nname = "ZAI"\nbase_url = "https://open.bigmodel.cn/api/v1"\nwire_api = "responses"\nexperimental_bearer_token = "••••••••"',
-    fetched_models: ["glm-5.3", "glm-5.2", "glm-4.7"],
+    config_fragment: mockBuiltinFragment(preset, "sk-demo"),
   },
-  "profile-official": {
-    base_url: null,
-    api_key: null,
-    model_values: {
-      model: '"gpt-5.6"',
-      model_reasoning_effort: '"medium"',
-    },
-    config_fragment: 'model = "gpt-5.6"\nmodel_reasoning_effort = "medium"',
-  },
-};
+]));
 
 function webProfileDetail(id: string): CodexProfileDetail {
   const profile = webProfiles.find((item) => item.id === id);

@@ -1,15 +1,15 @@
 ---
 name: local-build
-description: 快速本地编译 Agmux 安装包（自动检测 Windows / macOS 并走对应构建分支，Windows 默认出 NSIS exe + MSI，用户明确说"只要一个 exe"时仅出 NSIS 单产物；macOS 出 DMG / APP），构建完成后打开产物目录并列出安装包路径，供用户直接安装测试，不用等 GitHub Actions 发行工作流。当用户说"本地编译"、"本地构建"、"打个本地包"、"本地出个安装包"、"构建本地测试版"、"打个 exe 就行"时使用。
+description: 用户要求本地构建 Agmux 安装包时使用，按 macOS 或 Windows 分支构建并核实产物；不用于普通前端构建。
 ---
 
 # 本地快速编译
 
-在用户本机直接编译当前代码的安装包，跳过 GitHub Actions 发行工作流（冷编译约 20 分钟，本地增量通常 1 分钟内）。构建的是**当前工作区状态**——包括未提交的改动，适合快速验证。
+在本机编译**当前工作区状态**（包括未提交改动）的安装包，不触发 GitHub 发行。工具链沿用根 `AGENTS.md`；当前 Mac 的 `pnpm …` 命令通过 `./work/dev-env/run.sh …` 执行。
 
 ## Step 0: 环境检测
 
-用 Bash 工具运行：
+先按当前系统与工具 shell 选择分支；macOS 可运行下列命令，Windows 不为检测系统而启动 WSL：
 
 ```bash
 uname -s
@@ -17,7 +17,7 @@ uname -s
 
 | 输出 | 系统 | 执行 |
 |:---|:---|:---|
-| `MINGW*` / `MSYS*` / `CYGWIN*` | Windows | 继续 Step 1 → Step 2W |
+| Windows 上下文（或 Git Bash 的 `MINGW*` / `MSYS*` / `CYGWIN*`） | Windows | 继续 Step 1 → Step 2W |
 | `Darwin` | macOS | 继续 Step 1 → Step 2M |
 | 其他（`Linux` 等） | 不在覆盖范围 | 停下报告"本项目本地构建只覆盖 Windows / macOS"，不构建 |
 
@@ -147,7 +147,7 @@ macOS 专属：
 看错误第一行的文件和行号，多为当前代码问题；修完重新执行构建步骤即可，增量编译很快。
 
 **`pnpm` / `cargo` 命令找不到**
-确认在项目根目录、Node/Rust 工具链已装；必要时先 `pnpm install`。
+先核对根 `AGENTS.md` 的项目环境与启动器，不擅自全局安装或改 PATH；确认依赖缺失后再按项目环境安装。
 
 **第一次构建很慢（10-20 分钟）**
 正常——冷编译约 600 个 crate。之后 `src-tauri/target` 是热的，增量构建通常 1 分钟内。

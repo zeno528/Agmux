@@ -1,61 +1,31 @@
 ---
 name: ci-check
-description: 在本地完整复刻 GitHub Actions CI 的检查链（tsc 类型检查、Vitest、cargo fmt、clippy -D warnings、cargo test、vite 生产构建），失败就地修复并复跑直到全绿，确保推送后 CI 一次通过、不用返工。当用户说"检查一下"、"跑一下 CI"、"本地 CI"、"推送前检查"、"check 一下"、"preflight" 时使用。
+description: 用户要求完整本地 CI、完整质量门禁或推送前预检时使用。普通代码审查、文档检查和局部回归按影响范围验证，不自动运行完整链条。
 ---
 
 # 本地 CI 预检
 
-CI 的 check job（`.github/workflows/ci.yml`）跑 `pnpm install --frozen-lockfile` → `pnpm check` → `pnpm build`，一轮至少十几分钟，推上去红了再返工很浪费。本 skill 在本地跑完全等价的链条，红了就地修，全绿了才推。
+执行 `package.json` 的完整检查与前端生产构建。对应 `.github/workflows/ci.yml`：Windows 跑完整链，macOS job 单独跑 Rust 测试；本机结果不能代替另一平台的远端结果。
 
-与 CI 的对应关系：
+## 环境与执行
 
-| CI 步骤 | 本地做法 |
-|---|---|
-| `pnpm install --frozen-lockfile` | package.json / pnpm-lock.yaml 有变动时先本地 `pnpm install` 并提交 lockfile |
-| `pnpm check`（typecheck + fmt + clippy + test） | 同一条命令，完全一致 |
-| `pnpm build`（vite 生产构建） | 同一条命令，完全一致 |
-| macOS job 的 `cargo test` | Windows 本地无法覆盖；已知缺口，仅平台特定问题才会踩到 |
+先沿用根 `AGENTS.md` 的项目环境；不全局安装工具，不混用其他系统生成的 node_modules。依赖或 lockfile 变化时先核对一致性并安装依赖，不能为了让 frozen 安装成功而擅自重写锁文件。
 
-## Instructions
+当前 Mac 在仓库根目录运行：
 
-### Step 1: 跑完整链条
-
-```
-pnpm check && pnpm build
+```sh
+./work/dev-env/run.sh check && ./work/dev-env/run.sh build
 ```
 
-后台执行（约 3-5 分钟），完成前不要下结论。
+其他已配置环境执行同一项目脚本 `pnpm check && pnpm build`。检查阶段包括 TypeScript、Vitest、样式、i18n、Rust fmt、clippy 与测试；以实际脚本为准，不在技能重复维护命令展开。
 
-### Step 2: 失败就地修
+## 处理失败
 
-按失败阶段处理，修的是根因，不是绕过检查：
+- 先定位失败阶段与实际错误，区分本次改动、既有问题和环境问题；修复本次引入的问题，既有失败单独报告，不无限扩展修复范围。
+- 不通过削弱类型、关闭检查、跳过测试或放宽错误断言制造通过；必要例外留具体理由。
+- fmt 修复使用项目 Rust 环境并审阅产生的 diff。其他失败先跑受影响检查定位；修复后完成上述完整链条，不能只凭某一阶段通过下结论。
+- 长任务持续等待实际结果，未完成或未执行的阶段不能标绿。
 
-- **tsc/Vitest 报错**：修类型或测试错误本身；禁止改 tsconfig / 加 any 绕过。
-- **cargo fmt --check**：直接执行 `cargo fmt --all --manifest-path src-tauri/Cargo.toml`，然后展示改了哪些文件。
-- **clippy -D warnings**：逐条修到零警告；确需 `#[allow]` 时必须说明理由并留在代码注释里。
-- **cargo test 失败**：先判断是本次改动引入还是环境差异，修根因；与改动无关的既有失败要报告而不是静默跳过。
-- **vite build 失败**：通常是上游类型/导入问题，按报错定位。
+## 交付
 
-修完回到 Step 1 重跑整条链（不要只跑失败的那一段），直到全绿。
-
-### Step 3: 汇报
-
-用表格逐项对齐 CI 步骤汇报结果，最后明确一句话结论："本地全绿，推送后 CI 预期通过"，并注明 macOS cargo test 未本地覆盖。
-
-## 示例
-
-**场景**：用户说"跑一下 CI 再推"
-
-1. 后台执行 `pnpm check && pnpm build`
-2. `cargo fmt --check` 红 → 执行 `cargo fmt`，修了 commands.rs / lib.rs / services.rs
-3. 复跑整链：typecheck ✅ fmt ✅ clippy ✅ test 88 passed ✅ build ✅
-4. 汇报表格 + "本地全绿，可推送"
-5. 用户确认后再执行推送
-
-## Troubleshooting
-
-**本地过、CI 红（或反过来的 fmt 差异）**：工具链不一致。确认 `rustc --version` 与仓库根目录 `rust-toolchain.toml` 固定的工具链一致；不一致时先检查 Rustup 是否正确读取项目配置。
-
-**CI 的 `pnpm install --frozen-lockfile` 失败但本地正常**：lockfile 与 package.json 不同步。本地 `pnpm install` 重新生成并提交 pnpm-lock.yaml。
-
-**用户要求推送但本轮改动还没跑过本链条**：先建议跑一遍再推；用户坚持直接推则照做，但说明风险。
+汇报各阶段结果、实际运行平台及未覆盖的平台差异；不宣称远端 CI 已通过。用户只要求预检时不提交、不推送；已经授权推送时，检查完成后沿用该授权，不重复索要确认。
