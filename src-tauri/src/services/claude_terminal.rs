@@ -342,7 +342,7 @@ fn ghostty_launch_script(banner: &str, arguments: &str, executable: Option<&Path
 const GHOSTTY_SHELL_FLAGS: &str = "-lic";
 
 #[cfg(target_os = "macos")]
-fn macos_login_shell(
+pub(super) fn macos_login_shell(
     inherited: Option<&std::ffi::OsStr>,
     user_record: impl FnOnce() -> AppResult<String>,
 ) -> AppResult<PathBuf> {
@@ -362,7 +362,7 @@ fn macos_login_shell(
 }
 
 #[cfg(target_os = "macos")]
-fn macos_shell_record() -> AppResult<String> {
+pub(super) fn macos_shell_record() -> AppResult<String> {
     let user = Command::new("/usr/bin/id")
         .arg("-un")
         .output()

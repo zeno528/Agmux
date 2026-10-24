@@ -34,6 +34,8 @@ mod model_fetch;
 mod plugin_net;
 mod plugins;
 mod settings;
+#[cfg(target_os = "macos")]
+mod shell_env;
 mod storage;
 pub(crate) mod sync;
 

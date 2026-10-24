@@ -232,14 +232,19 @@ async fn collect_tools(session: &mut impl ToolsFetch) -> (Vec<McpTool>, bool, Op
     (tools, tools_truncated, tools_error)
 }
 
-/// 探测读环境变量：进程环境优先；Windows 下进程启动之后才设置的用户级变量
-/// 兜底读注册表，让"刚设置完变量立刻测连通"不必重启应用。
-/// 只兜底用户级：机器级改动需要管理员权限，极少发生在会话中途。
-fn probe_env_var(name: &str) -> Option<String> {
+/// 进程环境优先；macOS 读取登录 Shell，Windows 兜底读取用户级注册表。
+fn probe_env_var(name: &str) -> Result<Option<String>, String> {
     if let Ok(value) = std::env::var(name) {
-        return Some(value);
+        return Ok(Some(value));
     }
-    windows_user_environment_value(name)
+    #[cfg(target_os = "macos")]
+    {
+        Ok(super::shell_env::environment()?.get(name).cloned())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(windows_user_environment_value(name))
+    }
 }
 
 #[cfg(windows)]
@@ -280,7 +285,7 @@ fn windows_user_environment_value(name: &str) -> Option<String> {
     Some(text.trim_end_matches('\0').to_string())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn windows_user_environment_value(_name: &str) -> Option<String> {
     None
 }
@@ -296,7 +301,7 @@ fn build_http_headers(spec: &McpServerSpec) -> Result<(HeaderMap, Vec<String>), 
         headers.insert(name, value);
     }
     for (name, env_name) in &spec.env_http_headers {
-        let value = probe_env_var(env_name)
+        let value = probe_env_var(env_name)?
             .ok_or_else(|| format!("HTTP 头引用的环境变量未设置: {env_name}"))?;
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| format!("HTTP 头名称无效: {name}"))?;
@@ -306,7 +311,7 @@ fn build_http_headers(spec: &McpServerSpec) -> Result<(HeaderMap, Vec<String>), 
         headers.insert(name, header_value);
     }
     if let Some(env_name) = spec.bearer_token_env_var.as_deref() {
-        let token = probe_env_var(env_name)
+        let token = probe_env_var(env_name)?
             .ok_or_else(|| format!("Bearer Token 环境变量未设置: {env_name}"))?;
         if token.trim().is_empty() {
             return Err(format!("Bearer Token 环境变量为空: {env_name}"));
@@ -477,7 +482,11 @@ async fn probe_http_inner(
     let Some(url) = spec.url.as_deref() else {
         return failed_result(start, None, "MCP 服务地址为空");
     };
-    let (headers, secrets) = match build_http_headers(spec) {
+    let header_spec = spec.clone();
+    let headers = tauri::async_runtime::spawn_blocking(move || build_http_headers(&header_spec))
+        .await
+        .unwrap_or_else(|_| Err("读取 MCP HTTP 认证配置失败".into()));
+    let (headers, secrets) = match headers {
         Ok(value) => value,
         Err(error) => return failed_result(start, None, error),
     };
@@ -605,8 +614,16 @@ fn spawn_stdio(spec: &McpServerSpec, deadline: Instant) -> Result<StdioSession, 
         return Err("MCP 启动命令为空".to_string());
     };
     let mut command = Command::new(resolve_command(command_name));
+    #[cfg(target_os = "macos")]
+    command.envs(super::shell_env::environment()?);
     command.args(&spec.args).envs(&spec.env);
-    spawn_session(command, deadline, spec.env.values().cloned().collect())
+    let secrets: Vec<String> = spec.env.values().cloned().collect();
+    #[cfg(target_os = "macos")]
+    let secrets = secrets
+        .into_iter()
+        .chain(super::shell_env::environment()?.values().cloned())
+        .collect();
+    spawn_session(command, deadline, secrets)
 }
 
 fn spawn_session(
@@ -1039,6 +1056,8 @@ fn probe_claude(claude_home: &std::path::Path, name: &str, include_tools: bool) 
             .get(name)
             .ok_or("Claude MCP 配置中没有此服务器")?;
         let mut command = super::cli::command(&cli);
+        #[cfg(target_os = "macos")]
+        command.envs(super::shell_env::environment()?);
         command
             .args([
                 "--print",
@@ -1066,7 +1085,11 @@ fn probe_claude(claude_home: &std::path::Path, name: &str, include_tools: bool) 
             .map_err(|_| "网络设置无效")?
             .apply(&mut command);
         let deadline = start + PROBE_TIMEOUT;
-        let mut session = spawn_session(command, deadline, Vec::new())?;
+        #[cfg(not(target_os = "macos"))]
+        let secrets = Vec::new();
+        #[cfg(target_os = "macos")]
+        let secrets = super::shell_env::environment()?.values().cloned().collect();
+        let mut session = spawn_session(command, deadline, secrets)?;
         let result = (|| {
             session.claude_request(json!({"subtype":"initialize"}))?;
             let mut reconnected = false;
@@ -1288,6 +1311,120 @@ mod tests {
     };
     use crate::models::McpTool;
     use serde_json::{json, Value};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_mcp_probes_load_shell_environment_after_gui_launch() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command, Stdio};
+
+        const CHILD: &str = "AGMUX_SHELL_ENV_TEST_CHILD";
+        let spec = crate::models::McpServerSpec {
+            bearer_token_env_var: Some("AGMUX_FIXTURE_TOKEN".into()),
+            env_http_headers: [
+                ("X-Fixture".into(), "AGMUX_FIXTURE_HEADER".into()),
+                ("X-Existing".into(), "AGMUX_FIXTURE_EXISTING".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        if let Ok(mode) = std::env::var(CHILD) {
+            if mode != "success" {
+                let error = super::build_http_headers(&spec).unwrap_err();
+                assert!(error.contains(match mode.as_str() {
+                    "timeout" => "超时",
+                    "missing_output" => "未返回环境变量",
+                    _ => "读取用户 Shell 环境失败",
+                }));
+                assert!(!error.contains("secret-canary"));
+                return;
+            }
+            let (headers, _) = super::build_http_headers(&spec).unwrap();
+            assert_eq!(headers["authorization"], "Bearer fixture-token");
+            assert_eq!(headers["x-fixture"], "value=with spaces");
+            assert_eq!(headers["x-existing"], "process");
+            assert_eq!(
+                super::probe_env_var("AGMUX_FIXTURE_MULTILINE").unwrap(),
+                Some("first\nsecond=last".into())
+            );
+            assert!(super::probe_env_var("AGMUX_FIXTURE_ABSENT")
+                .unwrap()
+                .is_none());
+
+            let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+            let codex_home = home.join(".codex");
+            let cli = codex_home.join("bin/codex");
+            std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+            std::fs::write(&cli, r#"#!/bin/sh
+[ "$AGMUX_FIXTURE_TOKEN" = fixture-token ] || exit 1
+[ "$AGMUX_FIXTURE_EXISTING" = process ] || exit 1
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) printf '%s\n' '{"id":1,"result":{}}' ;;
+    *'"method":"mcpServerStatus/list"'*) printf '%s\n' '{"id":2,"result":{"data":[{"name":"fixture","serverCapabilities":{},"tools":{}}]}}' ;;
+  esac
+done
+"#).unwrap();
+            std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let result = super::probe_codex(&codex_home, "fixture", false);
+            assert!(result.ok, "{:?}", result.error);
+
+            let stdio = crate::models::McpServerSpec {
+                command: Some("/bin/sh".into()),
+                args: vec![
+                    "-c".into(),
+                    r#"
+[ "$AGMUX_FIXTURE_TOKEN" = fixture-token ] || exit 1
+[ "$AGMUX_FIXTURE_HEADER" = config-override ] || exit 1
+read request
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{}}}'
+"#
+                    .into(),
+                ],
+                env: [("AGMUX_FIXTURE_HEADER".into(), "config-override".into())].into(),
+                ..Default::default()
+            };
+            let result = super::probe_stdio(&stdio, false);
+            assert!(result.ok, "{:?}", result.error);
+            return;
+        }
+
+        for (mode, startup) in [
+            ("success", "printf 'startup noise\\n'\nexport AGMUX_FIXTURE_HEADER='value=with spaces'\nexport AGMUX_FIXTURE_EXISTING=shell\nexport AGMUX_FIXTURE_MULTILINE='first\nsecond=last'\n"),
+            ("failure", "printf secret-canary; printf secret-canary >&2; exit 1\n"),
+            ("missing_output", "exec /usr/bin/true\n"),
+            ("timeout", "exec /bin/sleep 30\n"),
+        ] {
+            let home = tempfile::tempdir().unwrap();
+            std::fs::write(home.path().join(".zprofile"), "export AGMUX_FIXTURE_TOKEN=fixture-token\n").unwrap();
+            std::fs::write(home.path().join(".zshrc"), startup).unwrap();
+            let child = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "services::mcp_probe::tests::macos_mcp_probes_load_shell_environment_after_gui_launch",
+                    "--nocapture",
+                ])
+                .env_clear()
+                .env("HOME", home.path())
+                .env("ZDOTDIR", home.path())
+                .env("SHELL", "/bin/zsh")
+                .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+                .env("AGMUX_FIXTURE_EXISTING", "process")
+                .env(CHILD, mode)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let output = super::super::plugins::wait_child_with_timeout(
+                child,
+                std::time::Duration::from_secs(15),
+            )
+            .unwrap()
+            .expect("Shell environment regression test timed out");
+            assert!(output.status.success(), "{mode}: {}{}", output.stdout, output.stderr);
+        }
+    }
 
     #[test]
     fn claude_oauth_uses_client_state_and_separates_auth_from_connection() {
@@ -1858,6 +1995,9 @@ done
         assert!(added, "写入测试用注册表变量失败");
         let resolved = std::panic::catch_unwind(|| super::probe_env_var(name));
         delete();
-        assert_eq!(resolved.unwrap(), Some("fixture-token".to_string()));
+        assert_eq!(
+            resolved.unwrap().unwrap(),
+            Some("fixture-token".to_string())
+        );
     }
 }

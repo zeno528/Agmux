@@ -36,6 +36,8 @@ impl AppServer {
         let executable =
             find_codex_cli(home).ok_or_else(|| app_err!("{CODEX_RUNTIME_NOT_FOUND}"))?;
         let mut command = crate::services::cli::command(&executable);
+        #[cfg(target_os = "macos")]
+        command.envs(super::super::shell_env::environment().map_err(crate::error::AppError)?);
         command
             .args(["app-server", "--listen", "stdio://"])
             .current_dir(home)
