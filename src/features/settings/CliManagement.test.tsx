@@ -400,6 +400,8 @@ it.each([
   const html = renderToStaticMarkup(card);
   expect(html).toContain(command.replace(/"/g, "&quot;"));
   expect(html).toContain("cli.installCommandTitle");
+  const shell = platform.startsWith("win32-") ? "PowerShell" : client === "codex" ? "sh" : "Bash";
+  expect(html).toContain(`class="plan-badge cli-command__platform">${shell}</span>`);
   const writeText = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   const copy = buttons(card).find((button) => button.title === "cli.copyCommand")!;

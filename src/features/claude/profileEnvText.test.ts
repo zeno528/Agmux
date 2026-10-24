@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { patchBypassPermissions } from "./profileEnvText";
+import { patchBuiltinWebTools, patchBypassPermissions } from "./profileEnvText";
 import { CLAUDE_MANAGED_ENV_KEYS, CLAUDE_MODEL_MAPPING_KEYS, CLAUDE_MODEL_DISPLAY_KEYS, extractClaudeCommonSettings, fillClaudeCommonSettings } from "./profileEnvText";
 import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, resolveOneMillionByDeclaration, setOneMillionModelSuffix, splitEnvExtras } from "./profileEnvText";
 
@@ -116,6 +116,51 @@ describe("Claude 通用模板", () => {
     const current = '{"autoMemoryEnabled":true,"env":{"CLAUDE_CODE_DISABLE_AUTO_MEMORY":"0"}}';
     expect(readAdvancedSettings(fillClaudeCommonSettings(current, template)!)).toMatchObject({ autoMemoryEnabled: true });
     expect(readAdvancedSettings(fillClaudeCommonSettings(current, template)!).bashEditDiffEnabled).toBe(false);
+  });
+});
+
+describe("Claude 禁用内置搜索与抓取", () => {
+  it("补齐两个内置工具的拒绝规则，回显状态，切换时保留其他权限与设置", () => {
+    const current = {
+      permissions: {
+        defaultMode: "bypassPermissions", allow: ["Read"], ask: ["Bash"],
+        deny: ["Write", "WebFetch", "WebFetch(domain:example.com)", "mcp__custom__search"],
+      },
+      env: { CUSTOM: "keep" }, hooks: { Stop: [] },
+    };
+    const raw = JSON.stringify(current);
+    expect(readAdvancedSettings(raw).webToolsDisabled).toBe(false);
+    const disabled = patchBuiltinWebTools(raw, true);
+    expect(readAdvancedSettings(disabled).webToolsDisabled).toBe(true);
+    expect(JSON.parse(disabled)).toEqual({ ...current, permissions: {
+      ...current.permissions, deny: [...current.permissions.deny, "WebSearch"],
+    } });
+    expect(patchBuiltinWebTools(disabled, true)).toBe(disabled);
+    const enabled = patchBuiltinWebTools(disabled, false);
+    expect(readAdvancedSettings(enabled).webToolsDisabled).toBe(false);
+    expect(JSON.parse(enabled)).toEqual({ ...current, permissions: {
+      ...current.permissions, deny: ["Write", "WebFetch(domain:example.com)", "mcp__custom__search"],
+    } });
+    expect(patchBuiltinWebTools(enabled, false)).toBe(enabled);
+  });
+
+  it("从空配置启用后可完整恢复，保存再读取也保留规则", () => {
+    const disabled = patchBuiltinWebTools("", true);
+    expect(JSON.parse(disabled)).toEqual({ permissions: { deny: ["WebSearch", "WebFetch"] } });
+    const restored = buildSettingsText({ raw_settings: disabled, base_url: null, auth_token: null, model: null, extra_env: null });
+    expect(readAdvancedSettings(restored).webToolsDisabled).toBe(true);
+    expect(JSON.parse(patchBuiltinWebTools(disabled, false))).toEqual({});
+    expect(patchBuiltinWebTools("{}", false)).toBe("{}");
+  });
+
+  it("不覆盖无效 JSON、权限对象或拒绝规则", () => {
+    for (const invalid of ["{", "null", "[]", '{"permissions":null}', '{"permissions":[]}',
+      '{"permissions":"deny"}', '{"permissions":{"deny":null}}', '{"permissions":{"deny":"WebFetch"}}',
+      '{"permissions":{"deny":["WebSearch",7]}}']) {
+      expect(patchBuiltinWebTools(invalid, true)).toBe(invalid);
+      expect(patchBuiltinWebTools(invalid, false)).toBe(invalid);
+      expect(readAdvancedSettings(invalid).webToolsDisabled).toBe(false);
+    }
   });
 });
 

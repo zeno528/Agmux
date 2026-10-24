@@ -7,6 +7,7 @@ import { getCachedClaudePluginMarketplaces, loadClaudePluginMarketplaces } from 
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { TrashIcon } from "../../components/TrashIcon";
 import PluginMarketplaceSources, { PluginMarketplaceRow } from "./components/PluginMarketplaceSources";
+import { CLAUDE_OFFICIAL_MARKETPLACE } from "./claudePluginMeta";
 import type { ClaudeMarketplace } from "../../types";
 
 /** 市场源管理弹层的内容：增删改 Claude Code 的插件市场来源。 */
@@ -77,7 +78,7 @@ export default function ClaudePluginMarketplaceView({ onChanged }: {
       <PluginMarketplaceSources target="claude" marketplaces={marketplaces} loaded={loaded} busy={busyMarket !== null} onAdd={add}>
         {marketplaces.map((marketplace) => (
           <PluginMarketplaceRow key={marketplace.name} name={marketplace.name} source={marketplace.repo ?? marketplace.path ?? marketplace.installLocation ?? ""}
-            icon={marketplace.name === "claude-plugins-official" ? <img src="/claude-code.svg" alt="" className="h-4 w-4 shrink-0" draggable="false" /> : null}
+            icon={marketplace.name === CLAUDE_OFFICIAL_MARKETPLACE ? <img src="/claude-code.svg" alt="" className="h-4 w-4 shrink-0" draggable="false" /> : null}
           >
             <button type="button" className="apple-icon-button" disabled={busyMarket !== null} title={t("claudePlugin.action.refreshMarkets")} aria-label={t("claudePlugin.refreshMarketAria", { name: marketplace.name })} onClick={() => void update(marketplace)}>
               {busyMarket === marketplace.name ? <LoadingSpinner /> : <RefreshCw size={16} strokeWidth={2} />}

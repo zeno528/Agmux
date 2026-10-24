@@ -139,6 +139,8 @@ export function patchEnvValue(text: string, key: string, value: string | null, f
   return JSON.stringify({ ...settings, env }, null, 2);
 }
 
+const BUILTIN_WEB_TOOLS = ["WebSearch", "WebFetch"];
+
 /** 环境变量优先；自动压缩只要任一配置关闭即关闭，auto 表示模型默认推理强度。 */
 export function readAdvancedSettings(text: string) {
   const settings = parseSettingsObject(text);
@@ -147,6 +149,8 @@ export function readAdvancedSettings(text: string) {
   const disableAutoMemory = readEnvValue(text, "CLAUDE_CODE_DISABLE_AUTO_MEMORY");
   const bashEditDiff = readEnvValue(text, "CLAUDE_CODE_BASH_EDIT_DIFF");
   const permissions = settings?.permissions;
+  const deny = permissions && typeof permissions === "object" && !Array.isArray(permissions)
+    ? (permissions as Record<string, unknown>).deny : undefined;
   return {
     autoCompactDisabled: settings?.autoCompactEnabled === false || readEnvValue(text, "DISABLE_AUTO_COMPACT") === "1",
     autoCompactWindow: readEnvValue(text, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
@@ -154,9 +158,30 @@ export function readAdvancedSettings(text: string) {
     effortLevel: effortLevel === "auto" ? "" : effortLevel,
     autoMemoryEnabled: disableAutoMemory === "0" || (disableAutoMemory !== "1" && settings?.autoMemoryEnabled !== false),
     bashEditDiffEnabled: bashEditDiff === "1" || (bashEditDiff !== "0" && settings?.bashEditDiffEnabled === true),
+    webToolsDisabled: Array.isArray(deny) && BUILTIN_WEB_TOOLS.every((tool) => deny.includes(tool)),
     bypassPermissionsEnabled: !!permissions && typeof permissions === "object" && !Array.isArray(permissions)
       && (permissions as Record<string, unknown>).defaultMode === "bypassPermissions",
   };
+}
+
+/** 仅切换两个内置网页工具的整工具拒绝规则，保留 MCP 与其他权限配置。 */
+export function patchBuiltinWebTools(text: string, disabled: boolean) {
+  const settings = parseSettingsForEdit(text);
+  if (!settings) return text;
+  const current = settings.permissions === undefined ? {} : settings.permissions;
+  if (!current || typeof current !== "object" || Array.isArray(current)) return text;
+  const permissions = { ...current } as Record<string, unknown>;
+  const deny = permissions.deny === undefined ? [] : permissions.deny;
+  if (!Array.isArray(deny) || !deny.every((rule) => typeof rule === "string")) return text;
+  const next = disabled
+    ? [...deny, ...BUILTIN_WEB_TOOLS.filter((tool) => !deny.includes(tool))]
+    : deny.filter((rule) => !BUILTIN_WEB_TOOLS.includes(rule));
+  if (next.length === deny.length && next.every((rule, index) => rule === deny[index])) return text;
+  if (next.length) permissions.deny = next;
+  else delete permissions.deny;
+  if (Object.keys(permissions).length) settings.permissions = permissions;
+  else delete settings.permissions;
+  return JSON.stringify(settings, null, 2);
 }
 
 /** 只切换默认 bypass 模式，保留权限规则和组织限制；取消不改变其他模式。 */

@@ -51,6 +51,8 @@ export default {
     agentTeamsTitle: "设置 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1，启用实验性的多会话协作团队；通常消耗更多 Token",
     effortLabel: "推理强度",
     moreLabel: "更多",
+    webToolsLabel: "禁用内置搜索与抓取",
+    webToolsTitle: "禁用 Claude Code 内置的 WebSearch 和 WebFetch，适用于不支持这些工具的第三方模型。MCP 工具不受影响；取消仅移除这两条禁用规则，保留其他权限配置。保存并应用后生效",
     autoMemoryLabel: "禁用自动记忆",
     bashEditDiffLabel: "显示 Shell 文件改动",
     bypassPermissionsLabel: "跳过权限确认",

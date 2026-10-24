@@ -684,7 +684,6 @@ button.plan-badge:hover:not(:disabled) {
 
 .cli-command__platform {
   color: var(--text-secondary);
-  font-weight: 400;
 }
 
 .cli-command__code {

@@ -51,6 +51,8 @@ export default {
     agentTeamsTitle: "Sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 to enable experimental teams of cooperating sessions; these usually use more tokens",
     effortLabel: "Effort",
     moreLabel: "More",
+    webToolsLabel: "Disable built-in web tools",
+    webToolsTitle: "Disables Claude Code's built-in WebSearch and WebFetch for third-party models that do not support them. MCP tools are unaffected. Unchecking removes only these two deny rules and preserves other permissions. Save and apply to take effect",
     autoMemoryLabel: "Disable auto memory",
     bashEditDiffLabel: "Show shell file changes",
     bypassPermissionsLabel: "Bypass permissions",

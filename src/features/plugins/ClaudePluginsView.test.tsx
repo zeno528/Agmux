@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import ClaudePluginsView from "./ClaudePluginsView";
 import { PluginCard } from "./components/PluginCard";
+import PluginFilterChips from "./components/PluginFilterChips";
 import type { ClaudePluginInventory } from "../../types";
 
 const hooks = vi.hoisted(() => ({
@@ -38,6 +39,8 @@ function render() {
   const all = elements(tree);
   const cards = all.filter((element) => element.type === PluginCard);
   return {
+    cards,
+    filters: all.find((element) => element.type === PluginFilterChips)!,
     check: all.find((element) => element.type === "button" && element.props.children
       && Children.toArray(element.props.children as ReactNode).includes("action.checkUpdates"))!,
     upgrades: cards.flatMap((card) => elements(card.props.foot as ReactNode))
@@ -83,4 +86,17 @@ it("升级失败保留更新入口供重试", async () => {
   await vi.waitFor(() => expect(hooks.error).toHaveBeenCalledWith("Error: fixture failure"));
   expect(render().upgrades).toHaveLength(1);
   expect(hooks.load).not.toHaveBeenCalled();
+});
+
+it("可安装首批优先显示第三方插件，保留组内顺序且不修改缓存目录", () => {
+  const plugin = (name: string, marketplaceName: string) => ({
+    name, marketplaceName, pluginId: `${name}@${marketplaceName}`, description: null,
+  });
+  const official = Array.from({ length: 45 }, (_, index) => plugin(`official-${index}`, "claude-plugins-official"));
+  hooks.inventory.available = [...official, plugin("ponytail", "ponytail"), plugin("custom", "another-market")];
+  (render().filters.props.onChange as (filter: string) => void)("available");
+  const names = render().cards.map((card) => card.props.name);
+  expect(names).toHaveLength(40);
+  expect(names.slice(0, 4)).toEqual(["ponytail", "custom", "official-0", "official-1"]);
+  expect(hooks.inventory.available.slice(0, 45)).toEqual(official);
 });

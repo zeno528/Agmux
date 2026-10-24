@@ -36,8 +36,8 @@ function installCommand(client: Client, platform: string) {
   return `curl -fsSL ${installer}.sh | ${client === "codex" ? "sh" : "bash"}`;
 }
 
-/// 安装命令的平台标识。
-const shellLabel = (platform: string) => (platform.startsWith("win32-") ? "PowerShell" : "macOS");
+/// 标注安装命令实际使用的 Shell。
+const shellLabel = (client: Client, platform: string) => (platform.startsWith("win32-") ? "PowerShell" : client === "codex" ? "sh" : "Bash");
 
 // 在 SettingsView 中调用；切分区只隐藏卡片，不丢失任务和错误。
 export function useCliManagement(client: Client, active: boolean) {
@@ -252,7 +252,7 @@ export function CliCard({ client, management }: { client: Client; management: Re
     </section>
   ) : (
     <section className="cli-card__section">
-      <h2 className="setting-title cli-card__section-title">{t("cli.installCommandTitle")}<span className="meta-xs cli-command__platform">{shellLabel(status.platform)}</span></h2>
+      <h2 className="setting-title cli-card__section-title">{t("cli.installCommandTitle")}<span className="plan-badge cli-command__platform">{shellLabel(client, status.platform)}</span></h2>
       <div className="cli-command">
         <Terminal size={16} strokeWidth={2} aria-hidden="true" />
         <code className="cli-command__code">{command}</code>

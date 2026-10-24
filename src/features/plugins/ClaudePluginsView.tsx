@@ -12,7 +12,7 @@ import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { TrashIcon } from "../../components/TrashIcon";
 import ClaudePluginMarketplaceView from "./ClaudePluginMarketplaceView";
-import { claudeInstalledIdSet, claudePluginParts } from "./claudePluginMeta";
+import { CLAUDE_OFFICIAL_MARKETPLACE, claudeInstalledIdSet, claudePluginParts } from "./claudePluginMeta";
 import PluginFilterChips, { type PluginFilter } from "./components/PluginFilterChips";
 import { PluginCard } from "./components/PluginCard";
 import { matchesQuery } from "./pluginMeta";
@@ -69,7 +69,9 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
   );
   const installedIds = claudeInstalledIdSet(inventory.installed);
   const available = inventory.available.filter((plugin) => !installedIds.has(plugin.pluginId)
-    && matchesQuery({ name: `${plugin.name} ${plugin.description ?? ""} ${plugin.marketplaceName}` }, query));
+    && matchesQuery({ name: `${plugin.name} ${plugin.description ?? ""} ${plugin.marketplaceName}` }, query))
+    .sort((left, right) => Number(left.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE)
+      - Number(right.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE));
 
   const install = async (plugin: ClaudeAvailablePlugin) => {
     if (busyKey) return;

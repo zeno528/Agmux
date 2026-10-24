@@ -16,7 +16,7 @@ import {
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import ClaudeCommonTemplateDialog from "./ClaudeCommonTemplateDialog";
-import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBypassPermissions } from "./profileEnvText";
+import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBuiltinWebTools, patchBypassPermissions } from "./profileEnvText";
 import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
 import type { ClaudeProfileDetail, ClaudeProfileSummary } from "../../types";
 
@@ -105,7 +105,7 @@ function ClaudeProfileEditor({
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const envDirty = envText !== initialEnvText;
   const envMinLines = Math.max(envText.split(/\r?\n/).length, 12);
-  const { autoCompactDisabled, autoCompactWindow, effortLevel, autoMemoryEnabled, bashEditDiffEnabled, bypassPermissionsEnabled } = readAdvancedSettings(envText);
+  const { autoCompactDisabled, autoCompactWindow, effortLevel, autoMemoryEnabled, bashEditDiffEnabled, bypassPermissionsEnabled, webToolsDisabled } = readAdvancedSettings(envText);
   const gitAttributionHidden = readGitAttributionDisabled(envText);
   const agentTeamsEnabled = readEnvValue(envText, "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") === "1";
   useEffect(() => () => { templateRequest.current += 1; }, []);
@@ -529,11 +529,13 @@ function ClaudeProfileEditor({
                       { value: "bypassPermissions", label: t("advanced.bypassPermissionsLabel") },
                       { value: "bashEditDiff", label: t("advanced.bashEditDiffLabel") },
                       { value: "autoMemory", label: t("advanced.autoMemoryLabel") },
+                      { value: "webTools", label: t("advanced.webToolsLabel") },
                     ]}
                     checkedValues={[
                       ...(!autoMemoryEnabled ? ["autoMemory"] : []),
                       ...(bashEditDiffEnabled ? ["bashEditDiff"] : []),
                       ...(bypassPermissionsEnabled ? ["bypassPermissions"] : []),
+                      ...(webToolsDisabled ? ["webTools"] : []),
                     ]}
                     onChange={(value) => {
                       if (value === "autoMemory") updateEnvValue("CLAUDE_CODE_DISABLE_AUTO_MEMORY", autoMemoryEnabled ? "1" : null, "autoMemoryEnabled");
@@ -543,9 +545,15 @@ function ClaudeProfileEditor({
                         if (!bypassPermissionsEnabled) editorRef.current?.revealField(next, "defaultMode");
                         setEnvText(next);
                       }
+                      else if (value === "webTools") {
+                        const next = patchBuiltinWebTools(envText, !webToolsDisabled);
+                        if (!webToolsDisabled) editorRef.current?.revealField(next, "deny");
+                        setEnvText(next);
+                      }
                     }}
                     renderLabel={(option) => (
                       <span title={t(option.value === "autoMemory" ? "advanced.autoMemoryTitle"
+                        : option.value === "webTools" ? "advanced.webToolsTitle"
                         : option.value === "bashEditDiff" ? "advanced.bashEditDiffTitle" : "advanced.bypassPermissionsTitle")}>
                         {option.label}
                       </span>
