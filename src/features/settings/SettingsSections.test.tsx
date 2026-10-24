@@ -148,7 +148,6 @@ describe("SettingsSections", () => {
             { label: "about.paths.appData", path: "C:\\Users\\<user>\\.agmux" },
             { label: "about.paths.backups", path: "C:\\Users\\<user>\\.agmux\\backups\\database" },
             { label: "about.paths.logs", path: "C:\\Users\\<user>\\.agmux\\logs" },
-            { label: "about.paths.codexConfig", path: "C:\\Users\\<user>\\.codex\\config.toml" },
           ]}
           onOpenPath={() => undefined}
           openingPath={null}
@@ -161,13 +160,13 @@ describe("SettingsSections", () => {
     expect(html).toContain("日志目录");
     expect(html).toContain("存放 Agmux 的应用数据");
     expect(html).toContain("查看 Agmux 的运行日志");
-    expect(html).toContain("查看 Codex 的配置文件");
+    expect(html).not.toContain("Codex 配置");
     expect(html).not.toContain(".agmux");
     expect(html).not.toContain("config.toml");
     expect(html.match(/备份目录/g)).toHaveLength(1);
-    // 三条路径统一为整行可点的链接。
+    // 两条路径统一为整行可点的链接。
     expect(html).not.toContain("打开</button>");
-    expect(html.slice(html.indexOf("数据与路径")).match(/lucide-chevron-right/g)).toHaveLength(3);
+    expect(html.slice(html.indexOf("数据与路径")).match(/lucide-chevron-right/g)).toHaveLength(2);
   });
 
   it("检测到更新后将动作和版本号合并到同一个升级药丸", () => {

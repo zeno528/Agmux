@@ -75,6 +75,7 @@ export default {
     volcengine: "Volcengine Ark",
   },
   cliUpdate: {
+    // 与中文「更新至」同一语义：英文用 Update to X。
     upgrade: "Update to {{version}}",
     upgradeTitle: "{{client}} CLI {{version}} available ({{channel}} channel). Click to update",
   },

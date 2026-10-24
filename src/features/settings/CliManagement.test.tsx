@@ -14,6 +14,7 @@ const hooks = vi.hoisted(() => ({
   cached: vi.fn((): import("../../types").CliStatus | null => null), cacheSet: vi.fn(),
   cachedUpdate: vi.fn((): { latest_version: string; channel: string; available: boolean } | null => null),
   serviceCheck: vi.fn(), touch: vi.fn(), cacheUpdate: vi.fn(),
+  openUrl: vi.fn(),
 }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
@@ -41,6 +42,7 @@ vi.mock("../../app/managementDataCache", () => ({ getCachedCliStatus: hooks.cach
 vi.mock("../../api", () => ({ api: {
   codexGetCliStatus: hooks.command, codexCheckCliUpdate: hooks.command, codexInstallCli: hooks.command, codexUpdateCli: hooks.command,
   claudeGetCliStatus: hooks.command, claudeCheckCliUpdate: hooks.command, claudeInstallCli: hooks.command, claudeUpdateCli: hooks.command,
+  openUrl: hooks.openUrl,
 } }));
 beforeEach(() => {
   hooks.cells.length = 0;
@@ -58,6 +60,7 @@ beforeEach(() => {
   hooks.serviceCheck.mockReset();
   hooks.touch.mockClear();
   hooks.cacheUpdate.mockClear();
+  hooks.openUrl.mockClear();
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -66,7 +69,9 @@ const status: CliStatus = {
   platform: "darwin-arm64", network: "direct", proxy: null, busy: false,
 };
 const management = {
-  status, busy: false, operation: null, refresh: vi.fn(), check: vi.fn(), run: vi.fn(),
+  status, busy: false, operation: null, update: null, flash: false,
+  bodyRef: { current: null } as { current: HTMLDivElement | null },
+  refresh: vi.fn(), check: vi.fn(), run: vi.fn(),
 };
 // 清空全部微任务：effect 里检测 → 静默更新检查是链式异步，单次微任务等不完。
 const flush = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
@@ -86,7 +91,7 @@ it.each(["codex", "claude"] as const)("%s 首页任务结束后恢复 Agent 页�
   await vi.advanceTimersByTimeAsync(2000);
   const settled = render();
   expect(settled.status).toEqual(status);
-  expect(buttons(CliCard({ client, management: settled }))[0].disabled).toBe(false);
+  expect(actionButton(CliCard({ client, management: settled })).disabled).toBe(false);
   if (stop) stop();
   expect(hooks.effects[0]()).toBeUndefined(); // 任务结束后不再轮询。
 });
@@ -107,20 +112,21 @@ it.each(["codex", "claude"] as const)("%s 静默和主动检查共用按钮检�
     expect(current.busy).toBe(true);
     expect(current.operation).toBe("check");
     const card = CliCard({ client, management: current });
-    const button = buttons(card)[0];
+    const button = actionButton(card);
     expect(button.disabled).toBe(true);
     expect(renderToStaticMarkup(<>{button.children}</>)).toContain("cli.checkingUpdate");
     expect(renderToStaticMarkup(card).match(/cli.checkingUpdate/g)).toHaveLength(1);
     expect(renderToStaticMarkup(card)).not.toContain("cli.working");
-    expect(renderToStaticMarkup(card)).not.toContain("cliUpdate.upgrade");
+    expect(renderToStaticMarkup(card)).not.toContain("cliUpdate.upgrade"); // 检查中只保留一个操作入口。
   };
   assertChecking();
   await render().check();
   expect(hooks.serviceCheck).toHaveBeenCalledOnce();
+  hooks.cachedUpdate.mockReturnValue(null); // 共享检查服务在无更新时清除旧的可升级状态。
   finishQuiet(checked);
   await flush();
   expect(render().busy).toBe(false);
-  expect(buttons(CliCard({ client, management: render() }))[0].disabled).toBe(false);
+  expect(actionButton(CliCard({ client, management: render() })).disabled).toBe(false);
   expect(hooks.success).not.toHaveBeenCalled();
   let finishManual!: (value: typeof checked) => void;
   hooks.serviceCheck.mockReturnValueOnce(new Promise<typeof checked>((resolve) => { finishManual = resolve; }));
@@ -141,11 +147,11 @@ it.each(["codex", "claude"] as const)("%s 本地检测期间安装按钮禁用�
   const render = () => { hooks.index = 0; return useCliManagement(client, true); };
   render();
   hooks.effects[hooks.effects.length - 1]();
-  expect(buttons(CliCard({ client, management: render() }))[0].disabled).toBe(true);
+  expect(actionButton(CliCard({ client, management: render() })).disabled).toBe(true);
   expect(renderToStaticMarkup(CliCard({ client, management: render() }))).toContain('style="opacity:1"');
   finishDetection(missing);
   await flush();
-  expect(buttons(CliCard({ client, management: render() }))[0].disabled).toBe(false);
+  expect(actionButton(CliCard({ client, management: render() })).disabled).toBe(false);
   expect(hooks.serviceCheck).not.toHaveBeenCalled();
 });
 
@@ -157,7 +163,7 @@ it("首次检测、安装和不可管理状态仍保留禁用外观", () => {
     { ...management, status: { ...status, installation: "conflict" as const }, busy: true, operation: "refresh" as const },
   ]) {
     const card = CliCard({ client: "codex", management: current });
-    expect(buttons(card)[0].disabled).toBe(true);
+    expect(actionButton(card).disabled).toBe(true);
     expect(renderToStaticMarkup(card)).not.toContain('style="opacity:1"');
   }
 });
@@ -290,13 +296,13 @@ it("只显示可管理的安装来源", () => {
     ...management, status: { ...status, installation: "missing", source: "embedded", version: null },
   }} />);
   expect(claude).toContain("cli.sources.claude.native");
-  expect(claude).toContain('class="plan-badge">cli.sources.claude.native</span>');
+  expect(claude).toContain('class="plan-badge cli-card__source">cli.sources.claude.native</span>');
   expect(claude).not.toContain("apple-chip--success");
   expect(codex).not.toContain("cli.sources.codex.embedded");
   expect(codex).not.toContain("cli.missing");
 });
 
-it.each(["codex", "claude"] as const)("%s 保留安装路径，无路径时使用相同底栏显示占位", (client) => {
+it.each(["codex", "claude"] as const)("%s 详情表保留安装路径，未安装时改为展示安装命令", (client) => {
   const html = renderToStaticMarkup(<CliCard client={client} management={{
     ...management, status: { ...status, other_paths: ["/fixture/other/cli"], network: "proxy", proxy: "http://proxy.invalid:9001" },
   }} />);
@@ -305,13 +311,13 @@ it.each(["codex", "claude"] as const)("%s 保留安装路径，无路径时使�
   expect(html).toContain("/fixture/other/cli");
   expect(html).not.toContain("cli.networkLabel");
   expect(html).not.toContain("proxy.invalid");
-  for (const missing of [{ ...status, installation: "missing" as const, path: null }, null]) {
-    const empty = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: missing }} />);
-    expect(empty).toContain("cli-facts");
-    expect(empty).toContain("cli.pathLabel");
-    expect(empty).toContain("cli.pathUnavailable");
-    expect(empty).not.toContain("cli.description");
-  }
+  const missing = renderToStaticMarkup(<CliCard client={client} management={{
+    ...management, status: { ...status, installation: "missing" as const, path: null },
+  }} />);
+  expect(missing).toContain("cli.installCommandTitle");
+  expect(missing).toContain('aria-label="cli.copyCommand"');
+  expect(missing).not.toContain("cli.pathLabel");
+  expect(missing).not.toContain("cli.pathUnavailable");
 });
 
 it("版本查询错误随界面语言翻译，不显示后端中文或内部阶段标识", async () => {
@@ -364,14 +370,20 @@ it("刷新失败静默，主动检查和安装失败透出，均恢复状态且�
   }
 });
 
-function buttons(node: ReactNode): { children?: ReactNode; onClick: () => void; disabled?: boolean }[] {
-  const result: { children?: ReactNode; onClick: () => void; disabled?: boolean }[] = [];
+function buttons(node: ReactNode): { children?: ReactNode; onClick: () => void; disabled?: boolean; title?: string }[] {
+  const result: { children?: ReactNode; onClick: () => void; disabled?: boolean; title?: string }[] = [];
   Children.forEach(node, (child) => {
-    if (!isValidElement<{ children?: ReactNode; onClick: () => void; disabled?: boolean }>(child)) return;
+    if (!isValidElement<{ children?: ReactNode; onClick: () => void; disabled?: boolean; title?: string }>(child)) return;
     if (child.type === "button") result.push(child.props);
     else result.push(...buttons(child.props.children));
   });
   return result;
+}
+
+// 卡片底部操作按钮：命令块里的复制按钮在它前面。
+function actionButton(node: ReactNode) {
+  const all = buttons(node);
+  return all[all.length - 1];
 }
 
 it.each([
@@ -380,18 +392,17 @@ it.each([
   ["codex", "darwin-arm64", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
   ["claude", "darwin-x64", "curl -fsSL https://claude.ai/install.sh | bash"],
 ] as const)("%s 在 %s 安装前展示命令，取消或等待确认时不安装", async (client, platform, command) => {
-  hooks.cached.mockReturnValue({ ...status, platform, installation: "missing", path: null });
+  const missing = { ...status, platform, installation: "missing" as const, path: null };
+  hooks.cached.mockReturnValue(missing);
   const render = () => { hooks.index = 0; return useCliManagement(client, true); };
-  let finish!: (confirmed: boolean) => void;
-  hooks.confirm.mockReturnValueOnce(new Promise<boolean>((resolve) => { finish = resolve; }));
-  const pending = render().run();
-  const options = hooks.confirm.mock.calls[0][0];
-  const description = renderToStaticMarkup(<>{options.description}</>);
-  const code = description.match(/<code\b[^>]*>(.*?)<\/code>/)?.[1];
-  expect(code).toBe(command.replace(/"/g, "&quot;"));
+  // 命令在卡片上展示，复制按钮也在卡片上。
+  const card = CliCard({ client, management: { ...management, status: missing } });
+  const html = renderToStaticMarkup(card);
+  expect(html).toContain(command.replace(/"/g, "&quot;"));
+  expect(html).toContain("cli.installCommandTitle");
   const writeText = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal("navigator", { clipboard: { writeText } });
-  const copy = buttons(options.description)[0];
+  const copy = buttons(card).find((button) => button.title === "cli.copyCommand")!;
   await copy.onClick();
   expect(writeText).toHaveBeenCalledExactlyOnceWith(command);
   expect(hooks.success).toHaveBeenCalledWith("cli.commandCopied");
@@ -400,6 +411,13 @@ it.each([
   await copy.onClick();
   expect(hooks.error).toHaveBeenCalledWith("cli.copyFailed");
   expect(hooks.success).not.toHaveBeenCalled();
+
+  // 确认弹窗只做确认，不再重复输出终端命令。
+  let finish!: (confirmed: boolean) => void;
+  hooks.confirm.mockReturnValueOnce(new Promise<boolean>((resolve) => { finish = resolve; }));
+  const pending = render().run();
+  const options = hooks.confirm.mock.calls[0][0];
+  expect(renderToStaticMarkup(<>{options.description}</>)).not.toContain("<code");
   expect(hooks.command).not.toHaveBeenCalled();
   expect(render().busy).toBe(false);
   await render().run();
@@ -417,7 +435,7 @@ it.each([
   expect(hooks.command).toHaveBeenCalledOnce();
   const current = render();
   expect(current.busy).toBe(true);
-  const button = buttons(CliCard({ client, management: current }))[0];
+  const button = actionButton(CliCard({ client, management: current }));
   expect(button.disabled).toBe(true);
   expect(renderToStaticMarkup(<>{button.children}</>)).toContain("cli.installing");
   complete(status);
@@ -436,9 +454,13 @@ it("检查只查询，发现更新后仍需单独点击升级；没有更新时�
     expect(actions.run).not.toHaveBeenCalled();
     for (const available of [false, true]) {
       hooks.cachedUpdate.mockReturnValue(available ? { latest_version: "1.2.4", channel: "latest", available: true } : null);
-      const checked = CliCard({ client, management: actions });
+      const checked = CliCard({ client, management: {
+        ...actions,
+        update: available ? { available: true, latest_version: "1.2.4", channel: "latest" } : null,
+      } });
       const html = renderToStaticMarkup(checked);
-      expect(html.includes('class="plan-badge gap-1"')).toBe(available);
+      expect(html.includes('class="apple-action-button app-button--primary"')).toBe(available);
+      expect(html.includes("cli.checkUpdate")).toBe(!available);
       expect(html).not.toContain("cli.noUpdate");
       if (available) expect(html).toContain("cliUpdate.upgradeTitle1.2.4");
       expect(actions.run).not.toHaveBeenCalled();
@@ -446,12 +468,38 @@ it("检查只查询，发现更新后仍需单独点击升级；没有更新时�
   }
 });
 
-it("版本号与升级动作复用同一徽标样式", () => {
+it.each(["codex", "claude"] as const)("%s 有版本号就显示对号，仅已知有更新时隐藏，刷新和检查中保持显示", (client) => {
+  for (const state of [
+    { busy: false, operation: null, statusBusy: false, available: false },
+    { busy: true, operation: "refresh" as const, statusBusy: false, available: false },
+    { busy: true, operation: "check" as const, statusBusy: false, available: false },
+    { busy: false, operation: null, statusBusy: true, available: false },
+    { busy: false, operation: null, statusBusy: false, available: true },
+    { busy: true, operation: "check" as const, statusBusy: false, available: true },
+  ]) {
+    const update = state.available ? { available: true, latest_version: "1.2.4", channel: "latest" } : null;
+    hooks.cached.mockReturnValue(status);
+    hooks.cachedUpdate.mockReturnValue(update);
+    const source = client === "claude" ? "native" : "standalone";
+    const html = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: { ...status, source, busy: state.statusBusy }, operation: state.operation, busy: state.busy, update }} />);
+    expect(html.includes('aria-label="cli.upToDate"')).toBe(!state.available);
+    if (!state.available) expect(html).toMatch(/<dd class="cli-card__version">1\.2\.3<svg[^>]*class="[^"]*cli-card__status/);
+    else expect(html).toContain('<dd class="cli-card__version">1.2.3</dd>');
+    expect(html).not.toContain('</svg>cli.upToDate');
+  }
+});
+
+it("版本号进入详情表，升级动作放在底部操作区并替换检查按钮", () => {
   hooks.cached.mockReturnValue(status);
   hooks.cachedUpdate.mockReturnValue({ latest_version: "1.2.4", channel: "latest", available: true });
-  const html = renderToStaticMarkup(<CliCard client="claude" management={management} />);
-  expect(html).toContain('class="plan-badge">1.2.3</span>');
-  expect(html).toContain('<button type="button" class="plan-badge gap-1"');
+  const html = renderToStaticMarkup(<CliCard client="claude" management={{
+    ...management,
+    update: { available: true, latest_version: "1.2.4", channel: "latest" },
+  }} />);
+  expect(html).toContain("cli.installed");
+  expect(html).toContain("1.2.3");
+  expect(html).toContain('<div class="cli-card__actions"><button type="button" class="apple-action-button app-button--primary"');
+  expect(html).not.toContain("cli.checkUpdate");
 });
 
 it.each(["codex", "claude"] as const)("%s 跨页升级失败后不被旧忙碌缓存锁住，可以重试", async (client) => {
@@ -479,21 +527,25 @@ it.each(["codex", "claude"] as const)("%s 跨页升级失败后不被旧忙碌�
   expect(render().disabled).toBe(false);
 });
 
-it.each(["codex", "claude"] as const)("%s 外部任务的进度显示在禁用的升级胶囊内，结束后恢复", (client) => {
+it.each(["codex", "claude"] as const)("%s 外部任务的进度显示在底部禁用的升级按钮内，结束后恢复", (client) => {
   for (const available of [false, true]) {
     hooks.cachedUpdate.mockReturnValue(available ? { latest_version: "1.2.4", channel: "latest", available: true } : null);
     for (const busy of [true, false]) {
       const current = { ...status, busy };
       hooks.cached.mockReturnValue(current);
-      const html = renderToStaticMarkup(<CliCard client={client} management={{ ...management, status: current }} />);
+      const html = renderToStaticMarkup(<CliCard client={client} management={{
+        ...management,
+        status: current,
+        update: available ? { available: true, latest_version: "1.2.4", channel: "latest" } : null,
+      }} />);
       if (busy) {
-        expect(html).toMatch(/<button[^>]*class="plan-badge gap-1"[^>]*disabled=""[^>]*>.*cli.updating.*<\/button>/);
+        expect(html).toMatch(/<button[^>]*class="apple-action-button app-button--primary"[^>]*disabled=""[^>]*>.*cli.updating.*<\/button>/);
         expect(html.match(/cli.updating<\/span>/g)).toHaveLength(1);
         expect(html).toContain('role="status"');
       } else {
         expect(html).not.toContain("cli.updating");
         expect(html).not.toContain('disabled=""');
-        expect(html.includes('class="plan-badge gap-1"')).toBe(available);
+        expect(html.includes('class="apple-action-button app-button--primary"')).toBe(available);
       }
     }
   }
@@ -513,6 +565,7 @@ it("混装与其他任务阻止安装，桌面内置副本可以共存", () => {
   expect(card).toContain("cli.install");
   expect(card).toContain("app-button--primary");
   expect(card).not.toContain("/fixture/desktop");
+  hooks.cached.mockReturnValue({ ...status, busy: true });
   const remoteTask = renderToStaticMarkup(<CliCard client="claude" management={{
     ...management, status: { ...status, busy: true },
   }} />);

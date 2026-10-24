@@ -15,6 +15,7 @@ const clientLabels: Record<CliClient, string> = {
 
 type CliUpgradePillProps = {
   client: CliClient;
+  className?: string;
   busy?: boolean;
   onUpdated?: (status: CliStatus) => void | Promise<unknown>;
 };
@@ -41,7 +42,7 @@ export function cliFailureMessage(error: CliFailure, client: CliClient, t: TFunc
 /// 懒计时器 / Agent 页静默检查写入），原生安装且发现新版本才出现；点击直接走
 /// 官方升级链路——用户主动动作，失败照常透出。升级完成立即静默复检一次，
 /// 版本追平后胶囊自然消失。未安装/非原生安装的客户端不显示（没有升级链路）。
-export function CliUpgradePill({ client, busy = false, onUpdated }: CliUpgradePillProps) {
+export function CliUpgradePill({ client, className = "plan-badge gap-1", busy = false, onUpdated }: CliUpgradePillProps) {
   const { t: tCommon } = useTranslation("common");
   const { t: tSettings } = useTranslation("settings");
   const feedback = useFeedback();
@@ -77,14 +78,14 @@ export function CliUpgradePill({ client, busy = false, onUpdated }: CliUpgradePi
   return (
     <button
       type="button"
-      className="plan-badge gap-1"
+      className={className}
       disabled={upgrading || busy}
       title={busy ? tSettings("cli.updating") : update ? tCommon("cliUpdate.upgradeTitle", { client: label, version: update.latest_version, channel: update.channel }) : undefined}
       onClick={() => void upgrade()}
     >
       {upgrading || busy ? (
         <span className="inline-flex items-center gap-1" role="status" aria-live="polite">
-          <LoadingSpinner /><span className="meta-xs">{tSettings("cli.updating")}</span>
+          <LoadingSpinner /><span>{tSettings("cli.updating")}</span>
         </span>
       ) : update ? <><Download size={12} strokeWidth={2} aria-hidden="true" />{tCommon("cliUpdate.upgrade", { version: update.latest_version })}</> : null}
     </button>

@@ -310,10 +310,6 @@ impl AppContext {
         // label 是 i18n key，由前端翻译展示；对应 src/i18n/locales/*/settings.ts 的 about.paths.*
         vec![
             PathInfo {
-                label: "about.paths.codexConfig".into(),
-                path: self.paths.codex_config().display().to_string(),
-            },
-            PathInfo {
                 label: "about.paths.appData".into(),
                 path: self.paths.root.display().to_string(),
             },

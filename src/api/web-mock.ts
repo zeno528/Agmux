@@ -56,7 +56,6 @@ const webPaths = [
   { label: "about.paths.appData", path: "C:\\Users\\<user>\\.agmux" },
   { label: "about.paths.backups", path: "C:\\Users\\<user>\\.agmux\\backups\\database" },
   { label: "about.paths.logs", path: "C:\\Users\\<user>\\.agmux\\logs" },
-  { label: "about.paths.codexConfig", path: "C:\\Users\\<user>\\.codex\\config.toml" },
 ];
 
 function patchContextOverrideForWeb(text: string, enabled: boolean, compactTokenLimit: number): string {

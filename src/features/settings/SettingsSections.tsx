@@ -1,4 +1,4 @@
-import { AppWindowMac, Blocks, BookOpenText, Bot, ChevronRight, CircleUserRound, Clock, Database, Download, FileCog, FileText, FolderOpen, History, Languages, LayoutDashboard, LoaderCircle, Moon, MoonStar, Monitor, MoreHorizontal, Palette, PanelBottomClose, Pencil, Power, RefreshCw, RotateCcw, Save, Settings as SettingsIcon, Sun, Trash2, Upload } from "lucide-react";
+import { AppWindowMac, Blocks, BookOpenText, Bot, ChevronRight, CircleUserRound, Clock, Database, Download, FileText, FolderOpen, History, Languages, LayoutDashboard, LoaderCircle, Moon, MoonStar, Monitor, MoreHorizontal, Palette, PanelBottomClose, Pencil, Power, RefreshCw, RotateCcw, Save, Settings as SettingsIcon, Sun, Trash2, Upload } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { createPortal } from "react-dom";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -400,8 +400,8 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
       <SettingsPanelSection id="data-paths" label={t("about.dataAndPaths")}>
         <div className="apple-group divide-y divide-[var(--panel-divider)] px-[var(--gap-card-inline)]">
           {paths.filter((item) => item.label !== BACKUP_DIR_LABEL).map((item) => {
-            const Icon = item.label === "about.paths.codexConfig" ? FileCog : item.label === "about.paths.logs" ? FileText : Database;
-            const description = item.label === "about.paths.codexConfig" ? t("about.pathDescriptions.codexConfig") : item.label === "about.paths.logs" ? t("about.pathDescriptions.logs") : t("about.pathDescriptions.appData");
+            const Icon = item.label === "about.paths.logs" ? FileText : Database;
+            const description = item.label === "about.paths.logs" ? t("about.pathDescriptions.logs") : t("about.pathDescriptions.appData");
             return (
               <SettingsRowLink
                 key={item.label}

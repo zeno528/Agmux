@@ -73,7 +73,7 @@ export default {
     volcengine: "火山方舟",
   },
   cliUpdate: {
-    upgrade: "更新到 {{version}}",
+    upgrade: "更新至 {{version}}",
     upgradeTitle: "发现 {{client}} CLI 新版本 {{version}}（{{channel}} 通道），点击更新",
   },
 } as const;

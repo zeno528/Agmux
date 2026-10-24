@@ -1828,9 +1828,9 @@ fn only_exposed_paths_can_be_opened() {
     let home = tempfile::tempdir().unwrap();
     let context = AppContext::new(crate::paths::from_home(home.path()).unwrap()).unwrap();
 
-    // 设置页只暴露四处：应用数据目录 / 数据库备份目录 / 日志目录 / Codex 配置（见 path_info）
+    // 设置页只暴露三处：应用数据目录 / 数据库备份目录 / 日志目录（见 path_info）
     assert!(context.is_managed_path(&context.paths.root.display().to_string()));
-    assert!(context.is_managed_path(&context.paths.codex_config().display().to_string()));
+    assert!(!context.is_managed_path(&context.paths.codex_config().display().to_string()));
     assert!(context.is_managed_path(&context.paths.database_backup.display().to_string()));
     assert!(!context.is_managed_path(&context.paths.root.join("backups").display().to_string()));
     // 未单独暴露的具体文件路径不在白名单内，open_path 应拒绝

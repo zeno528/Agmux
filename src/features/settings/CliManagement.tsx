@@ -1,19 +1,43 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, FolderOpen } from "lucide-react";
+import { Check, Copy, Terminal } from "lucide-react";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
-import { clearCachedCliUpdate, getCachedCliStatus, runCliUpdateCheck, setCliStatusCache, touchCliUpdateCheckedAt } from "../../app/managementDataCache";
+import { clearCachedCliUpdate, getCachedCliStatus, getCachedCliUpdate, runCliUpdateCheck, setCliStatusCache, subscribeCliUpdate, touchCliUpdateCheckedAt } from "../../app/managementDataCache";
 import { CliUpgradePill, cliFailure, cliFailureMessage } from "../../components/CliUpgradePill";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import type { CliStatus } from "../../types";
 
 const clients = {
-  codex: { label: "Codex", icon: "/codex.svg", installer: "https://chatgpt.com/codex/install", status: api.codexGetCliStatus, check: api.codexCheckCliUpdate, install: api.codexInstallCli },
-  claude: { label: "Claude Code", icon: "/claude-code.svg", installer: "https://claude.ai/install", status: api.claudeGetCliStatus, check: api.claudeCheckCliUpdate, install: api.claudeInstallCli },
+  codex: {
+    label: "Codex", icon: "/codex.svg", installer: "https://chatgpt.com/codex/install",
+    homepage: "https://openai.com/codex/", homepageLabel: "openai.com/codex",
+    description: "cli.description.codex" as const,
+    status: api.codexGetCliStatus, check: api.codexCheckCliUpdate, install: api.codexInstallCli,
+  },
+  claude: {
+    label: "Claude Code", icon: "/claude-code.svg", installer: "https://claude.ai/install",
+    homepage: "https://claude.com/product/claude-code", homepageLabel: "claude.com/product/claude-code",
+    description: "cli.description.claude" as const,
+    status: api.claudeGetCliStatus, check: api.claudeCheckCliUpdate, install: api.claudeInstallCli,
+  },
 };
 type Client = keyof typeof clients;
 type CliOperation = "refresh" | "check" | "install" | null;
+
+/// 官方安装命令：macOS 走系统 shell 的 curl 管道，Windows 走 PowerShell 的 irm 管道。
+function installCommand(client: Client, platform: string) {
+  const installer = clients[client].installer;
+  if (platform.startsWith("win32-")) {
+    return client === "codex"
+      ? `powershell -ExecutionPolicy ByPass -c "irm ${installer}.ps1 | iex"`
+      : `irm ${installer}.ps1 | iex`;
+  }
+  return `curl -fsSL ${installer}.sh | ${client === "codex" ? "sh" : "bash"}`;
+}
+
+/// 安装命令的平台标识。
+const shellLabel = (platform: string) => (platform.startsWith("win32-") ? "PowerShell" : "macOS");
 
 // 在 SettingsView 中调用；切分区只隐藏卡片，不丢失任务和错误。
 export function useCliManagement(client: Client, active: boolean) {
@@ -25,6 +49,12 @@ export function useCliManagement(client: Client, active: boolean) {
   const [operation, setOperation] = useState<CliOperation>(null);
   const running = useRef(false);
   const commands = clients[client];
+  // 升级结论走共享缓存（与供应商页的胶囊同源），卡片只订阅不另存一份。
+  const update = useSyncExternalStore(subscribeCliUpdate, () => getCachedCliUpdate(client), () => getCachedCliUpdate(client));
+  // 卡片的 DOM 状态也归这里：卡片是纯展示，长高动画与成功描边由本 hook 驱动。
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const growFrom = useRef<number | null>(null);
+  const [flash, setFlash] = useState(false);
 
   // 缓存写穿：检测/安装/升级的每个落点都同步进缓存，下次进页直出最新状态。
   const applyStatus = (next: CliStatus) => { setCliStatusCache(client, next); setStatus(next); };
@@ -54,6 +84,56 @@ export function useCliManagement(client: Client, active: boolean) {
     const timer = setInterval(() => void refresh(), 2000);
     return () => clearInterval(timer);
   }, [active, status?.busy]);
+
+  // 安装开始时先钉住当前高度：装完换成「详情」时卡片从旧高连续长过去，不闪跳。
+  useEffect(() => {
+    if (operation !== "install") return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const height = el.scrollHeight;
+    if (height < 1) return;
+    growFrom.current = height;
+    el.style.height = `${height}px`;
+    el.style.overflow = "hidden";
+  }, [operation]);
+
+  // 形态变化后按新高度过渡，动画结束交还自适应高度。
+  // 只跟形态走：安装开始那一刻形态没变，钉住的高度要留到安装完成再放。
+  const shape = `${status?.installation ?? "none"}:${status?.version ?? ""}`;
+  useEffect(() => {
+    const el = bodyRef.current;
+    const from = growFrom.current;
+    if (!el || from === null) return;
+    growFrom.current = null;
+    const to = el.scrollHeight;
+    if (Math.abs(from - to) < 1) {
+      el.style.transition = "";
+      el.style.height = "";
+      el.style.overflow = "";
+      return;
+    }
+    el.style.height = `${from}px`;
+    void el.offsetHeight; // 强制回流：浏览器先认下旧高度，再过渡到新高度
+    el.style.transition = "height 280ms cubic-bezier(0.22, 1, 0.36, 1)";
+    el.style.height = `${to}px`;
+    const timer = window.setTimeout(() => {
+      el.style.transition = "";
+      el.style.height = "";
+      el.style.overflow = "";
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [shape]);
+
+  // 装完的瞬间给一圈成功描边，提示这一步已经完成。
+  const previous = useRef(status?.installation);
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = status?.installation;
+    if (!before || before === "native" || status?.installation !== "native") return;
+    setFlash(true);
+    const timer = window.setTimeout(() => setFlash(false), 700);
+    return () => window.clearTimeout(timer);
+  }, [status?.installation]);
 
   // 每次重新进入 Agent 工具分区都检测一次，纠正外部安装/升级造成的本地缓存过期；
   // 检测成功且为原生安装时顺带静默检查线上更新。
@@ -93,26 +173,10 @@ export function useCliManagement(client: Client, active: boolean) {
     if (running.current || !status) return;
     running.current = true;
     try {
-      const command = status.platform.startsWith("win32-")
-        ? client === "codex"
-          ? `powershell -ExecutionPolicy ByPass -c "irm ${commands.installer}.ps1 | iex"`
-          : `irm ${commands.installer}.ps1 | iex`
-        : `curl -fsSL ${commands.installer}.sh | ${client === "codex" ? "sh" : "bash"}`;
       if (!await confirm({
         title: t("cli.installConfirmTitle", { client: commands.label }),
-        description: <>
-          <span>{t("cli.installConfirmDescription")}</span>
-          <span className="mt-3 block rounded-[var(--radius-control)] border border-(--panel-border) bg-(--tile-bg) p-3">
-            <span className="mb-2 flex items-center justify-between gap-3">
-              <span className="meta-xs muted">{status.platform.startsWith("win32-") ? "PowerShell" : client === "codex" ? "sh" : "bash"}</span>
-              <button type="button" className="apple-icon-button" title={t("cli.copyCommand")} aria-label={t("cli.copyCommand")} onClick={async () => {
-                try { await navigator.clipboard.writeText(command); success(t("cli.commandCopied")); }
-                catch { reportError(t("cli.copyFailed")); }
-              }}><Copy size={16} strokeWidth={2} aria-hidden="true" /></button>
-            </span>
-            <code className="mono setting-description block whitespace-pre-wrap break-all">{command}</code>
-          </span>
-        </>,
+        // 命令已经在卡片上展示，弹窗只做确认，不再重复输出终端命令。
+        description: t("cli.installConfirmDescription"),
         confirmText: t("cli.install"),
       })) return;
       setBusy(true);
@@ -127,72 +191,110 @@ export function useCliManagement(client: Client, active: boolean) {
         version: result.version ?? "",
       }));
     } catch (error) {
+      // 失败时 shape 不变，钉住的高度等不到恢复动画，这里手动放掉。
+      growFrom.current = null;
+      const el = bodyRef.current;
+      if (el) { el.style.height = ""; el.style.overflow = ""; }
       reportError(cliFailureMessage(cliFailure(error, "run_cli"), client, t, "install"));
     }
     finally { running.current = false; setBusy(false); setOperation(null); }
   };
 
-  return { status, busy, operation, refresh, check, run };
+  return { status, busy, operation, update, flash, bodyRef, refresh, check, run };
 }
 
 export function CliCard({ client, management }: { client: Client; management: ReturnType<typeof useCliManagement> }) {
   const { t } = useTranslation("settings");
-  const { status, busy, operation, check, refresh, run } = management;
+  const { success, error: reportError } = useFeedback();
+  const { status, busy, operation, update, flash, bodyRef, check, refresh, run } = management;
+  const native = status?.installation === "native";
   const unavailable = !status || status.busy || !["missing", "broken", "native"].includes(status.installation);
   // 检查进度放在按钮上；原生安装的外部任务由升级胶囊反馈。
   const showProgress = busy && operation === "install";
+  const command = status ? installCommand(client, status.platform) : "";
+  const stateText = status && !["missing", "native"].includes(status.installation)
+    ? t(status.installation === "broken" ? "cli.broken" : status.installation === "other" ? "cli.other" : "cli.conflict")
+    : null;
+
+  const copyCommand = async () => {
+    try { await navigator.clipboard.writeText(command); success(t("cli.commandCopied")); }
+    catch { reportError(t("cli.copyFailed")); }
+  };
+
+  const showUpgrade = native && !busy && (update?.available || status?.busy);
+  const upToDate = !update?.available;
+
+  // 中部：原生安装看详情，其余看安装命令（命令块只在需要装的时候出现）。
+  const body = !status ? null : native || status.installation === "other" || status.installation === "conflict" ? (
+    <section className="cli-card__section">
+      <h2 className="setting-title cli-card__section-title">{t("cli.detailsTitle")}</h2>
+      {/* dt/dd 直接做 grid 子项：包裹 div 会各自占一列，错开标签与值。 */}
+      <dl className="cli-details">
+        {status.version ? (<>
+          <dt>{t("cli.installed")}</dt>
+          <dd className="cli-card__version">
+            {status.version}
+            {upToDate ? <Check className="cli-card__status" size={16} strokeWidth={3} role="img" aria-label={t("cli.upToDate")}><title>{t("cli.upToDate")}</title></Check> : null}
+          </dd>
+        </>) : null}
+        <dt>{t("cli.pathLabel")}</dt>
+        <dd title={status.path ?? undefined}>{status.path ?? t("cli.pathUnavailable")}</dd>
+        {status.other_paths.map((path) => (
+          <Fragment key={path}><dt /><dd title={path}>{path}</dd></Fragment>
+        ))}
+        <dt>{t("cli.homepage")}</dt>
+        <dd>
+          <button type="button" className="cli-card__link" onClick={() => void api.openUrl(clients[client].homepage).catch((error) => reportError(String(error)))}>
+            {clients[client].homepageLabel} ↗
+          </button>
+        </dd>
+      </dl>
+    </section>
+  ) : (
+    <section className="cli-card__section">
+      <h2 className="setting-title cli-card__section-title">{t("cli.installCommandTitle")}<span className="meta-xs cli-command__platform">{shellLabel(status.platform)}</span></h2>
+      <div className="cli-command">
+        <Terminal size={16} strokeWidth={2} aria-hidden="true" />
+        <code className="cli-command__code">{command}</code>
+        <button type="button" className="apple-icon-button" title={t("cli.copyCommand")} aria-label={t("cli.copyCommand")} onClick={() => void copyCommand()}>
+          <Copy size={16} strokeWidth={2} aria-hidden="true" />
+        </button>
+      </div>
+      <p className="setting-description cli-command__note">{t("cli.commandHint")}</p>
+    </section>
+  );
+
   return (
-    <div className="apple-group flex flex-col justify-between gap-3 px-(--gap-card-inline) py-4">
-      <div className="flex items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center" aria-hidden="true">
-          <img src={clients[client].icon} alt="" className="h-5 w-5" draggable={false} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+    <div className={`apple-group cli-card${flash ? " cli-card--flash" : ""}`}>
+      <div className="cli-card__head">
+        <span className="cli-card__icon"><img src={clients[client].icon} alt="" draggable={false} /></span>
+        <div className="cli-card__main">
+          <div className="cli-card__name-row">
             <span className="setting-title">{clients[client].label}</span>
             {status?.source && status.source !== "embedded" ? (
-              <span className="plan-badge">
-                {t(`cli.sources.${client}.${status.source}`, { defaultValue: status.source })}
-              </span>
+              <span className="plan-badge cli-card__source">{t(`cli.sources.${client}.${status.source}`, { defaultValue: status.source })}</span>
             ) : null}
-            {status?.version ? <span className="plan-badge">{status.version}</span> : null}
-            {status?.installation === "native" && operation !== "check" ? (
-              <CliUpgradePill
-                client={client}
-                busy={status.busy || (busy && operation === "install")}
-                onUpdated={() => { void refresh(); }}
-              />
-            ) : null}
-            {status?.busy && status.installation !== "native" && !showProgress ? (
+            {status?.busy && !native && !showProgress ? (
               <span className="inline-flex items-center gap-1.5 text-(--text-secondary)" role="status" aria-live="polite">
                 <LoadingSpinner size="md" />
                 <span className="meta-xs">{t("cli.working")}</span>
               </span>
             ) : null}
           </div>
-          {status && !["missing", "native"].includes(status.installation)
-            ? <div className="setting-description mt-0.5">{t(status.installation === "broken" ? "cli.broken" : status.installation === "other" ? "cli.other" : "cli.conflict")}</div>
-            : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <button type="button" className={status?.installation === "native" ? "apple-action-button" : "apple-action-button app-button--primary"}
-            style={busy && operation === "refresh" && !unavailable ? { opacity: 1 } : undefined}
-            disabled={busy || unavailable} onClick={() => status?.installation === "native" ? void check() : void run()}>
-            {showProgress
-              ? <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><LoadingSpinner size="md" />{t("cli.installing")}</span>
-              : busy && operation === "check"
-              ? <span role="status" aria-live="polite">{t("cli.checkingUpdate")}</span>
-              : t(status?.installation === "native" ? "cli.checkUpdate" : "cli.install")}
-          </button>
+          <p className="setting-description cli-card__desc">{stateText ?? t(clients[client].description)}</p>
         </div>
       </div>
-      <div className="cli-facts min-h-8">
-        <span className="cli-fact">
-          <FolderOpen size={14} strokeWidth={2} aria-hidden="true" />
-          <span className="meta-xs">{t("cli.pathLabel")}</span>
-          {status?.path ? <span className="cli-fact-path" title={status.path}>{status.path}</span> : <span className="meta-xs">{t("cli.pathUnavailable")}</span>}
-          {status?.other_paths.map((path) => <span key={path} className="cli-fact-path" title={path}>{path}</span>)}
-        </span>
+      <div className="cli-card__body" ref={bodyRef}>{body}</div>
+      <div className="cli-card__actions">
+        {showUpgrade ? <CliUpgradePill client={client} className="apple-action-button app-button--primary" busy={status.busy || busy} onUpdated={() => void refresh()} /> : <button type="button" className={native ? "apple-action-button" : "apple-action-button app-button--primary"}
+          style={busy && operation === "refresh" && !unavailable ? { opacity: 1 } : undefined}
+          disabled={busy || unavailable} onClick={() => native ? void check() : void run()}>
+          {showProgress
+            ? <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><LoadingSpinner size="md" />{t("cli.installing")}</span>
+            : busy && operation === "check"
+            ? <span role="status" aria-live="polite">{t("cli.checkingUpdate")}</span>
+            : t(native ? "cli.checkUpdate" : "cli.install")}
+        </button>}
       </div>
     </div>
   );
