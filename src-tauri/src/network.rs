@@ -39,6 +39,85 @@ pub(crate) struct Network {
     http_proxy: Option<reqwest::Proxy>,
 }
 
+#[derive(serde::Serialize)]
+pub struct ProxyStatus {
+    pub proxy: Option<String>,
+    pub tunnels: Vec<String>,
+}
+
+// 隧道只用于状态展示，不参与 HTTP/子进程的代理选择，也不进入冷启动路径。
+pub(crate) async fn proxy_status() -> Result<ProxyStatus, NetworkError> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let network = Network::detect()?;
+        let tunnels = if network.proxy.is_none() {
+            detect_system_tunnels()?
+        } else {
+            Vec::new()
+        };
+        Ok(ProxyStatus {
+            proxy: network.display,
+            tunnels,
+        })
+    })
+    .await
+    .map_err(|_| NetworkError {
+        kind: "internal",
+        message: "读取网络设置失败",
+    })?
+}
+
+fn detect_system_tunnels() -> Result<Vec<String>, NetworkError> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("scutil")
+            .args(["--nc", "list"])
+            .output()
+            .map_err(|_| SYSTEM_TUNNEL_READ_ERROR)?;
+        if !output.status.success() {
+            return Err(SYSTEM_TUNNEL_READ_ERROR);
+        }
+        macos_connected_tunnels(&String::from_utf8_lossy(&output.stdout))
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(Vec::new())
+}
+
+#[cfg(any(target_os = "macos", test))]
+const SYSTEM_TUNNEL_READ_ERROR: NetworkError = NetworkError {
+    kind: "io_error",
+    message: "读取系统隧道状态失败，请检查网络设置后重试",
+};
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_connected_tunnels(text: &str) -> Result<Vec<String>, NetworkError> {
+    let mut lines = text.lines();
+    if !lines
+        .next()
+        .is_some_and(|line| line.starts_with("Available network connection services"))
+    {
+        return Err(SYSTEM_TUNNEL_READ_ERROR);
+    }
+    let mut tunnels = Vec::new();
+    for line in lines {
+        let Some(connected) = line
+            .trim_start()
+            .trim_start_matches('*')
+            .trim_start()
+            .strip_prefix("(Connected)")
+        else {
+            continue;
+        };
+        let name = connected
+            .split_once('"')
+            .and_then(|(_, rest)| rest.rsplit_once('"'))
+            .map(|(name, _)| name)
+            .filter(|name| !name.trim().is_empty())
+            .ok_or(SYSTEM_TUNNEL_READ_ERROR)?;
+        tunnels.push(name.to_owned());
+    }
+    Ok(tunnels)
+}
+
 impl Network {
     pub(crate) fn new(proxy: Option<String>) -> Result<Self, NetworkError> {
         let mut display = None;
@@ -356,6 +435,42 @@ mod tests {
             .unwrap();
         assert_eq!(error.kind, "io_error");
         assert_eq!(error.message, SYSTEM_PROXY_READ_ERROR.message);
+    }
+
+    #[test]
+    fn macos_tunnels_include_only_connected_services_and_preserve_names() {
+        let header = "Available network connection services in the current set (*=enabled):";
+        let text = format!(
+            "{header}\n\
+            * (Connected) UUID-1 VPN (com.hako.network) \"Clash\" [VPN:com.hako.network]\n\
+            * (Disconnected) UUID-2 VPN (fixture.off) \"Stopped\" [VPN:fixture.off]\n\
+            * (Connecting) UUID-3 VPN (fixture.starting) \"Starting\" [VPN:fixture.starting]\n\
+              (Connected) UUID-4 IPSec \"工作 \"VPN\"\" [IPSec]\n"
+        );
+        assert_eq!(
+            macos_connected_tunnels(&text).unwrap(),
+            ["Clash", "工作 \"VPN\""]
+        );
+        assert!(macos_connected_tunnels(header).unwrap().is_empty());
+        assert!(macos_connected_tunnels(&format!(
+            "{header}\n* (Disconnected) UUID VPN (fixture.off) \"Stopped\" [VPN:fixture.off]"
+        ))
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn unreadable_macos_tunnel_output_is_not_reported_as_no_tunnel() {
+        for text in [
+            "",
+            "unexpected output",
+            "Available network connection services:\n* (Connected) UUID VPN missing-name",
+            "Available network connection services:\n* (Connected) UUID VPN \"\" [VPN:fixture]",
+        ] {
+            let error = macos_connected_tunnels(text).unwrap_err();
+            assert_eq!(error.kind, "io_error");
+            assert_eq!(error.message, SYSTEM_TUNNEL_READ_ERROR.message);
+        }
     }
 
     #[test]

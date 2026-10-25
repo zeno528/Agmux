@@ -66,7 +66,9 @@ export function ProxySettings({ settings, saving, onSave }: {
     : !isTauri ? t("proxy.previewDescription")
     : status?.error ? t("proxy.statusUnavailable")
     : !status ? t("proxy.autoDescription")
-    : status.proxy ? t("proxy.autoProxy", { address: status.proxy }) : t("proxy.autoDirect");
+    : status.proxy ? t("proxy.autoProxy", { address: status.proxy })
+    : status.tunnels.length ? t("proxy.autoTunnel", { names: status.tunnels.join("、") })
+    : t("proxy.autoDirect");
 
   return (
     <SettingsPanelSection id="network" label={t("proxy.sectionTitle")}>

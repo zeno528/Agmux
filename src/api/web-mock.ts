@@ -769,7 +769,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "get_settings":
       return { ...webSettings } as T;
     case "get_proxy_status":
-      // 浏览器无法读取系统代理或控制网络路由，不能伪造已生效的代理。
+      // 浏览器无法读取系统代理或隧道状态，不能伪造已生效的代理。
       throw new Error("浏览器预览不支持读取应用代理状态");
     case "set_update_marker":
       webUpdateMarker = (args?.version as string) ?? null;

@@ -56,13 +56,14 @@ it("ChatGPT 模型目录命令传递指定配置与账号身份", async () => {
 });
 
 it("代理状态使用已注册的后端命令，浏览器预览不能假装已接管网络", async () => {
+  const status = { proxy: null, tunnels: ["Clash"] };
   mocks.invoke.mockImplementation(async (command: string) => {
     if (!registered.has(command)) throw new Error(`未注册 Tauri 命令：${command}`);
-    return "http://proxy.invalid:8080/";
+    return status;
   });
   vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
   const { api } = await import("./index");
-  expect(await api.getProxyStatus()).toBe("http://proxy.invalid:8080/");
+  expect(await api.getProxyStatus()).toEqual(status);
   expect(mocks.invoke).toHaveBeenLastCalledWith("get_proxy_status", undefined);
   await expect(webInvoke("get_proxy_status")).rejects.toThrow("浏览器预览不支持读取应用代理状态");
 });

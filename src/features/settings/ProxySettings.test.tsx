@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 // @ts-expect-error 测试运行于 Node，浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { Settings } from "../../types";
+import type { ProxyStatus, Settings } from "../../types";
 import { ProxySettings } from "./ProxySettings";
 
 // Node 中只模拟 React 调度与反馈边界，按钮和输入事件运行组件的真实处理函数。
@@ -23,7 +23,7 @@ vi.mock("react", async (original) => ({
     return [hooks.cells[index], (value: unknown) => { hooks.cells[index] = value; }];
   },
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, options?: { address?: string }) => `${key}${options?.address ?? ""}` }) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, options?: { address?: string; names?: string }) => `${key}${options?.address ?? options?.names ?? ""}` }) }));
 vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: hooks.error }) }));
 vi.mock("../../api", () => ({ api: { getProxyStatus: hooks.proxyStatus }, get isTauri() { return hooks.tauri; } }));
 
@@ -73,13 +73,40 @@ it("浏览器预览始终显示固定提示，不请求系统代理或闪过读�
   expect(hooks.proxyStatus).not.toHaveBeenCalled();
 });
 
+it.each([
+  [{ proxy: null, tunnels: ["Clash"] }, "proxy.autoTunnelClash"],
+  [{ proxy: null, tunnels: ["Clash", "工作 VPN"] }, "proxy.autoTunnelClash、工作 VPN"],
+  [{ proxy: "http://proxy.invalid:8080", tunnels: ["Clash"] }, "proxy.autoProxyhttp://proxy.invalid:8080"],
+  [{ proxy: null, tunnels: [] }, "proxy.autoDirect"],
+] satisfies [ProxyStatus, string][])("自动代理按检测结果展示：%j", async (status, expected) => {
+  hooks.tauri = true;
+  const cache = await import("../../app/managementDataCache");
+  hooks.proxyStatus.mockResolvedValueOnce(status);
+  await cache.loadProxyStatus(true);
+  const html = renderToStaticMarkup(render(vi.fn(async () => true)));
+  expect(html).toContain(expected);
+  for (const other of ["proxy.autoTunnel", "proxy.autoDirect", "proxy.autoProxy"].filter((key) => !expected.startsWith(key))) {
+    expect(html).not.toContain(other);
+  }
+});
+
+it("读取代理或隧道失败时不能误报未检测到", async () => {
+  hooks.tauri = true;
+  const cache = await import("../../app/managementDataCache");
+  hooks.proxyStatus.mockRejectedValueOnce(new Error("fixture tunnel read failure"));
+  await cache.loadProxyStatus(true);
+  const html = renderToStaticMarkup(render(vi.fn(async () => true)));
+  expect(html).toContain("proxy.statusUnavailable");
+  expect(html).not.toContain("proxy.autoDirect");
+});
+
 it("桌面版重进常规设置或重新激活窗口，刷新完成前仍显示上次代理结果", async () => {
   hooks.tauri = true;
   const cache = await import("../../app/managementDataCache");
-  hooks.proxyStatus.mockResolvedValueOnce("http://proxy.invalid:8080");
+  hooks.proxyStatus.mockResolvedValueOnce({ proxy: "http://proxy.invalid:8080", tunnels: [] });
   await cache.loadProxyStatus(true);
-  let finish: (proxy: string) => void = () => undefined;
-  hooks.proxyStatus.mockReturnValueOnce(new Promise<string>((resolve) => { finish = resolve; }));
+  let finish: (status: ProxyStatus) => void = () => undefined;
+  hooks.proxyStatus.mockReturnValueOnce(new Promise<ProxyStatus>((resolve) => { finish = resolve; }));
   const listeners: (() => void)[] = [];
   vi.stubGlobal("window", { addEventListener: (_type: string, listener: () => void) => listeners.push(listener), removeEventListener: vi.fn() });
   try {
@@ -90,7 +117,7 @@ it("桌面版重进常规设置或重新激活窗口，刷新完成前仍显示�
     expect(hooks.proxyStatus).toHaveBeenCalledTimes(2);
     expect(renderToStaticMarkup(render(onSave))).toContain("proxy.autoProxyhttp://proxy.invalid:8080");
     const pending = cache.loadProxyStatus(true);
-    finish("http://proxy.invalid:9090");
+    finish({ proxy: "http://proxy.invalid:9090", tunnels: [] });
     await pending;
     expect(renderToStaticMarkup(render(onSave))).toContain("proxy.autoProxyhttp://proxy.invalid:9090");
     hooks.cells.length = 0;

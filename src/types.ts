@@ -249,6 +249,11 @@ export interface Settings {
   claude_terminal_dirs: string[];
 }
 
+export interface ProxyStatus {
+  proxy: string | null;
+  tunnels: string[];
+}
+
 export interface PluginSkill {
   name: string;
   path: string;

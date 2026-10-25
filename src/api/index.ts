@@ -31,6 +31,7 @@ import type {
   SkillTool,
   ProfileBalance,
   ProfileBalanceInfo,
+  ProxyStatus,
   CodexProfileDetail,
   CodexProfileConnectionResult,
   CodexProfileSummary,
@@ -260,7 +261,7 @@ export const api = {
   openUrl: (url: string) => call<void>("open_url", { url }),
   getSettings: () => call<Settings>("get_settings"),
   saveSettings: (settings: Settings) => call<Settings>("save_settings", { settings }),
-  getProxyStatus: () => call<string | null>("get_proxy_status"),
+  getProxyStatus: () => call<ProxyStatus>("get_proxy_status"),
   logUpdateEvent: (event: UpdateLogEvent, version?: string) =>
     call<void>("log_update_event", { event, version }),
   // CLI 更新计时器的跳过决策留痕（真实检查的成败由后端自行落日志）

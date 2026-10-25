@@ -85,21 +85,21 @@ describe("managementDataCache", () => {
 
   it("代理状态刷新时保留缓存并合并请求，失败缓存能在下一次刷新自愈", async () => {
     const cache = await import("./managementDataCache");
-    getProxyStatus.mockResolvedValueOnce("http://proxy.invalid:8080/");
+    getProxyStatus.mockResolvedValueOnce({ proxy: "http://proxy.invalid:8080/", tunnels: [] });
     await cache.loadProxyStatus();
-    expect(cache.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", error: false });
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", tunnels: [], error: false });
     let fail: (error: Error) => void = () => undefined;
     getProxyStatus.mockReturnValueOnce(new Promise<never>((_, reject) => { fail = reject; }));
     const refresh = cache.loadProxyStatus(true);
     expect(cache.loadProxyStatus(true)).toBe(refresh);
-    expect(cache.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", error: false });
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", tunnels: [], error: false });
     fail(new Error("fixture failure"));
-    expect(await refresh).toEqual({ proxy: null, error: true });
-    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, error: true });
+    expect(await refresh).toEqual({ proxy: null, tunnels: [], error: true });
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, tunnels: [], error: true });
     expect(getProxyStatus).toHaveBeenCalledTimes(2);
-    getProxyStatus.mockResolvedValueOnce(null);
+    getProxyStatus.mockResolvedValueOnce({ proxy: null, tunnels: ["Clash"] });
     await cache.loadProxyStatus(true);
-    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, error: false });
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, tunnels: ["Clash"], error: false });
   });
 
   it("CLI 状态缓存跨重启持久化，恢复时 busy 归零，形状损坏视为不存在", async () => {
@@ -126,21 +126,33 @@ describe("managementDataCache", () => {
   });
 
   it("代理状态跨页面刷新持久化，形状损坏视为不存在", async () => {
-    getProxyStatus.mockResolvedValueOnce("http://proxy.invalid:8080/");
+    getProxyStatus.mockResolvedValueOnce({ proxy: null, tunnels: ["Clash"] });
     const cache = await import("./managementDataCache");
     await cache.loadProxyStatus();
-    expect(cache.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", error: false });
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, tunnels: ["Clash"], error: false });
 
     // 模拟 F5：新模块实例从 localStorage 恢复，首帧直出上次检测结果不闪兜底文案
     vi.resetModules();
     const restored = await import("./managementDataCache");
-    expect(restored.getCachedProxyStatus()).toEqual({ proxy: "http://proxy.invalid:8080/", error: false });
+    expect(restored.getCachedProxyStatus()).toEqual({ proxy: null, tunnels: ["Clash"], error: false });
 
     // 缺 error 字段：整份弃用，进页静默刷新会纠正
     persistedStorage.set("agmux.proxy-status-v1", JSON.stringify({ proxy: "http://x.invalid" }));
     vi.resetModules();
     const invalid = await import("./managementDataCache");
     expect(invalid.getCachedProxyStatus()).toBeNull();
+  });
+
+  it.each([
+    { proxy: null, error: false },
+    { proxy: null, tunnels: [123], error: false },
+  ])("旧代理状态或损坏的隧道缓存不冒充最新检测结果：%j", async (stored) => {
+    persistedStorage.set("agmux.proxy-status-v1", JSON.stringify(stored));
+    const cache = await import("./managementDataCache");
+    expect(cache.getCachedProxyStatus()).toBeNull();
+    getProxyStatus.mockResolvedValueOnce({ proxy: null, tunnels: ["Clash"] });
+    await cache.loadProxyStatus(true);
+    expect(cache.getCachedProxyStatus()).toEqual({ proxy: null, tunnels: ["Clash"], error: false });
   });
 
   it("CLI 更新提示跨重启保留，冷却只在本次运行生效，静默失败保留旧结果", async () => {

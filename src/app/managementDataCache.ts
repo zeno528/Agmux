@@ -1,4 +1,5 @@
 import { api } from "../api";
+import type { ProxyStatus as DetectedProxyStatus } from "../types";
 import type { ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
 
 export type McpProbeCacheEntry = {
@@ -247,20 +248,20 @@ const cliStatusCaches = {
   codex: createManagementCache<CliStatus>(api.codexGetCliStatus, { key: "agmux.codex-cli-status-v1", restore: restoreCliStatus }),
   claude: createManagementCache<CliStatus>(api.claudeGetCliStatus, { key: "agmux.claude-cli-status-v1", restore: restoreCliStatus }),
 };
-export type ProxyStatus = { proxy: string | null; error: boolean };
+export type ProxyStatus = DetectedProxyStatus & { error: boolean };
 /// 检测结果持久化：刷新页面/重启后首帧直出上次状态再静默刷新，消除自动模式
-/// 的兜底文案闪变；只存脱敏后的展示地址，系统代理变化由进页刷新纠正。
+/// 的兜底文案闪变；只存脱敏地址与隧道名称，网络变化由进页刷新纠正。
 function restoreProxyStatus(raw: unknown): ProxyStatus | null {
   if (typeof raw !== "object" || raw === null) return null;
   const candidate = raw as Partial<ProxyStatus>;
-  if (typeof candidate.error !== "boolean") return null;
-  return { proxy: typeof candidate.proxy === "string" ? candidate.proxy : null, error: candidate.error };
+  if (typeof candidate.error !== "boolean" || !Array.isArray(candidate.tunnels) || candidate.tunnels.some((name) => typeof name !== "string")) return null;
+  return { proxy: typeof candidate.proxy === "string" ? candidate.proxy : null, tunnels: candidate.tunnels, error: candidate.error };
 }
 const proxyStatus = createManagementCache<ProxyStatus>(async () => {
   try {
-    return { proxy: await api.getProxyStatus(), error: false };
+    return { ...await api.getProxyStatus(), error: false };
   } catch {
-    return { proxy: null, error: true };
+    return { proxy: null, tunnels: [], error: true };
   }
 }, { key: "agmux.proxy-status-v1", restore: restoreProxyStatus });
 const mcpProbes = new Map<string, McpProbeCacheEntry>();

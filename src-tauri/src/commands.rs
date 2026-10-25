@@ -1504,10 +1504,9 @@ pub async fn save_settings(
 }
 
 #[tauri::command]
-pub async fn get_proxy_status() -> AppResult<Option<String>> {
-    crate::network::Network::current()
+pub async fn get_proxy_status() -> AppResult<crate::network::ProxyStatus> {
+    crate::network::proxy_status()
         .await
-        .map(|network| network.display)
         .map_err(|error| app_err!("{error}"))
 }
 
