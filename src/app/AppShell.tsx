@@ -173,7 +173,7 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
   return null;
 }
 
-type SidebarGroup = { key: string; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeDot?: boolean; titleText?: string; onSelect: () => void }[] };
+type SidebarGroup = { key: string; items: { view: AppView; labelKey: SidebarLabelKey; icon: ReactNode; badgeDot?: boolean; syncFailed?: boolean; titleText?: string; onSelect: () => void }[] };
 
 // 收缩和悬停只更新侧栏，避免带着正文列表与编辑器一起重渲染。
 function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: SidebarGroup[] }) {
@@ -219,10 +219,10 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
             {group.key === "footer" ? <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} /> : null}
             <div className="space-y-1">
               {group.items.map((item) => (
-                <button key={item.view} type="button" className={navClass} data-active={view === item.view ? "true" : undefined} aria-label={t(item.labelKey)} title={item.titleText} onClick={item.onSelect} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}>
+                <button key={item.view} type="button" className={navClass} data-active={view === item.view ? "true" : undefined} aria-label={item.syncFailed ? `${t(item.labelKey)} · ${t("writeback.failed")}` : t(item.labelKey)} title={item.syncFailed ? t("writeback.failed") : item.titleText} onClick={item.onSelect} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)}>
                   <span className="relative flex shrink-0">
                     {item.icon}
-                    {item.badgeDot ? <span className="apple-sidebar-update-dot" aria-hidden="true" /> : null}
+                    {item.syncFailed ? <span className="apple-count-badge" aria-hidden="true">!</span> : item.badgeDot ? <span className="apple-sidebar-update-dot" aria-hidden="true" /> : null}
                   </span>
                   <span className="apple-sidebar-label" aria-hidden={sidebar.sidebarCollapsed}>{t(item.labelKey)}</span>
                   {sidebar.sidebarCollapsed && sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t(item.labelKey)}</span> : null}
@@ -453,7 +453,7 @@ export default function AppShell() {
       mcp: <McpView activationEpoch={activationEpoch} popEpoch={popEpochOf("mcp")} />,
       plugins: <PluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpochOf("plugins")} />,
       skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
-      claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} />,
+      claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
       agentTools: <AgentToolsView active={view === "agentTools"} />,
@@ -472,8 +472,8 @@ export default function AppShell() {
     {
       key: "clients",
       items: [
-        { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
-        { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
+        { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "codex"), badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
+        { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "claude"), badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
       ],
     },
     {

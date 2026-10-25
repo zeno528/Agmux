@@ -890,6 +890,33 @@ impl Database {
         Ok(())
     }
 
+    pub(crate) fn commit_claude_profile_apply(
+        &self,
+        id: &str,
+        message: &str,
+        timestamp: &str,
+    ) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始配置切换事务: {error}"))?;
+        transaction.execute(
+            "INSERT INTO app_state(singleton, active_claude_profile_id) VALUES(1, ?1)
+             ON CONFLICT(singleton) DO UPDATE SET active_claude_profile_id=excluded.active_claude_profile_id",
+            params![id],
+        ).map_err(|error| app_err!("无法保存应用状态: {error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO switch_events(profile_id, action, status, message, created_at)
+             VALUES(NULL, 'apply_claude', 'success', ?1, ?2)",
+                params![message, timestamp],
+            )
+            .map_err(|error| app_err!("无法记录操作日志: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| app_err!("无法提交配置切换事务: {error}"))
+    }
+
     pub fn claude_profiles(&self) -> AppResult<Vec<StoredClaudeProfile>> {
         let connection = self.lock()?;
         let mut statement = connection

@@ -61,6 +61,19 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return webInvoke<T>(command, args);
 }
 
+export class ProfileOverwriteRequired extends Error {}
+
+async function applyProfile(command: string, id: string, overwrite: boolean) {
+  try {
+    await call<void>(command, { id, overwrite });
+  } catch (error) {
+    if (error && typeof error === "object" && "overwrite_required" in error && error.overwrite_required === true && "message" in error && typeof error.message === "string") {
+      throw new ProfileOverwriteRequired(error.message);
+    }
+    throw error;
+  }
+}
+
 export const api = {
   // CLI 命令失败返回 CliFailure 对象，界面按阶段/类别翻译，不直接显示后端诊断文案。
   claudeGetCliStatus: () => call<CliStatus>("claude_get_cli_status"),
@@ -178,7 +191,7 @@ export const api = {
   claudeTestProfile: (id: string) => call<CodexProfileConnectionResult>("claude_test_profile", { id }),
   claudeOpenTerminal: (id: string, cwd: string | null) => call<void>("claude_open_terminal", { id, cwd }),
   claudeDeleteProfile: (id: string) => call<void>("claude_delete_profile", { id }),
-  claudeApplyProfile: (id: string) => call<void>("claude_apply_profile", { id }),
+  claudeApplyProfile: (id: string, overwrite = false) => applyProfile("claude_apply_profile", id, overwrite),
   getSkillContent: (name: string) => call<string>("get_skill_content", { name }),
   getImportSkillContent: (sourcePath: string) => call<string>("get_import_skill_content", { sourcePath }),
   scanUnmanagedSkills: () => call<SkillCandidate[]>("scan_unmanaged_skills"),
@@ -211,7 +224,7 @@ export const api = {
   claudeUpdatePlugin: (pluginId: string, scope: string, projectPath: string | null) => call<ClaudePluginUpdateResult>("claude_update_plugin", { pluginId, scope, projectPath }),
   codexDeleteProfile: (id: string) => call<void>("codex_delete_profile", { id }),
   codexReorderProfiles: (ids: string[]) => call<void>("codex_reorder_profiles", { ids }),
-  codexApplyProfile: (id: string) => call<void>("codex_apply_profile", { id }),
+  codexApplyProfile: (id: string, overwrite = false) => applyProfile("codex_apply_profile", id, overwrite),
   codexListMcpServers: () => call<McpServerSpec[]>("codex_list_mcp_servers"),
   claudeListMcpServers: () => call<McpServerSpec[]>("claude_list_mcp_servers"),
   claudeGetMcpServerJson: (name: string) => call<string | null>("claude_get_mcp_server_json", { name }),

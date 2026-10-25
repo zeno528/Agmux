@@ -13,6 +13,7 @@ interface PlacedPosition extends CSSProperties {
 interface AppTooltipProps {
   label: string;
   children: ReactNode;
+  icon?: ReactNode;
 }
 
 export function tooltipPosition(trigger: Pick<DOMRect, "left" | "top" | "bottom">, panel: { width: number; height: number }, viewport: { width: number; height: number }) {
@@ -38,7 +39,7 @@ export function tooltipOriginX(trigger: Pick<DOMRect, "left" | "right">, panelLe
 }
 
 /** 与 MCP 差异说明同款的悬停卡片；Portal 避免被卡片的 overflow: hidden 裁切。 */
-export function AppTooltip({ label, children }: AppTooltipProps) {
+export function AppTooltip({ label, children, icon }: AppTooltipProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -105,7 +106,7 @@ export function AppTooltip({ label, children }: AppTooltipProps) {
       onBlur={() => setFocused(false)}
       onClick={(event) => { event.currentTarget.blur(); event.stopPropagation(); }}
     >
-      <CircleQuestionMark className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+      {icon ?? <CircleQuestionMark className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
     </button>
     {mounted && typeof document !== "undefined" ? createPortal(
       <div

@@ -63,6 +63,7 @@ pub struct AppContext {
     activation: Arc<AsyncMutex<()>>,
     claude_cli_operation: Arc<AsyncMutex<Option<CliUpdate>>>,
     codex_cli_operation: Arc<AsyncMutex<Option<CliUpdate>>>,
+    sync_failures: Arc<Mutex<Vec<crate::models::SyncFailure>>>,
 }
 
 impl AppContext {
@@ -79,6 +80,7 @@ impl AppContext {
             activation: Arc::new(AsyncMutex::new(())),
             claude_cli_operation: Arc::new(AsyncMutex::new(None)),
             codex_cli_operation: Arc::new(AsyncMutex::new(None)),
+            sync_failures: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -126,6 +128,11 @@ impl AppContext {
         let balance_cache = self.load_balance_cache();
 
         Ok(AppState {
+            sync_failures: self
+                .sync_failures
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone(),
             codex_profiles: profiles
                 .iter()
                 .map(|profile| {

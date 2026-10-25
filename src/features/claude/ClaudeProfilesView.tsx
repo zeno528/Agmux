@@ -9,6 +9,7 @@ import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/
 import { useFeedback } from "../../app/Feedback";
 import { getCachedClaudeProfiles, loadClaudeProfiles, setClaudeProfilesCache } from "../../app/managementDataCache";
 import { CliUpgradePill } from "../../components/CliUpgradePill";
+import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
@@ -17,10 +18,11 @@ import { useProfileBalance } from "../profiles/useProfileBalance";
 import ProfileNameDialog from "../profiles/ProfileNameDialog";
 import { claudeBalanceQueryKinds } from "../../presets";
 import ClaudeProfileEdit from "./ClaudeProfileEdit";
-import type { ClaudeProfileDetail, ClaudeProfileSummary, ProfileBalanceInfo } from "../../types";
+import type { ClaudeProfileDetail, ClaudeProfileSummary, ProfileBalanceInfo, SyncFailure } from "../../types";
 import ProfileModelSelector from "../profiles/ProfileModelSelector";
 import { claudeEffortLevels } from "../../components/ReasoningEffortSlider";
 import { buildSettingsText, patchEnvValue, readAdvancedSettings, readEnvValue, readModelMappings, resolveOneMillionByDeclaration, setOneMillionModelSuffix } from "./profileEnvText";
+import { applyProfileWithConfirmation } from "../profiles/applyProfile";
 
 function cardProfile(profile: ClaudeProfileSummary) {
   return {
@@ -106,7 +108,7 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
 }
 
 // 页面数据只在进页时加载（AppShell 按 view==="claude" 挂载本组件），不入启动关键路径。
-export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache, popEpoch }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo>; popEpoch: number }) {
+export default function ClaudeProfilesView({ activeId, onChanged, activationEpoch, coldStart, balanceCache, popEpoch, syncFailure }: { activeId: string | null; onChanged: () => void; activationEpoch: number; coldStart: boolean; balanceCache: Record<string, ProfileBalanceInfo>; popEpoch: number; syncFailure: SyncFailure | undefined }) {
   const feedback = useFeedback();
   const { t } = useTranslation("claude");
   // 卡片外壳/操作行的悬停文案直接用 profiles 资源（与 Codex 同词），不另造 key
@@ -221,7 +223,11 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     if (busy) return;
     setBusy(true);
     try {
-      await api.claudeApplyProfile(profile.id);
+      const applied = await applyProfileWithConfirmation(
+        (overwrite) => api.claudeApplyProfile(profile.id, overwrite),
+        () => feedback.confirm({ title: t("writeback.overwriteTitle", { ns: "common" }), description: t("writeback.overwriteDescription", { ns: "common", file: "settings.json", name: profile.name }), confirmText: t("writeback.overwriteConfirm", { ns: "common" }), destructive: true }),
+      );
+      if (!applied) return;
       feedback.success(t("feedback.applySuccess", { ns: "common" }));
       onChanged();
     } catch (error) {
@@ -288,6 +294,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
         <div className="provider-page-brand">
           <img src="/claude-code.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>Claude Code</span>
+          <SyncFailureIndicator failure={syncFailure} />
           <CliUpgradePill client="claude" />
         </div>
         <div className="flex items-center gap-2">

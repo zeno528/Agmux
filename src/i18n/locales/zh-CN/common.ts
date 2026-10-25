@@ -1,5 +1,21 @@
 /** 通用层文案：导航、窗口控制等全应用共用的部分。 */
 export default {
+  writeback: {
+    overwriteTitle: "覆盖损坏配置并切换？",
+    overwriteDescription: "将用「{{name}}」的已保存配置覆盖损坏的 {{file}}。当前供应商在数据库中的配置保持不变，损坏文件中的未保存修改将被丢弃。",
+    overwriteConfirm: "覆盖并切换",
+    failed: "配置回写失败",
+    paused: "配置回写已暂停",
+    position: "（第 {{line}} 行，第 {{column}} 列）",
+    protected: "数据库配置已保留。",
+    parseAction: "数据库配置已保留，可修复文件或切换供应商。",
+    reason: {
+      live_parse_error: "{{file}}：{{format}} 格式错误{{position}}，相关设置未生效。",
+      live_unreadable: "无法读取 {{file}}，请检查文件权限、是否被占用，以及路径是否为有效文件。",
+      write_failed: "无法将实时配置写入数据库，请检查磁盘空间、数据库权限及诊断日志。",
+      internal: "读取或保存数据库配置时发生错误，请查看诊断日志以定位原因。",
+    },
+  },
   nav: {
     providers: "供应商",
     mcp: "MCP",

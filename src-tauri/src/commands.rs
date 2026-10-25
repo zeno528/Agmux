@@ -7,7 +7,7 @@ use crate::auth::codex_oauth::{
 };
 use crate::codex::config as codex_config;
 use crate::codex_builtin;
-use crate::error::{app_err, AppResult};
+use crate::error::{app_err, AppResult, ProfileApplyError};
 use crate::models::{
     AppState, AuthSource, ClaudeProfileDetail, ClaudeProfileInput, ClaudeProfileSummary,
     CodexAppStatus, CodexProfileDetail, CodexProfileSummary, McpDiffEntryAction, McpServerSpec,
@@ -342,8 +342,12 @@ pub fn claude_delete_profile(id: String, state: State<'_, AppContext>) -> AppRes
 }
 
 #[tauri::command]
-pub fn claude_apply_profile(id: String, state: State<'_, AppContext>) -> AppResult<()> {
-    state.claude_apply(&id)
+pub fn claude_apply_profile(
+    id: String,
+    overwrite: Option<bool>,
+    state: State<'_, AppContext>,
+) -> Result<(), ProfileApplyError> {
+    state.claude_apply_confirmed(&id, overwrite.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -936,16 +940,19 @@ pub fn codex_reorder_profiles(ids: Vec<String>, state: State<'_, AppContext>) ->
 #[tauri::command]
 pub async fn codex_apply_profile(
     id: String,
+    overwrite: Option<bool>,
     state: State<'_, AppContext>,
     oauth: State<'_, CodexOAuthState>,
-) -> Result<(), String> {
-    let result = state.codex_apply_profile_with_auth(&id, &oauth.0).await;
+) -> Result<(), ProfileApplyError> {
+    let result = state
+        .codex_apply_profile_with_auth(&id, &oauth.0, overwrite.unwrap_or(false))
+        .await;
     if let Err(error) = &result {
         tauri_plugin_log::log::warn!(
             "[apply.profile.switch] profile_id={id} outcome=failure failure_kind=internal error={error:?} msg=\"配置切换失败\""
         );
     }
-    result.map_err(|error| error.to_string())
+    result
 }
 
 /// 重启期间后端会阻塞数秒（优雅退出等待 + 启动轮询），必须放到专用 blocking

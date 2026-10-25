@@ -17,6 +17,13 @@ pub enum ClientId {
 }
 
 impl ClientId {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Claude => "claude",
+        }
+    }
+
     /// 日志里用的产品名。`{:?}` 打出来的是内部枚举名 `Claude`，
     /// 对着日志排查的人不直观——统一用产品名 `Claude Code` / `Codex`。
     /// 返回值带空格，落日志时按仓库规范用 `{:?}` 编码。
@@ -168,6 +175,7 @@ impl SyncKind {
 pub struct SyncOutcome {
     pub kind: SyncKind,
     pub profile: Option<String>,
+    pub position: Option<[usize; 2]>,
 }
 
 impl SyncOutcome {
@@ -176,6 +184,7 @@ impl SyncOutcome {
         Self {
             kind,
             profile: None,
+            position: None,
         }
     }
 
@@ -184,8 +193,23 @@ impl SyncOutcome {
         Self {
             kind,
             profile: Some(profile.to_string()),
+            position: None,
         }
     }
+
+    pub(super) fn with_position(mut self, position: Option<[usize; 2]>) -> Self {
+        self.position = position;
+        self
+    }
+}
+
+/// 只提取既有解析诊断的数字位置，避免把 TOML 诊断中的配置原文传到界面。
+pub(super) fn parse_error_position(message: &str) -> Option<[usize; 2]> {
+    let (_, position) = message.lines().next()?.rsplit_once(" at line ")?;
+    let (line, column) = position
+        .split_once(", column ")
+        .or_else(|| position.split_once(" column "))?;
+    Some([line.parse().ok()?, column.parse().ok()?])
 }
 
 /// 每客户端执行体。新客户端只需实现这一个 trait。
@@ -243,7 +267,9 @@ fn sync_loose(
             Ok(Some(document)) => ctx.sync_active_profile_document(&document),
             Ok(None) => Ok(codex_guarded(SyncKind::LiveAbsent, ctx)),
             Err(LiveReadError::Unreadable) => Ok(codex_guarded(SyncKind::LiveUnreadable, ctx)),
-            Err(LiveReadError::Parse) => Ok(codex_guarded(SyncKind::LiveParseError, ctx)),
+            Err(LiveReadError::Parse(position)) => {
+                Ok(codex_guarded(SyncKind::LiveParseError, ctx).with_position(position))
+            }
         },
     }
 }
@@ -310,11 +336,11 @@ impl ClientSync for CodexSyncBody {
                     );
                     Ok(codex_guarded(SyncKind::LiveUnreadable, ctx))
                 }
-                Err(LiveReadError::Parse) => {
+                Err(LiveReadError::Parse(position)) => {
                     tauri_plugin_log::log::warn!(
                         "[app.config.parse] outcome=failure failure_kind=parse_error msg=\"config.toml 无法解析，Codex 可能无法启动\""
                     );
-                    Ok(codex_guarded(SyncKind::LiveParseError, ctx))
+                    Ok(codex_guarded(SyncKind::LiveParseError, ctx).with_position(position))
                 }
             },
             // 被动刷新与捕获后：无激活直接跳过且不读 live 文件（冷启动预算）
@@ -383,9 +409,36 @@ pub struct SyncRegistry {
     bodies: Vec<Box<dyn ClientSync>>,
 }
 
+impl AppContext {
+    fn record_sync_result(&self, client: ClientId, result: &AppResult<SyncOutcome>) {
+        // 无关配置的读取并未重新检查 live，不能清掉此前的故障。
+        if matches!(result, Ok(outcome) if outcome.kind == SyncKind::TargetMismatch) {
+            return;
+        }
+        let mut failures = self
+            .sync_failures
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        failures.retain(|failure| failure.client != client.key());
+        let (reason, profile) = match result {
+            Ok(outcome) if outcome.kind.failure_kind().is_some() => {
+                (outcome.kind.reason(), outcome.profile.clone())
+            }
+            Err(_) => ("internal", None),
+            _ => return,
+        };
+        // 只向界面传递分类；原始解析错误可能包含配置或凭证原文。
+        failures.push(crate::models::SyncFailure {
+            client: client.key(),
+            reason,
+            profile,
+            position: result.as_ref().ok().and_then(|outcome| outcome.position),
+        });
+    }
+}
+
 impl SyncRegistry {
-    /// 收割：首个执行体出错即中断剩余执行体并返回（被动路径自愈，下一轮补上；
-    /// 调用方用 `?` 或 `let _` 决定传播，对齐原各触发点两种错误语义并存的现状）。
+    /// 收割：主动路径出错即返回，被动路径记录失败后继续检查其余客户端。
     /// 顺序 = 注册顺序（确定）。互斥由调用方保证：两个引擎的 apply（覆盖 live 的
     /// 临界段，含 BeforeLiveOverwrite 收割）都在 operation 锁内调用；被动路径走
     /// harvest_passive 让路；读/捕获路径（Read/Clone/AfterCapture）不持锁，
@@ -403,7 +456,19 @@ impl SyncRegistry {
             .iter()
             .filter(|body| trigger.is_passive() || body.id() == trigger.client())
         {
-            let outcome = body.sync(ctx, trigger, material)?;
+            let result = body.sync(ctx, trigger, material);
+            ctx.record_sync_result(body.id(), &result);
+            let outcome = match result {
+                Ok(outcome) => outcome,
+                Err(error) if trigger.is_passive() => {
+                    tauri_plugin_log::log::warn!(
+                        "[sync.harvest] client={:?} outcome=failure failure_kind=internal error={error:?} msg=\"读取或保存数据库配置失败\"",
+                        body.id().label()
+                    );
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             // 回写结局的唯一日志出口：unchanged 轮询降到 Trace（一轮两条的常驻噪音），
             // 其余常态走 Debug（release 自动消失），外部损坏/真失败各留一条 Warn，
             // 排查不必再靠排除法反推是哪道守卫拦的。profile 无可指时落 "-"。
@@ -557,6 +622,117 @@ mod tests {
     fn client_log_label_uses_product_name() {
         assert_eq!(ClientId::Codex.label(), "Codex");
         assert_eq!(ClientId::Claude.label(), "Claude Code");
+    }
+
+    #[test]
+    fn parse_position_reuses_parser_diagnostics_without_exposing_source() {
+        let raw = "{\n  \"secret\": \"fixture-token\",\n}\n";
+        let error = serde_json::from_str::<serde_json::Value>(raw).unwrap_err();
+        assert_eq!(
+            parse_error_position(&error.to_string()),
+            Some([error.line(), error.column()])
+        );
+        assert_eq!(parse_error_position(&error.to_string()), Some([3, 1]));
+        let error = crate::codex::config::parse_document("secret = \"fixture-token\"\nbad = ]\n")
+            .unwrap_err();
+        let position = parse_error_position(&error.0).unwrap();
+        assert_eq!(position, [2, 7]);
+        assert!(!serde_json::to_string(&position)
+            .unwrap()
+            .contains("fixture-token"));
+        assert_eq!(
+            parse_error_position("settings.json 的 env 必须是 JSON 对象"),
+            None
+        );
+    }
+
+    #[test]
+    fn sync_failure_state_is_client_scoped_and_only_clears_after_a_real_check() {
+        let (_home, context) = test_context();
+        context.record_sync_result(
+            ClientId::Codex,
+            &Ok(SyncOutcome::of(SyncKind::WriteFailed, "A")),
+        );
+        context.record_sync_result(
+            ClientId::Claude,
+            &Err(crate::error::AppError("secret config".into())),
+        );
+        context.record_sync_result(
+            ClientId::Codex,
+            &Ok(SyncOutcome::bare(SyncKind::TargetMismatch)),
+        );
+        let failures = context.sync_failures.lock().unwrap().clone();
+        assert_eq!(failures.len(), 2);
+        assert_eq!(failures[0].reason, "write_failed");
+        assert_eq!(failures[1].reason, "internal");
+        assert!(!serde_json::to_string(&failures)
+            .unwrap()
+            .contains("secret config"));
+        context.record_sync_result(
+            ClientId::Codex,
+            &Ok(SyncOutcome::of(SyncKind::Unchanged, "A")),
+        );
+        assert_eq!(context.sync_failures.lock().unwrap().len(), 1);
+        context.record_sync_result(
+            ClientId::Claude,
+            &Ok(SyncOutcome::bare(SyncKind::NoActiveProfile)),
+        );
+        assert!(context.sync_failures.lock().unwrap().is_empty());
+        context.record_sync_result(
+            ClientId::Codex,
+            &Ok(SyncOutcome::of(SyncKind::LiveParseError, "A")),
+        );
+        context.record_sync_result(
+            ClientId::Codex,
+            &Ok(SyncOutcome::of(SyncKind::LiveAbsent, "A")),
+        );
+        assert!(context.sync_failures.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn passive_internal_failure_does_not_skip_the_other_client() {
+        struct FailingBody;
+        impl ClientSync for FailingBody {
+            fn id(&self) -> ClientId {
+                ClientId::Codex
+            }
+            fn sync(
+                &self,
+                _: &AppContext,
+                _: &SyncTrigger,
+                _: SyncMaterial<'_>,
+            ) -> AppResult<SyncOutcome> {
+                Err(crate::error::AppError("database unavailable".into()))
+            }
+        }
+        let (_home, context) = test_context();
+        context.record_sync_result(
+            ClientId::Claude,
+            &Ok(SyncOutcome::bare(SyncKind::WriteFailed)),
+        );
+        let registry = SyncRegistry {
+            bodies: vec![Box::new(FailingBody), Box::new(ClaudeSyncBody)],
+        };
+        registry
+            .harvest(
+                &context,
+                &SyncTrigger::StateRefresh,
+                SyncMaterial::default(),
+            )
+            .unwrap();
+        let failures = context.sync_failures.lock().unwrap().clone();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].client, "codex");
+        assert!(registry
+            .harvest(
+                &context,
+                &SyncTrigger::BeforeProfileRead {
+                    client: ClientId::Codex,
+                    target_id: "A".into()
+                },
+                SyncMaterial::default()
+            )
+            .is_err());
     }
 
     #[test]

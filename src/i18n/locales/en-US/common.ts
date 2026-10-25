@@ -1,5 +1,21 @@
 /** Shared UI strings: navigation, window controls. */
 export default {
+  writeback: {
+    overwriteTitle: "Overwrite damaged configuration and switch?",
+    overwriteDescription: "The saved configuration for {{name}} will overwrite the damaged {{file}}. The current provider's database configuration will stay unchanged. Unsaved changes in the damaged file will be discarded.",
+    overwriteConfirm: "Overwrite and switch",
+    failed: "Configuration sync failed",
+    paused: "Configuration sync paused",
+    position: " (line {{line}}, column {{column}})",
+    protected: "The database configuration has been kept.",
+    parseAction: "The database configuration has been kept. Repair the file or switch providers.",
+    reason: {
+      live_parse_error: "{{file}}: invalid {{format}}{{position}}. Settings from this file are not in effect.",
+      live_unreadable: "Cannot read {{file}}. Check file permissions, whether it is in use, and that the path points to a valid file.",
+      write_failed: "Cannot save the live configuration to the database. Check disk space, database permissions, and diagnostic logs.",
+      internal: "An error occurred while reading or saving the database configuration. Check diagnostic logs for the cause.",
+    },
+  },
   nav: {
     providers: "Providers",
     // 侧边栏给标签只留约 72px；"MCP Servers" 会溢出，导航用短名，完整名见页面标题 mcp:list.title

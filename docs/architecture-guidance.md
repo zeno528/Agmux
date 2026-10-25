@@ -39,7 +39,7 @@ Agmux 是同时管理 Codex 与 Claude Code 的本地桌面应用，支持 macOS
 
 1. 编辑保存只更新对应数据库记录；应用才把选中配置写入 live。外部更改只应回写当前激活项，不扫描全部供应商全文。
 2. 修改这条链路必须同时追踪表单、payload、完整快照与实际文件：Codex 的 `raw_config` / `raw_catalog` / `raw_auth`，Claude 的 `raw_settings` / `extra_env`。不能只让表单显示正确而丢掉未知字段。
-3. 应用保留无关的全局 MCP、插件等配置。复用 `backup_file`、`atomic_write`、`with_file_rollback` 和既有操作锁；备份名保持 `<name>-<unix_ms>.bak`，保证恢复逻辑识别。
+3. 应用保留无关的全局 MCP、插件等配置。复用 `backup_file`、`atomic_write`、`with_file_rollback` 和既有操作锁；备份名保持 `<name>-<unix_ms>.bak`，保证恢复逻辑识别。Live 损坏时，供应商页须经用户确认，才可直接用目标供应商配置覆盖并切换；跳过损坏内容的回写，原供应商的数据库配置保持不变，失败保留原文件与激活位。
 4. 认证写入同时校验归属与新鲜度，沿用 `sync_external_auth_json` 等既有判定；不能用旧 token 快照覆盖刷新后的凭证，也不能因一次切换结束较晚覆盖更新的激活操作。
 5. SQLite 迁移只新增。WAL/SHM 运行文件不能手工删除；config、codex-files、database 三类备份职责不同，不能为减少目录而合并。恢复和多文件写入必须验证中途失败后的数据状态。
 6. Claude 通用模板存于 `app_state.claude_common_settings`，只在打开模板或手动填充时读取；复制进草稿后随 Profile 保存，不在启动或应用时叠加。

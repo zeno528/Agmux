@@ -7,6 +7,7 @@ use super::{
 };
 use crate::auth::codex_oauth::CodexOAuthManager;
 use crate::codex_builtin;
+use crate::error::ProfileApplyError;
 
 impl AppContext {
     pub fn codex_apply_profile(&self, id: &str) -> AppResult<()> {
@@ -14,7 +15,8 @@ impl AppContext {
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.codex_apply_profile_locked(id, None)
+        self.codex_apply_profile_locked(id, None, false)
+            .map_err(|error| app_err!("{error}"))
     }
 
     /// 将配置切换和 OAuth 认证写入作为同一个串行事务，避免异步 token 刷新完成后覆盖较新的切换。
@@ -22,7 +24,8 @@ impl AppContext {
         &self,
         id: &str,
         oauth: &CodexOAuthManager,
-    ) -> AppResult<()> {
+        overwrite: bool,
+    ) -> Result<(), ProfileApplyError> {
         let _activation = self.activation.lock().await;
         self.sync_live_oauth_auth(oauth).await?;
         let profile = self.database.codex_profile(id)?;
@@ -49,34 +52,51 @@ impl AppContext {
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
-        self.codex_apply_profile_locked(id, oauth_auth.as_deref())
+        self.codex_apply_profile_locked(id, oauth_auth.as_deref(), overwrite)
     }
 
-    fn codex_apply_profile_locked(&self, id: &str, oauth_auth: Option<&str>) -> AppResult<()> {
+    fn codex_apply_profile_locked(
+        &self,
+        id: &str,
+        oauth_auth: Option<&str>,
+        overwrite: bool,
+    ) -> Result<(), ProfileApplyError> {
         let config_path = self.paths.codex_config();
         let original = std::fs::read_to_string(&config_path)
             .map_err(|error| app_err!("无法读取 {}: {error}", config_path.display()))?;
-        let mut document = codex_config::parse_document(&original)?;
+        let (mut document, damaged) = match codex_config::parse_document(&original) {
+            Ok(document) => (document, false),
+            Err(_) if !overwrite => return Err(ProfileApplyError::overwrite_required()),
+            Err(_) => (toml_edit::DocumentMut::new(), true),
+        };
 
         // 切换前把当前 live 配置回写进正在生效的供应商，使供应商跟随使用中的累计更新
-        sync::registry().harvest(
-            self,
-            &sync::SyncTrigger::BeforeLiveOverwrite {
-                client: sync::ClientId::Codex,
-                target_id: id.to_string(),
-            },
-            sync::SyncMaterial {
-                codex_document: Some(&document),
-            },
-        )?;
+        if !damaged {
+            sync::registry().harvest(
+                self,
+                &sync::SyncTrigger::BeforeLiveOverwrite {
+                    client: sync::ClientId::Codex,
+                    target_id: id.to_string(),
+                },
+                sync::SyncMaterial {
+                    codex_document: Some(&document),
+                },
+            )?;
+        }
 
         let profile = self.database.codex_profile(id)?;
         let profile_kind = profile.kind;
         let mut payload = profile.payload;
+        if damaged {
+            if let Some(raw) = &payload.raw_config {
+                document = codex_config::parse_document(raw)
+                    .map_err(|_| app_err!("目标配置快照损坏，无法切换"))?;
+            }
+        }
         let auth_source =
             payload.effective_auth_source(profile_kind, profile.account_id.as_deref());
         if auth_source == Some(AuthSource::Oauth) && profile.account_id.is_none() {
-            return Err(app_err!("OAuth 配置必须绑定一个订阅账号"));
+            return Err(app_err!("OAuth 配置必须绑定一个订阅账号").into());
         }
         if auth_source == Some(AuthSource::Desktop) && payload.auth_auto_sync != Some(false) {
             if let Some(text) = self.desktop_auth_snapshot()? {
@@ -451,5 +471,87 @@ impl AppContext {
             ));
         }
         Ok(sync::SyncOutcome::of(sync::SyncKind::Wrote, &profile.name))
+    }
+}
+
+#[cfg(test)]
+mod overwrite_tests {
+    use super::*;
+
+    #[test]
+    fn confirmed_overwrite_applies_codex_target_without_changing_previous_profile() {
+        for fail_commit in [false, true] {
+            let home = tempfile::tempdir().unwrap();
+            let paths = crate::paths::from_home(home.path()).unwrap();
+            paths.ensure().unwrap();
+            std::fs::create_dir_all(&paths.codex_home).unwrap();
+            let path = paths.codex_config();
+            std::fs::write(
+                &path,
+                "model = \"old\"\n[mcp_servers.keep]\ncommand = \"node\"\n",
+            )
+            .unwrap();
+            let context = AppContext::new(paths).unwrap();
+            let active = context.codex_capture_profile("A").unwrap();
+            context.codex_apply_profile(&active.id).unwrap();
+            let target = context.codex_capture_profile("B").unwrap();
+            let snapshot = context.database.codex_profile(&active.id).unwrap().payload;
+            let mut target_payload = context.database.codex_profile(&target.id).unwrap().payload;
+            target_payload.raw_config = Some("model = \"new\"\n".into());
+            context
+                .database
+                .codex_update_profile(&target.id, "B", &target_payload, "2")
+                .unwrap();
+            std::fs::write(&path, "model = \n").unwrap();
+            assert!(matches!(
+                context.codex_apply_profile_locked(&target.id, None, false),
+                Err(ProfileApplyError::OverwriteRequired { .. })
+            ));
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "model = \n");
+            assert_eq!(
+                context.active_profile_state().unwrap().as_deref(),
+                Some(active.id.as_str())
+            );
+            if fail_commit {
+                rusqlite::Connection::open(&context.paths.database).unwrap().execute_batch(
+                    "CREATE TRIGGER reject_recovery BEFORE INSERT ON switch_events BEGIN SELECT RAISE(FAIL, 'fixture commit failure'); END;"
+                ).unwrap();
+            }
+            let result = context.codex_apply_profile_locked(&target.id, None, true);
+            if fail_commit {
+                assert!(result.is_err());
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), "model = \n");
+                assert_eq!(
+                    context.active_profile_state().unwrap().as_deref(),
+                    Some(active.id.as_str())
+                );
+            } else {
+                result.unwrap();
+                let live =
+                    codex_config::parse_document(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                assert_eq!(live["model"].as_str(), Some("new"));
+                assert!(live.get("mcp_servers").is_none());
+                assert_eq!(
+                    context.active_profile_state().unwrap().as_deref(),
+                    Some(target.id.as_str())
+                );
+                assert!(context.get_state().unwrap().sync_failures.is_empty());
+                context.codex_apply_profile(&active.id).unwrap();
+                let live =
+                    codex_config::parse_document(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                assert_eq!(live["model"].as_str(), Some("old"));
+            }
+            assert_eq!(
+                context.database.codex_profile(&active.id).unwrap().payload,
+                snapshot
+            );
+            assert!(std::fs::read_dir(&context.paths.config_backup)
+                .unwrap()
+                .filter_map(Result::ok)
+                .any(
+                    |entry| std::fs::read_to_string(entry.path()).ok().as_deref()
+                        == Some("model = \n")
+                ));
+        }
     }
 }

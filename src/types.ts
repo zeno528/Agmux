@@ -445,7 +445,15 @@ export interface PathInfo {
   path: string;
 }
 
+export interface SyncFailure {
+  client: "codex" | "claude";
+  reason: "live_unreadable" | "live_parse_error" | "write_failed" | "internal";
+  profile: string | null;
+  position: [number, number] | null;
+}
+
 export interface AppState {
+  sync_failures: SyncFailure[];
   codex_profiles: CodexProfileSummary[];
   active_codex_profile_id: string | null;
   /** Claude Code 侧当前激活的供应商（claude_profiles 表）。 */

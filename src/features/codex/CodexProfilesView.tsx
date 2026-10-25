@@ -10,12 +10,14 @@ import { useFeedback } from "../../app/Feedback";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { CliUpgradePill } from "../../components/CliUpgradePill";
+import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
 import type { AppState, CodexProfileDetail, CodexProfileSummary } from "../../types";
 import CodexProfileCard from "./CodexProfileCard";
 import { CardDragPreview } from "../../components/SortableCard";
 import CodexProfileEdit from "./CodexProfileEdit";
 import ProfileNameDialog from "../profiles/ProfileNameDialog";
+import { applyProfileWithConfirmation } from "../profiles/applyProfile";
 
 interface ProfilesViewProps {
   state: AppState;
@@ -114,7 +116,11 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
     if (busy) return;
     setBusy(true);
     try {
-      await api.codexApplyProfile(profile.id);
+      const applied = await applyProfileWithConfirmation(
+        (overwrite) => api.codexApplyProfile(profile.id, overwrite),
+        () => feedback.confirm({ title: t("writeback.overwriteTitle", { ns: "common" }), description: t("writeback.overwriteDescription", { ns: "common", file: "config.toml", name: profile.name }), confirmText: t("writeback.overwriteConfirm", { ns: "common" }), destructive: true }),
+      );
+      if (!applied) return;
       await onRefresh();
       if (!state.settings.auto_restart || await restart(true, false)) {
         feedback.success(t("feedback.applySuccess", { ns: "common" }));
@@ -178,6 +184,7 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
         <div className="provider-page-brand">
           <img src="/codex.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>Codex</span>
+          <SyncFailureIndicator failure={state.sync_failures.find((failure) => failure.client === "codex")} />
           <CliUpgradePill client="codex" />
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-sm">

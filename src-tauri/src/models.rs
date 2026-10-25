@@ -442,7 +442,16 @@ pub struct CodexAppStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SyncFailure {
+    pub client: &'static str,
+    pub reason: &'static str,
+    pub profile: Option<String>,
+    pub position: Option<[usize; 2]>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AppState {
+    pub sync_failures: Vec<SyncFailure>,
     pub codex_profiles: Vec<CodexProfileSummary>,
     pub active_codex_profile_id: Option<String>,
     /// Claude Code 侧当前激活的供应商（claude_profiles 表）。

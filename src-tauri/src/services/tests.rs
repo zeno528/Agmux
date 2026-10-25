@@ -1310,10 +1310,10 @@ async fn oauth_activation_and_account_switch_write_only_the_bound_account_snapsh
             .open(&auth_path)
             .unwrap();
         let error = context
-            .codex_apply_profile_with_auth(&profile.id, &oauth)
+            .codex_apply_profile_with_auth(&profile.id, &oauth, false)
             .await
             .unwrap_err();
-        assert!(error.0.contains("无法替换"), "{error}");
+        assert!(error.to_string().contains("无法替换"), "{error}");
         drop(auth_lock);
         assert_eq!(
             std::fs::read(context.paths.codex_config()).unwrap(),
@@ -1324,7 +1324,7 @@ async fn oauth_activation_and_account_switch_write_only_the_bound_account_snapsh
     }
 
     context
-        .codex_apply_profile_with_auth(&profile.id, &oauth)
+        .codex_apply_profile_with_auth(&profile.id, &oauth, false)
         .await
         .unwrap();
 
@@ -1763,7 +1763,7 @@ fn corrupted_live_config_reports_parse_error_and_keeps_last_valid_snapshot() {
     std::fs::write(context.paths.codex_config(), "model = \n").unwrap();
     assert!(matches!(
         context.live_document_checked(),
-        Err(super::codex_profiles::LiveReadError::Parse)
+        Err(super::codex_profiles::LiveReadError::Parse(_))
     ));
 
     // 走真实被动收割（get_state 同一条路径）：损坏内容不得覆盖最后一次有效快照
@@ -1772,6 +1772,15 @@ fn corrupted_live_config_reports_parse_error_and_keeps_last_valid_snapshot() {
         &crate::services::sync::SyncTrigger::StateRefresh,
         crate::services::sync::SyncMaterial::default(),
     );
+    let state = context.get_state().unwrap();
+    let failure = state
+        .sync_failures
+        .iter()
+        .find(|failure| failure.client == "codex")
+        .unwrap();
+    assert_eq!(failure.reason, "live_parse_error");
+    assert_eq!(failure.profile.as_deref(), Some("A"));
+    assert!(failure.position.is_some());
     assert_eq!(
         context
             .database
@@ -1794,6 +1803,10 @@ fn corrupted_live_config_reports_parse_error_and_keeps_last_valid_snapshot() {
         &context,
         &crate::services::sync::SyncTrigger::StateRefresh,
         crate::services::sync::SyncMaterial::default(),
+    );
+    assert_eq!(
+        context.get_state().unwrap().sync_failures[0].reason,
+        "live_unreadable"
     );
     assert_eq!(
         context
@@ -1821,6 +1834,7 @@ fn corrupted_live_config_reports_parse_error_and_keeps_last_valid_snapshot() {
         .raw_config
         .as_deref()
         .is_some_and(|text| text.contains("gpt-5.8")));
+    assert!(context.get_state().unwrap().sync_failures.is_empty());
 }
 
 #[test]

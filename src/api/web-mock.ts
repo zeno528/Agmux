@@ -665,6 +665,7 @@ function webState(): AppState {
     }),
     active_codex_profile_id: webActiveProfileId,
     active_claude_profile_id: webActiveClaudeProfileId,
+    sync_failures: [],
     codex: {
       running: true,
       display_path: "OpenAI.Codex_2p2nqsd0c76g0!App",
@@ -1350,6 +1351,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       return undefined as T;
     }
     case "claude_apply_profile": {
+      if (args?.overwrite !== undefined && typeof args.overwrite !== "boolean") throw new Error("overwrite 必须为布尔值");
       if (!webClaudeProfiles.some((item) => item.id === args?.id)) throw new Error("Claude 供应商配置不存在");
       webActiveClaudeProfileId = String(args?.id);
       return undefined as T;
@@ -1573,6 +1575,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       return undefined as T;
     }
     case "codex_apply_profile":
+      if (args?.overwrite !== undefined && typeof args.overwrite !== "boolean") throw new Error("overwrite 必须为布尔值");
       // 与后端一致：官方配置的认证来源在创建时固定；Web mock 不操作本机 auth.json。
       webActiveProfileId = typeof args?.id === "string" ? args.id : null;
       await new Promise((resolve) => setTimeout(resolve, 500));

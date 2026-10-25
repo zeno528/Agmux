@@ -33,7 +33,7 @@ fn profile_subject(summary: &CodexProfileSummary) -> String {
 /// 文件不存在不算失败（`Ok(None)`，首次运行等正常态）。
 pub(super) enum LiveReadError {
     Unreadable,
-    Parse,
+    Parse(Option<[usize; 2]>),
 }
 
 impl AppContext {
@@ -67,7 +67,7 @@ impl AppContext {
         };
         codex_config::parse_document(&text)
             .map(Some)
-            .map_err(|_| LiveReadError::Parse)
+            .map_err(|error| LiveReadError::Parse(super::sync::parse_error_position(&error.0)))
     }
 
     pub fn codex_capture_profile(&self, name: &str) -> AppResult<CodexProfileSummary> {

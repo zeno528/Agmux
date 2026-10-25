@@ -16,6 +16,33 @@ impl Serialize for AppError {
 pub type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug, Serialize, thiserror::Error)]
+#[serde(untagged)]
+pub enum ProfileApplyError {
+    #[error("{message}")]
+    OverwriteRequired {
+        overwrite_required: bool,
+        message: &'static str,
+    },
+    #[error("{0}")]
+    Other(String),
+}
+
+impl ProfileApplyError {
+    pub fn overwrite_required() -> Self {
+        Self::OverwriteRequired {
+            overwrite_required: true,
+            message: "实时配置损坏，请在供应商页确认覆盖后切换",
+        }
+    }
+}
+
+impl From<AppError> for ProfileApplyError {
+    fn from(error: AppError) -> Self {
+        Self::Other(error.0)
+    }
+}
+
+#[derive(Debug, Serialize, thiserror::Error)]
 #[error("{message}")]
 pub struct McpSyncError {
     pub message: String,

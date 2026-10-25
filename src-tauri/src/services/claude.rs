@@ -20,7 +20,7 @@ use super::sync;
 use super::AppContext;
 use crate::codex::config as codex_config;
 use crate::database::StoredClaudeProfile;
-use crate::error::{app_err, AppResult};
+use crate::error::{app_err, AppResult, ProfileApplyError};
 use crate::fsutil::{atomic_write, backup_file};
 use crate::models::{ClaudeProfileDetail, ClaudeProfileInput, ClaudeProfileSummary, McpServerSpec};
 use crate::paths::now_ms;
@@ -936,10 +936,10 @@ impl AppContext {
                     sync::ClientId::Claude.label(),
                     stored.name
                 );
-                return Ok(sync::SyncOutcome::of(
-                    sync::SyncKind::LiveParseError,
-                    &stored.name,
-                ));
+                return Ok(
+                    sync::SyncOutcome::of(sync::SyncKind::LiveParseError, &stored.name)
+                        .with_position(sync::parse_error_position(&error.0)),
+                );
             }
         };
         // 外部工具（Claude Code）会整文件重写 live 且格式不定（实测吸收过紧凑单行），
@@ -1196,33 +1196,74 @@ impl AppContext {
     }
 
     pub fn claude_apply(&self, id: &str) -> AppResult<()> {
+        self.claude_apply_confirmed(id, false)
+            .map_err(|error| app_err!("{error}"))
+    }
+
+    pub fn claude_apply_confirmed(
+        &self,
+        id: &str,
+        overwrite: bool,
+    ) -> Result<(), ProfileApplyError> {
         let _guard = self
             .operation
             .lock()
             .map_err(|_| app_err!("操作锁已损坏"))?;
+        let damaged = match std::fs::read_to_string(self.claude_settings_path()) {
+            Ok(raw) => !raw.trim().is_empty() && parse_settings_document(&raw).is_err(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => return Err(app_err!("无法读取 settings.json，请检查文件权限和路径").into()),
+        };
+        if damaged && !overwrite {
+            return Err(ProfileApplyError::overwrite_required());
+        }
         // 覆盖 live 前先把旧激活快照同步到现场，外部改动不随切换丢失（对齐 Codex autosync；自切跳过）
-        sync::registry().harvest(
-            self,
-            &sync::SyncTrigger::BeforeLiveOverwrite {
-                client: sync::ClientId::Claude,
-                target_id: id.to_string(),
-            },
-            sync::SyncMaterial::default(),
-        )?;
+        if !damaged {
+            sync::registry().harvest(
+                self,
+                &sync::SyncTrigger::BeforeLiveOverwrite {
+                    client: sync::ClientId::Claude,
+                    target_id: id.to_string(),
+                },
+                sync::SyncMaterial::default(),
+            )?;
+        }
         let stored = self.database.claude_profile(id)?;
         // 上一家激活配置的附加键一并撤下：托管键之外也不残留
         let stale_extra_keys = self.claude_previous_extra_keys(id)?;
         crate::fsutil::with_file_rollback(&[self.claude_settings_path()], || {
-            self.write_claude_settings(Some(&stored), &stale_extra_keys)?;
-            self.database.set_active_claude_profile(Some(id))
+            if damaged {
+                let mut document = match stored.raw_settings.as_deref() {
+                    Some(raw) => parse_settings_document(raw)?,
+                    None => serde_json::json!({ "env": managed_env(&stored) }),
+                };
+                if stored
+                    .raw_settings
+                    .as_deref()
+                    .is_some_and(is_trivial_settings_snapshot)
+                {
+                    document = serde_json::json!({ "env": managed_env(&stored) });
+                }
+                if stored.kind.as_deref() == Some("claude-account") {
+                    clear_account_auth_overrides(&mut document);
+                }
+                let bytes = serde_json::to_vec_pretty(&document)
+                    .map_err(|error| app_err!("settings.json 序列化失败: {error}"))?;
+                backup_file(
+                    &self.claude_settings_path(),
+                    &self.paths.config_backup,
+                    "claude-settings",
+                )?;
+                atomic_write(&self.claude_settings_path(), &bytes)?;
+            } else {
+                self.write_claude_settings(Some(&stored), &stale_extra_keys)?;
+            }
+            self.database.commit_claude_profile_apply(
+                id,
+                &format!("profile_id={id} profile_name={:?}", stored.name),
+                &now_ms().to_string(),
+            )
         })?;
-        self.database.record_event(
-            None,
-            "apply_claude",
-            "success",
-            Some(&format!("profile_id={id} profile_name={:?}", stored.name)),
-            &now_ms().to_string(),
-        )?;
         tauri_plugin_log::log::info!(
             "[apply.claude] profile_id={id} outcome=success msg=\"已写入 ~/.claude/settings.json\""
         );
@@ -3437,6 +3478,91 @@ API_KEY = "secret"
     }
 
     #[test]
+    fn confirmed_overwrite_applies_claude_target_without_changing_previous_profile() {
+        for full_target in [false, true] {
+            for failure_table in [None, Some("app_state"), Some("switch_events")] {
+                let (_home, context) = test_context();
+                let path = context.claude_settings_path();
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(&path, r#"{"env":{"ANTHROPIC_BASE_URL":"https://old.example","ANTHROPIC_AUTH_TOKEN":"old"},"hooks":{"Stop":[]},"enabledPlugins":{"fixture":true}}"#).unwrap();
+                let active = context.claude_capture("A").unwrap();
+                context.claude_apply(&active.id).unwrap();
+                let snapshot = context
+                    .database
+                    .claude_profile(&active.id)
+                    .unwrap()
+                    .raw_settings;
+                let mut input = draft("B", Some("https://new.example"), Some("new"), None);
+                if full_target {
+                    input.raw_settings = Some(r#"{"env":{"ANTHROPIC_BASE_URL":"https://new.example","ANTHROPIC_AUTH_TOKEN":"new"},"permissions":{"allow":["Read"]}}"#.into());
+                }
+                let target = context.claude_save(None, input).unwrap();
+                std::fs::write(&path, "broken JSON {").unwrap();
+                assert!(matches!(
+                    context.claude_apply_confirmed(&target.id, false),
+                    Err(ProfileApplyError::OverwriteRequired { .. })
+                ));
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken JSON {");
+                assert_eq!(
+                    context.database.active_claude_profile().unwrap().as_deref(),
+                    Some(active.id.as_str())
+                );
+                if let Some(table) = failure_table {
+                    rusqlite::Connection::open(&context.paths.database).unwrap().execute_batch(
+                        &format!("CREATE TRIGGER reject_recovery BEFORE {} ON {table} BEGIN SELECT RAISE(FAIL, 'fixture commit failure'); END;", if table == "app_state" { "UPDATE" } else { "INSERT" })
+                    ).unwrap();
+                }
+                let result = context.claude_apply_confirmed(&target.id, true);
+                if failure_table.is_some() {
+                    assert!(result.is_err());
+                    assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken JSON {");
+                    assert_eq!(
+                        context.database.active_claude_profile().unwrap().as_deref(),
+                        Some(active.id.as_str())
+                    );
+                } else {
+                    result.unwrap();
+                    let live: Value =
+                        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                    assert_eq!(live["env"]["ANTHROPIC_AUTH_TOKEN"], "new");
+                    assert!(live.get("enabledPlugins").is_none());
+                    if full_target {
+                        assert_eq!(live["permissions"]["allow"][0], "Read");
+                    } else {
+                        assert!(live.get("hooks").is_none());
+                    }
+                    assert_eq!(
+                        context.database.active_claude_profile().unwrap().as_deref(),
+                        Some(target.id.as_str())
+                    );
+                    assert!(context.get_state().unwrap().sync_failures.is_empty());
+                    context.claude_apply(&active.id).unwrap();
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&std::fs::read(&path).unwrap()).unwrap()
+                            ["env"]["ANTHROPIC_AUTH_TOKEN"],
+                        "old"
+                    );
+                }
+                assert_eq!(
+                    context
+                        .database
+                        .claude_profile(&active.id)
+                        .unwrap()
+                        .raw_settings,
+                    snapshot
+                );
+                assert!(std::fs::read_dir(&context.paths.config_backup)
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .any(
+                        |entry| std::fs::read_to_string(entry.path()).ok().as_deref()
+                            == Some("broken JSON {")
+                    ));
+            }
+        }
+    }
+
+    #[test]
     fn extra_env_merges_into_live_and_retracts_on_switch() {
         let (home, context) = test_context();
         let a = context
@@ -3663,6 +3789,7 @@ API_KEY = "secret"
             &sync::SyncTrigger::StateRefresh,
             sync::SyncMaterial::default(),
         );
+        assert!(context.get_state().unwrap().sync_failures.is_empty());
         let last_valid = context
             .database
             .claude_profile(&profile.id)
@@ -3684,6 +3811,15 @@ API_KEY = "secret"
             &sync::SyncTrigger::StateRefresh,
             sync::SyncMaterial::default(),
         );
+        let state = context.get_state().unwrap();
+        let failure = state
+            .sync_failures
+            .iter()
+            .find(|failure| failure.client == "claude")
+            .unwrap();
+        assert_eq!(failure.reason, "live_parse_error");
+        assert_eq!(failure.profile.as_deref(), Some("Provider"));
+        assert!(failure.position.is_some());
         assert_eq!(
             context
                 .database
@@ -3708,6 +3844,7 @@ API_KEY = "secret"
             .as_deref()
             .unwrap_or_default()
             .contains("drift.example"));
+        assert!(context.get_state().unwrap().sync_failures.is_empty());
     }
 
     /// 四道守卫各自可辨：无激活 / live 不存在 / 解析失败 / 无差异，
