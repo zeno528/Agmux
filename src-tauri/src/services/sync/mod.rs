@@ -14,6 +14,7 @@ use crate::error::AppResult;
 pub enum ClientId {
     Codex,
     Claude,
+    ClaudeDesktop,
 }
 
 impl ClientId {
@@ -21,6 +22,7 @@ impl ClientId {
         match self {
             Self::Codex => "codex",
             Self::Claude => "claude",
+            Self::ClaudeDesktop => "claude-desktop",
         }
     }
 
@@ -31,6 +33,7 @@ impl ClientId {
         match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude Code",
+            Self::ClaudeDesktop => "Claude Desktop",
         }
     }
 }
@@ -405,6 +408,62 @@ impl ClientSync for ClaudeSyncBody {
     }
 }
 
+/// Claude Desktop 执行体：守卫对齐 sync_active_claude_desktop 的四道守卫。
+/// 产品事实：桌面端无配置热重载，写盘后需完全重启进程（restart_claude_desktop
+/// 构造 BeforeProcessStart，拉起前把外部改动收割入库）。
+struct ClaudeDesktopSyncBody;
+
+impl ClientSync for ClaudeDesktopSyncBody {
+    fn id(&self) -> ClientId {
+        ClientId::ClaudeDesktop
+    }
+
+    fn sync(
+        &self,
+        ctx: &AppContext,
+        trigger: &SyncTrigger,
+        _material: SyncMaterial<'_>,
+    ) -> AppResult<SyncOutcome> {
+        match trigger {
+            SyncTrigger::BeforeLiveOverwrite { target_id, .. } => {
+                let Some(active) = ctx.database.active_claude_desktop_profile()? else {
+                    return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
+                };
+                if active == *target_id {
+                    return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
+                }
+                ctx.sync_active_claude_desktop()
+            }
+            SyncTrigger::BeforeProfileRead { target_id, .. }
+            | SyncTrigger::BeforeProfileClone { target_id, .. } => {
+                if ctx.database.active_claude_desktop_profile()?.as_deref()
+                    != Some(target_id.as_str())
+                {
+                    return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
+                }
+                ctx.sync_active_claude_desktop()
+            }
+            SyncTrigger::StateRefresh | SyncTrigger::AfterCapture { .. } => {
+                if ctx.database.active_claude_desktop_profile()?.is_none() {
+                    return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
+                }
+                ctx.sync_active_claude_desktop()
+            }
+            // 重启前：回写失败只记日志不拦——桌面端配置坏了自己会报错误框，
+            // 拦下重启反而让"修完配置一键重启"这条自愈路径走不通。
+            SyncTrigger::BeforeProcessStart { .. } => match ctx.sync_active_claude_desktop() {
+                Ok(outcome) => Ok(outcome),
+                Err(error) => {
+                    tauri_plugin_log::log::warn!(
+                        "[sync.claude-desktop] trigger=before_process_start outcome=failure failure_kind=internal error={error:?} msg=\"拉起前回写失败，不拦重启\""
+                    );
+                    Ok(SyncOutcome::bare(SyncKind::TargetMismatch))
+                }
+            },
+        }
+    }
+}
+
 pub struct SyncRegistry {
     bodies: Vec<Box<dyn ClientSync>>,
 }
@@ -542,7 +601,11 @@ static REGISTRY: OnceLock<SyncRegistry> = OnceLock::new();
 
 pub fn registry() -> &'static SyncRegistry {
     REGISTRY.get_or_init(|| SyncRegistry {
-        bodies: vec![Box::new(CodexSyncBody), Box::new(ClaudeSyncBody)],
+        bodies: vec![
+            Box::new(CodexSyncBody),
+            Box::new(ClaudeSyncBody),
+            Box::new(ClaudeDesktopSyncBody),
+        ],
     })
 }
 
@@ -622,6 +685,7 @@ mod tests {
     fn client_log_label_uses_product_name() {
         assert_eq!(ClientId::Codex.label(), "Codex");
         assert_eq!(ClientId::Claude.label(), "Claude Code");
+        assert_eq!(ClientId::ClaudeDesktop.label(), "Claude Desktop");
     }
 
     #[test]

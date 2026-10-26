@@ -2,9 +2,13 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{app_err, AppResult};
 
-/// 数据目录名。改名发布时旧数据由用户从设置页「导出备份 / 恢复」自行搬过来，
+/// 正式版的数据目录名。改名发布时旧数据由用户从设置页「导出备份 / 恢复」自行搬过来，
 /// 应用不做目录迁移。
 const ROOT_DIR: &str = ".agmux";
+/// DEV（debug 构建）的数据目录名：与安装的正式版完全隔离。
+/// 同一个库被两个版本轮流迁移会互相锁死：迁移只增不减，DEV 把库迁到 v26 后，
+/// 迁移更少的正式版就再也开不了这个库（启动即崩）。DEV 不碰正式版的数据。
+const DEV_ROOT_DIR: &str = ".agmux-dev";
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
@@ -23,6 +27,9 @@ pub struct AppPaths {
     pub codex_home: PathBuf,
     /// Claude Code 的家目录（~/.claude）：供应商配置写入其下 settings.json。
     pub claude_home: PathBuf,
+    /// Claude Desktop 3P 配置根候选：macOS 为 `~/Library/Application Support`，
+    /// Windows 为 `%LOCALAPPDATA%`（MSIX 虚拟化候选在 claude_desktop 模块内解析）。
+    pub claude_desktop_base: PathBuf,
     /// 供应商终端的 per-session settings 覆盖文件目录：只放 `claude --settings`
     /// 的临时覆盖，不进 ~/.claude，不参与 apply 与回写。
     pub terminal: PathBuf,
@@ -69,8 +76,21 @@ pub fn app_paths() -> AppResult<AppPaths> {
     from_home(&home_dir())
 }
 
+/// 数据根目录名：正式版 `.agmux`，DEV（debug 构建）`.agmux-dev`。
+/// 按构建类型分开，是为了让 DEV 的数据库迁移永远碰不到正式版的库：
+/// 迁移只追加不重写，DEV 迁过的库对迁移更少的正式版来说就是「版本太高」，
+/// 正式版会直接起不来。DEV 与正式版除了 ~/.codex、~/.claude 这些被管的
+/// 客户端配置外，不共享任何状态。
+fn data_root_dir() -> &'static str {
+    if cfg!(debug_assertions) {
+        DEV_ROOT_DIR
+    } else {
+        ROOT_DIR
+    }
+}
+
 pub fn from_home(home: &Path) -> AppResult<AppPaths> {
-    let root = home.join(ROOT_DIR);
+    let root = home.join(data_root_dir());
     Ok(AppPaths {
         database: root.join("agmux.db"),
         settings: root.join("settings.json"),
@@ -83,8 +103,29 @@ pub fn from_home(home: &Path) -> AppResult<AppPaths> {
         plugin_icons: root.join("plugin-icons"),
         codex_home: home.join(".codex"),
         claude_home: home.join(".claude"),
+        claude_desktop_base: claude_desktop_base(home),
         root,
     })
+}
+
+/// macOS：`~/Library/Application Support`。Windows：`%LOCALAPPDATA%`（未设置时
+/// 按默认 `home\AppData\Local`；MSIX 候选在 claude_desktop 模块内按目录存在性选择）。
+/// 其他平台按 XDG 惯例给 `.config`（产品不支持，仅让路径可解析）。
+fn claude_desktop_base(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Library").join("Application Support")
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("AppData").join("Local"))
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        home.join(".config")
+    }
 }
 
 pub fn home_dir() -> PathBuf {
@@ -116,19 +157,34 @@ mod tests {
     fn paths_use_agmux_and_codex_directories() {
         let home = Path::new("/home/user");
         let paths = from_home(home).unwrap();
-        assert_eq!(paths.root, home.join(".agmux"));
-        assert_eq!(paths.database, home.join(".agmux").join("agmux.db"));
-        assert_eq!(paths.logs, home.join(".agmux").join("logs"));
+        // 数据根目录按构建类型分开：DEV 用 .agmux-dev，正式版用 .agmux
+        let root = home.join(data_root_dir());
+        assert_eq!(
+            paths.root,
+            home.join(if cfg!(debug_assertions) {
+                ".agmux-dev"
+            } else {
+                ".agmux"
+            })
+        );
+        assert_eq!(paths.root, root);
+        assert_eq!(paths.database, root.join("agmux.db"));
+        assert_eq!(paths.logs, root.join("logs"));
         assert_eq!(
             paths.codex_config(),
             home.join(".codex").join("config.toml")
         );
         assert_eq!(paths.claude_home, home.join(".claude"));
         assert_eq!(paths.claude_mcp_config(), home.join(".claude.json"));
-        assert_eq!(paths.terminal, home.join(".agmux").join("terminal"));
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            paths.claude_desktop_base,
+            home.join("Library").join("Application Support")
+        );
+        assert_eq!(paths.terminal, root.join("terminal"));
         assert_eq!(
             paths.terminal_settings("p-1"),
-            home.join(".agmux").join("terminal").join("claude_p-1.json")
+            root.join("terminal").join("claude_p-1.json")
         );
     }
 }

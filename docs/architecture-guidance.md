@@ -32,7 +32,7 @@ Agmux 是同时管理 Codex 与 Claude Code 的本地桌面应用，支持 macOS
 ### 三种数据归属
 
 - **客户端实时文件**：`~/.codex/` 下的配置、模型目录与认证；Claude Code 的 `~/.claude/settings.json` 与用户级 MCP `~/.claude.json`。这些包含用户的全局状态，不是可随意重建的缓存。
-- **应用持久化**：`~/.agmux/agmux.db` 保存供应商快照、账号、MCP 镜像及状态；`settings.json` 保存应用设置。路径统一由 `paths.rs` 构造，SQLite schema 与迁移归 `database.rs`。
+- **应用持久化**：`~/.agmux/agmux.db` 保存供应商快照、账号、MCP 镜像及状态；`settings.json` 保存应用设置。路径统一由 `paths.rs` 构造，SQLite schema 与迁移归 `database.rs`。开发构建（debug）用独立根目录 `~/.agmux-dev` 与独立 bundle id `com.zeno528.agmux.dev`：迁移只增不减，DEV 迁过的库正式版开不了，两者必须隔离。
 - **程序、缓存与开发产物**：客户端安装状态由各自管理接口确认，缓存不能冒充已安装状态。项目工具链、`node_modules/`、`dist/`、`src-tauri/target/` 与用户数据分开，不随数据库恢复。
 
 ### 编辑、应用与回写

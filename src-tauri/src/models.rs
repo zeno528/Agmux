@@ -456,7 +456,10 @@ pub struct AppState {
     pub active_codex_profile_id: Option<String>,
     /// Claude Code 侧当前激活的供应商（claude_profiles 表）。
     pub active_claude_profile_id: Option<String>,
+    /// Claude Desktop（3P）侧当前激活的供应商（claude_desktop_profiles 表）。
+    pub active_claude_desktop_profile_id: Option<String>,
     pub codex: CodexAppStatus,
+    pub claude_desktop: ClaudeDesktopAppStatus,
     pub settings: Settings,
     pub paths: Vec<PathInfo>,
     pub auth_status: AuthStatus,
@@ -521,4 +524,89 @@ pub struct ClaudeProfileInput {
     pub raw_settings: Option<String>,
     pub icon: Option<String>,
     pub show_balance: bool,
+}
+
+/// Claude Desktop 3P 的三档模型映射（inferenceModels 条目）。
+/// name 必须是 Anthropic 目录真实 claude-* 模型名（桌面端强校验，请求原样发给上游）；
+/// label_override 是菜单显示名；supports_1m 声明 1M 上下文。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClaudeDesktopModelSlot {
+    pub slot: String,
+    /// 桌面端目录名（claude-*）。直连=用户填；路由=按槽位自动取目录名。
+    pub name: String,
+    pub label_override: Option<String>,
+    #[serde(default)]
+    pub supports_1m: bool,
+    /// 路由模式：目录名映射到的上游真实模型名。
+    #[serde(default)]
+    pub upstream_model: Option<String>,
+}
+
+/// Claude Desktop 供应商列表摘要：API Key 只回是否已设置。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopProfileSummary {
+    pub id: String,
+    pub name: String,
+    pub base_url: Option<String>,
+    pub has_key: bool,
+    /// 首个槽位的模型名（卡片快速识别用）。
+    pub model: Option<String>,
+    pub kind: Option<String>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    /// "direct" | "route"（None 视为 direct）。
+    pub mode: Option<String>,
+    pub updated_at: String,
+}
+
+/// Claude Desktop 供应商详情：编辑回显含 API Key 明文（对齐 ClaudeProfileDetail.auth_token）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopProfileDetail {
+    pub id: String,
+    pub name: String,
+    pub kind: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub auth_scheme: String,
+    pub models: Vec<ClaudeDesktopModelSlot>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    pub description: Option<String>,
+    pub mode: Option<String>,
+    pub upstream_base_url: Option<String>,
+    pub upstream_api_key: Option<String>,
+    pub fetched_models: Vec<String>,
+    pub updated_at: String,
+}
+
+/// claude_desktop_save_profile 的载荷。
+#[derive(Debug, Clone, Default)]
+pub struct ClaudeDesktopProfileInput {
+    pub name: String,
+    pub kind: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub auth_scheme: Option<String>,
+    pub models: Option<Vec<ClaudeDesktopModelSlot>>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    pub description: Option<String>,
+    pub mode: Option<String>,
+    pub upstream_base_url: Option<String>,
+    pub upstream_api_key: Option<String>,
+    pub fetched_models: Option<Vec<String>>,
+}
+
+/// Claude Desktop 应用状态（对齐 CodexAppStatus 的每帧刷新语义）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopAppStatus {
+    pub installed: bool,
+    pub running: bool,
+    pub display_path: String,
+    pub source: String,
+    /// 3P 配置里的 deploymentMode："1p" | "3p" | None（读不到）。
+    pub deployment_mode: Option<String>,
 }

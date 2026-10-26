@@ -26,6 +26,7 @@ export default {
     settings: "设置",
     groupCodex: "Codex",
     groupClaude: "Claude Code",
+    groupClaudeDesktop: "Claude 桌面端",
   },
   sidebar: {
     expand: "展开侧边栏",

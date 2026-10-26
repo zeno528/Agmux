@@ -192,6 +192,56 @@ export interface ProfileBalance {
   latency_ms: number | null;
 }
 
+/** Claude Desktop 3P 的三档模型映射；name 必须是 Anthropic 目录真实 claude-* 名。 */
+export interface ClaudeDesktopModelSlot {
+  slot: string;
+  name: string;
+  label_override: string | null;
+  supports_1m: boolean;
+  upstream_model?: string | null;
+}
+
+export interface ClaudeDesktopProfileSummary {
+  id: string;
+  name: string;
+  base_url: string | null;
+  has_key: boolean;
+  model: string | null;
+  kind: string | null;
+  admin_url: string | null;
+  icon: string | null;
+  show_balance: boolean;
+  mode: string | null;
+  updated_at: string;
+}
+
+export interface ClaudeDesktopProfileDetail {
+  id: string;
+  name: string;
+  kind: string | null;
+  base_url: string | null;
+  api_key: string | null;
+  auth_scheme: string;
+  models: ClaudeDesktopModelSlot[];
+  admin_url: string | null;
+  icon: string | null;
+  show_balance: boolean;
+  description: string | null;
+  mode: string | null;
+  upstream_base_url: string | null;
+  upstream_api_key: string | null;
+  fetched_models: string[];
+  updated_at: string;
+}
+
+export interface ClaudeDesktopAppStatus {
+  installed: boolean;
+  running: boolean;
+  display_path: string;
+  source: string;
+  deployment_mode: string | null;
+}
+
 export interface DatabaseBackupInfo {
   name: string;
   size_bytes: number;
@@ -226,7 +276,7 @@ export interface AuthStatus {
 export type LanguageSetting = "system" | "zh-CN" | "en-US";
 
 /** 侧栏顶层视图；startup_view 用它做冷启动落页。 */
-export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles";
+export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles" | "claudeDesktopProfiles";
 
 export interface Settings {
   theme: "system" | "light" | "dark";
@@ -446,7 +496,7 @@ export interface PathInfo {
 }
 
 export interface SyncFailure {
-  client: "codex" | "claude";
+  client: "codex" | "claude" | "claude-desktop";
   reason: "live_unreadable" | "live_parse_error" | "write_failed" | "internal";
   profile: string | null;
   position: [number, number] | null;
@@ -458,7 +508,10 @@ export interface AppState {
   active_codex_profile_id: string | null;
   /** Claude Code 侧当前激活的供应商（claude_profiles 表）。 */
   active_claude_profile_id: string | null;
+  /** Claude Desktop（3P）侧当前激活的供应商（claude_desktop_profiles 表）。 */
+  active_claude_desktop_profile_id: string | null;
   codex: CodexAppStatus;
+  claude_desktop: ClaudeDesktopAppStatus;
   settings: Settings;
   paths: PathInfo[];
   auth_status: AuthStatus;

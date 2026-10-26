@@ -205,6 +205,8 @@ Agmux keeps its application data under the current user's home directory. The ex
 
 Agmux keeps its run logs under `~/.agmux/logs/` (1MB × 10 rotation).
 
+Development builds are fully isolated from the installed app: they use the bundle id `com.zeno528.agmux.dev` and keep their own data under `~/.agmux-dev/`, so a DEV run never touches the installed app's database, settings, logs, or window state, and both can run at the same time. Only the client configuration Agmux manages (`~/.codex/`, `~/.claude/`, `~/.claude.json`) is shared, because that is the configuration the product is responsible for.
+
 When upgrading from a version with the previous name, the app does not migrate its old data directory automatically. Export a database backup from Settings → Data management in the old version, then restore it in Agmux. The old directory is preserved.
 
 Agmux never reads or stores a Claude Code sign-in: a `Claude Account` profile only tells Claude Code to drop third-party endpoint and credential overrides. The Claude common template lives in the Agmux database and is therefore covered by database backups.

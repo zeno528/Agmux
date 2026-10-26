@@ -204,6 +204,8 @@ Agmux 将应用数据保存在当前用户的主目录下，实际文件和目�
 
 运行日志写在 `~/.agmux/logs/` 下（1MB × 10 轮转）。
 
+开发版与安装版完全隔离：开发版使用独立的 bundle id `com.zeno528.agmux.dev`，数据放在 `~/.agmux-dev/`，不会碰安装版的数据库、设置、日志与窗口状态，两者可以同时运行。只有 Agmux 负责的客户端配置（`~/.codex/`、`~/.claude/`、`~/.claude.json`）是共享的。
+
 从旧名称版本升级时，应用不会自动迁移旧数据目录。请先在旧版本的「设置 → 数据管理」导出数据库备份，再在 Agmux 中恢复；旧目录会保留。
 
 Agmux 不读取也不保存 Claude Code 的登录态：`Claude Account` 配置只是让 Claude Code 去掉第三方的接口与认证覆盖项。Claude 通用模板保存在 Agmux 数据库中，因此随数据库备份一起备份。

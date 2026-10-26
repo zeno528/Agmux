@@ -27,6 +27,7 @@ const languageOptions = [{ labelKey: "language.system", value: "system" }, { lab
 const startupViewOptions = [
   { labelKey: "nav.groupCodex", value: "codexProfiles", icon: <img src="/codex.svg" alt="" className="h-4 w-4 shrink-0" /> },
   { labelKey: "nav.groupClaude", value: "claudeProfiles", icon: <img src="/claude-code.svg" alt="" className="h-4 w-4 shrink-0" /> },
+  { labelKey: "nav.groupClaudeDesktop", value: "claudeDesktopProfiles", icon: <img src="/claude.svg" alt="" className="h-4 w-4 shrink-0" /> },
   { labelKey: "nav.plugins", value: "plugins", icon: <Blocks className="h-4 w-4 shrink-0" aria-hidden="true" /> },
   { labelKey: "nav.accounts", value: "accounts", icon: <CircleUserRound className="h-4 w-4 shrink-0" aria-hidden="true" /> },
   { labelKey: "nav.mcp", value: "mcp", icon: <McpIcon className="h-4 w-4 shrink-0" /> },

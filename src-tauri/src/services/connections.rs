@@ -1991,6 +1991,28 @@ impl AppContext {
         .await
     }
 
+    /// 桌面端供应商余额：与 claude_get_profile_balance 同一查询，只是配置来自 claude_desktop_profiles。
+    pub async fn claude_desktop_get_profile_balance(&self, id: &str) -> AppResult<ProfileBalance> {
+        let profile = self.database.claude_desktop_profile(id)?;
+        let kind = profile.kind.as_deref().unwrap_or_default();
+        if kind != "deepseek" && kind != "minimax" && kind != "zhipu" {
+            return Err(app_err!("该供应商不支持用量查询"));
+        }
+        let api_key = profile
+            .api_key
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| app_err!("该供应商没有配置 API Key，无法查询余额/用量"))?;
+        let base = claude_balance_base(kind, profile.base_url.as_deref());
+        let default_base = provider_default_balance_base(kind);
+        query_supported_provider_balance(
+            kind,
+            if base.is_empty() { default_base } else { &base },
+            api_key,
+        )
+        .await
+    }
+
     /// 供应商级余额缓存：上次成功查询结果写入 ~/.agmux/balance-cache.json，
     /// 保证卡片首次渲染/切换视图时数字就在，不出现“消失→出现”的闪烁。
     pub fn set_profile_balance(

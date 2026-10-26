@@ -20,6 +20,8 @@ use crate::paths::{now_ms, now_secs, AppPaths};
 
 mod claude;
 mod claude_cli;
+mod claude_desktop;
+mod claude_desktop_gateway;
 mod claude_terminal;
 mod cli;
 mod codex_accounts;
@@ -64,6 +66,8 @@ pub struct AppContext {
     claude_cli_operation: Arc<AsyncMutex<Option<CliUpdate>>>,
     codex_cli_operation: Arc<AsyncMutex<Option<CliUpdate>>>,
     sync_failures: Arc<Mutex<Vec<crate::models::SyncFailure>>>,
+    /// 路由网关随当前应用的桌面端 profile 生死：换配置/回官方/退出即停。
+    pub(super) desktop_gateway: Arc<Mutex<Option<claude_desktop_gateway::GatewayHandle>>>,
 }
 
 impl AppContext {
@@ -81,6 +85,7 @@ impl AppContext {
             claude_cli_operation: Arc::new(AsyncMutex::new(None)),
             codex_cli_operation: Arc::new(AsyncMutex::new(None)),
             sync_failures: Arc::new(Mutex::new(Vec::new())),
+            desktop_gateway: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -126,6 +131,11 @@ impl AppContext {
         let process_ids = codex_process::find_process_ids(None);
         let (display_path, source) = codex_process::codex_display_path(None);
         let balance_cache = self.load_balance_cache();
+        // Claude Desktop 状态与 Codex 同一轮刷新：进程表扫描同量级，
+        // deployment_mode 读一次 3P 配置文件（与 harvest 的 live 读同级）
+        // Claude Desktop 状态与 Codex 同一轮刷新：进程表扫描同量级，
+        // deployment_mode 读一次 3P 配置文件（与 harvest 的 live 读同级）
+        let claude_desktop = self.claude_desktop_status();
 
         Ok(AppState {
             sync_failures: self
@@ -221,11 +231,13 @@ impl AppContext {
                 .collect::<Vec<CodexProfileSummary>>(),
             active_codex_profile_id,
             active_claude_profile_id: self.database.active_claude_profile()?,
+            active_claude_desktop_profile_id: self.database.active_claude_desktop_profile()?,
             codex: CodexAppStatus {
                 running: !process_ids.is_empty(),
                 display_path,
                 source,
             },
+            claude_desktop,
             settings,
             paths: self.path_info(),
             auth_status: Default::default(),

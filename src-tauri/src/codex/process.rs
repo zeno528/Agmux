@@ -65,9 +65,9 @@ pub fn running_process_ids(ids: &[u32]) -> Vec<u32> {
 ///   的关窗落盘，未来支持 WM_CLOSE 退出时自动升级为真优雅。
 /// - macOS：AppleEvent quit 是真优雅退出，保留 4s 给完整退出流程。
 #[cfg(windows)]
-const GRACEFUL_EXIT_TIMEOUT_MS: u64 = 1_000;
+pub(crate) const GRACEFUL_EXIT_TIMEOUT_MS: u64 = 1_000;
 #[cfg(not(windows))]
-const GRACEFUL_EXIT_TIMEOUT_MS: u64 = 4_000;
+pub(crate) const GRACEFUL_EXIT_TIMEOUT_MS: u64 = 4_000;
 
 /// 强杀后的退出等待上限。SIGKILL/Terminate 几乎即时，5 秒只是防御性上限。
 const FORCE_EXIT_TIMEOUT_MS: u64 = 5_000;
@@ -365,8 +365,9 @@ pub fn launch_codex(manual_path: Option<&str>) -> AppResult<()> {
 
 /// 用 LaunchServices 打开 macOS 应用，返回 `open` 的真实执行结果（旧实现
 /// 只 spawn 不查退出码，-600 等失败会被静默吞掉，只能靠上层轮询超时暴露）。
+/// 通用原语：Claude Desktop 的重启同样复用。
 #[cfg(target_os = "macos")]
-fn macos_open_app(app: &Path, force_new_instance: bool) -> AppResult<()> {
+pub(crate) fn macos_open_app(app: &Path, force_new_instance: bool) -> AppResult<()> {
     let output = Command::new("open")
         .args(macos_open_args(app, force_new_instance))
         .stdin(Stdio::null())
@@ -397,6 +398,15 @@ fn macos_open_args(app: &Path, force_new_instance: bool) -> Vec<String> {
 
 #[cfg(windows)]
 fn activate_windows_package(manual_path: Option<&str>) -> AppResult<()> {
+    if manual_path.is_some_and(|value| value.to_ascii_lowercase().ends_with(".exe")) {
+        return Err(app_err!("manual executable"));
+    }
+    activate_windows_package_by_aumid(WINDOWS_CODEX_AUMIDS)
+}
+
+/// 按 AUMID 清单逐个尝试激活 packaged app（Codex 与 Claude Desktop 共用的 COM 原语）。
+#[cfg(windows)]
+pub(crate) fn activate_windows_package_by_aumid(aumids: &[&str]) -> AppResult<()> {
     use windows::core::HSTRING;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
@@ -404,10 +414,6 @@ fn activate_windows_package(manual_path: Option<&str>) -> AppResult<()> {
     use windows::Win32::UI::Shell::{
         ApplicationActivationManager, IApplicationActivationManager, ACTIVATEOPTIONS,
     };
-
-    if manual_path.is_some_and(|value| value.to_ascii_lowercase().ends_with(".exe")) {
-        return Err(app_err!("manual executable"));
-    }
 
     unsafe {
         let coinitialize = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
@@ -421,7 +427,7 @@ fn activate_windows_package(manual_path: Option<&str>) -> AppResult<()> {
                 CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_ALL)
                     .map_err(|error| app_err!("无法创建应用激活器: {error}"))?;
             let mut last_error = None;
-            for aumid in WINDOWS_CODEX_AUMIDS {
+            for aumid in aumids {
                 match manager.ActivateApplication(
                     &HSTRING::from(*aumid),
                     &HSTRING::from(""),
@@ -432,7 +438,7 @@ fn activate_windows_package(manual_path: Option<&str>) -> AppResult<()> {
                 }
             }
             Err(app_err!(
-                "无法启动 Codex/ChatGPT packaged app: {}",
+                "无法启动 packaged app: {}",
                 last_error
                     .map(|error| error.to_string())
                     .unwrap_or_default()
