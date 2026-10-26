@@ -1393,20 +1393,26 @@ done
             assert!(result.ok, "{:?}", result.error);
 
             let stdio = crate::models::McpServerSpec {
-                command: Some("/bin/sh".into()),
-                args: vec![
-                    "-c".into(),
-                    r#"
-[ "$AGMUX_FIXTURE_TOKEN" = fixture-token ] || exit 1
-[ "$AGMUX_FIXTURE_HEADER" = config-override ] || exit 1
-read request
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{}}}'
-"#
-                    .into(),
-                ],
+                command: Some("agmux-fixture-mcp".into()),
                 env: [("AGMUX_FIXTURE_HEADER".into(), "config-override".into())].into(),
                 ..Default::default()
             };
+            let bin = home.join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            std::os::unix::fs::symlink("/bin/sh", bin.join("agmux-fixture-shell")).unwrap();
+            let mcp = bin.join("agmux-fixture-mcp");
+            std::fs::write(
+                &mcp,
+                r#"#!/usr/bin/env agmux-fixture-shell
+[ "$AGMUX_FIXTURE_TOKEN" = fixture-token ] || exit 1
+[ "$AGMUX_FIXTURE_HEADER" = config-override ] || exit 1
+[ "$AGMUX_FIXTURE_EXISTING" = process ] || exit 1
+read request
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{}}}'
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&mcp, std::fs::Permissions::from_mode(0o700)).unwrap();
             let result = super::probe_stdio(&stdio, false);
             assert!(result.ok, "{:?}", result.error);
             return;
@@ -1419,7 +1425,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25",
             ("timeout", "exec /bin/sleep 30\n"),
         ] {
             let home = tempfile::tempdir().unwrap();
-            std::fs::write(home.path().join(".zprofile"), "export AGMUX_FIXTURE_TOKEN=fixture-token\n").unwrap();
+            std::fs::write(home.path().join(".zprofile"), "export AGMUX_FIXTURE_TOKEN=fixture-token\nexport PATH=\"$HOME/bin:$PATH\"\n").unwrap();
             std::fs::write(home.path().join(".zshrc"), startup).unwrap();
             let child = Command::new(std::env::current_exe().unwrap())
                 .args([

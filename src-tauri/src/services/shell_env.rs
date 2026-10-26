@@ -47,8 +47,10 @@ pub(super) fn environment() -> Result<&'static BTreeMap<String, String>, String>
             Ok(values
                 .split('\0')
                 .filter_map(|entry| entry.split_once('='))
-                // 保留父进程的显式覆盖；调用方随后设置的配置与代理仍优先。
-                .filter(|(name, _)| !name.is_empty() && std::env::var_os(name).is_none())
+                // PATH 使用 Shell 的完整搜索路径；其余变量保留父进程覆盖，调用方配置仍优先。
+                .filter(|(name, _)| {
+                    !name.is_empty() && (*name == "PATH" || std::env::var_os(name).is_none())
+                })
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect())
         })
