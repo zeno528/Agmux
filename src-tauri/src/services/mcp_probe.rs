@@ -572,10 +572,33 @@ struct StdioSession {
 
 /// Windows 上 std Command 只按 .exe 解析无扩展名命令，找不到 npm 装的 npx.cmd
 /// 这类 shim（实测报 program not found）；spawn 前按 PATH + PATHEXT 手动解析。
-/// 带路径分隔符或已带扩展名的写法、以及非 Windows 平台，保持原行为。
-#[cfg(not(windows))]
+/// 带路径分隔符或已带扩展名的写法、以及其余平台，保持原行为。
+#[cfg(not(any(windows, target_os = "macos")))]
 fn resolve_command(program: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(program)
+}
+
+/// Finder 启动的 macOS 进程 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，
+/// posix_spawnp 按父进程 PATH 解析程序名，.envs() 注入的子进程 PATH 不参与查找，
+/// 裸命令名（npx、node 等）报 ENOENT；spawn 前按登录 Shell 的 PATH 解析为绝对路径。
+#[cfg(target_os = "macos")]
+fn resolve_command(program: &str) -> std::path::PathBuf {
+    use std::path::{Path, PathBuf};
+
+    if program.contains('/') {
+        return PathBuf::from(program);
+    }
+    if let Ok(env) = super::shell_env::environment() {
+        if let Some(path) = env.get("PATH") {
+            if let Some(found) = std::env::split_paths(path)
+                .map(|dir| dir.join(program))
+                .find(|candidate| candidate.is_file())
+            {
+                return found;
+            }
+        }
+    }
+    PathBuf::from(Path::new(program))
 }
 
 #[cfg(windows)]
