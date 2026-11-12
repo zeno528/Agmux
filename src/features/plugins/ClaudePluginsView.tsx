@@ -214,10 +214,10 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionInstalled")}
-                <span className="apple-chip">{visibleInstalled.length}</span>
                 <AppTooltip label={t("board.sectionInstalled")}>
                   <p>{t("claudePlugin.installedHelp")}</p>
                 </AppTooltip>
+                <span className="apple-chip">{visibleInstalled.length}</span>
               </div>
               <div className="plugin-board">
                 {visibleInstalled.map((entry) => {

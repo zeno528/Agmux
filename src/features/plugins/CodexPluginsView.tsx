@@ -482,10 +482,10 @@ export default function CodexPluginsView({
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionInstalled")}
-                <span className="apple-chip">{visibleInstalled.length}</span>
                 <AppTooltip label={t("board.sectionInstalled")}>
                   <p>{t("board.codexInstalledHelp")}</p>
                 </AppTooltip>
+                <span className="apple-chip">{visibleInstalled.length}</span>
               </div>
               <div className="plugin-board">
                 {visibleInstalled.map((plugin) => (
