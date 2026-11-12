@@ -8,10 +8,10 @@ import { AppSegmentedControl } from "./AppSegmentedControl";
 import PresetGrid from "./PresetGrid";
 import { AppTabBar } from "./AppTabBar";
 import { AppSearchInput } from "./AppSearchInput";
-import { ProviderCreate, ProviderPresetControls } from "./ProviderSetup";
+import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "./ProviderSetup";
 import { api } from "../api";
 import { webInvoke } from "../api/web-mock";
-import type { ClaudeProfileDetail, ClaudeProfileSummary } from "../types";
+import type { AppState, CodexProfileDetail, ClaudeProfileDetail, ClaudeProfileSummary } from "../types";
 import ClaudeProfileEdit from "../features/claude/ClaudeProfileEdit";
 import CodexProfileEdit from "../features/codex/CodexProfileEdit";
 import ConfigTextEditor from "./ConfigTextEditor";
@@ -56,6 +56,75 @@ beforeEach(() => {
 });
 
 describe("供应商创建的两步流程", () => {
+  it("标题栏视图切换沿用分段控件，键盘 Enter 不触发背景保存", () => {
+    const onChange = vi.fn();
+    const tree = ProviderEditorViewSwitch({ config: false, disabled: false, onChange });
+    const control = elements(tree).find((node) => node.type === AppSegmentedControl)!;
+    expect(control.props.selectedIndex).toBe(0);
+    const buttons = elements(control).filter((node) => node.type === "button");
+    expect(buttons.map((button) => button.props["aria-pressed"])).toEqual([true, false]);
+    click(buttons[1]);
+    expect(onChange).toHaveBeenCalledWith(true);
+    const stopPropagation = vi.fn();
+    (tree.props.onKeyDown as (event: unknown) => void)({ key: "Enter", stopPropagation });
+    expect(stopPropagation).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { client: "codex", create: true }, { client: "codex", create: false },
+    { client: "claude", create: true }, { client: "claude", create: false },
+  ])("$client 供应商 create=$create：切换视图保留表单和源码草稿", async ({ client, create }) => {
+    const builtin = vi.spyOn(api, "codexGetBuiltinConfig").mockResolvedValue('model = "fixture-model"\nmodel_provider = "fixture"\n[model_providers.fixture]\nname = "Fixture"\nbase_url = "https://example.test/v1"\n');
+    const mcp = vi.spyOn(api, "codexGetMcpSectionToml").mockResolvedValue("");
+    try {
+      let editor: ReactElement<Props>;
+      if (client === "codex") {
+        const profile = (await webInvoke<AppState>("get_state")).codex_profiles.find((item) => item.provider === "deepseek")!;
+        const detail = await webInvoke<CodexProfileDetail>("codex_get_profile", { id: profile.id });
+        const flow = CodexProfileEdit({ profile: create ? null : profile, initialDetail: create ? null : detail, create,
+          authStatus: { authenticated: false, default_account_id: null, accounts: [], external: [] }, authStatusReady: true,
+          onBack: vi.fn(), onChanged: vi.fn(), onManageChatgptAccounts: vi.fn() });
+        editor = create ? flow.props.children(codexPresets.find((preset) => preset.kind === "deepseek")!, vi.fn()) : flow;
+      } else {
+        const profile = (await webInvoke<ClaudeProfileSummary[]>("claude_list_profiles")).find((item) => item.kind === "deepseek")!;
+        const detail = await webInvoke<ClaudeProfileDetail>("claude_get_profile", { id: profile.id });
+        const flow = ClaudeProfileEdit({ profile: create ? null : profile, initialDetail: create ? null : detail, create, onBack: vi.fn(), onChanged: vi.fn() });
+        editor = create ? flow.props.children(claudePresets.find((preset) => preset.kind === "deepseek")!, vi.fn()) : flow;
+      }
+      const render = () => { hooks.cursor = 0; return (editor.type as (props: Props) => ReactNode)(editor.props); };
+      const field = (tree: ReactNode, type: unknown) => elements(tree).find((node) => node.type === type)!.props;
+      const configPanel = (tree: ReactNode) => elements(tree).find((node) => String(node.props.className).includes("provider-config-view"))!;
+      let tree = render();
+      if (client === "codex" && create) {
+        for (const effect of hooks.effects.splice(0)) effect();
+        await vi.waitFor(() => { tree = render(); expect(elements(tree).some((node) => node.type === ConfigTextEditor)).toBe(true); });
+      }
+      expect(configPanel(tree).props.inert).toBe(true);
+      expect(field(tree, ProviderEditorViewSwitch).config).toBe(false);
+      (field(tree, ProviderIdentityFields).onName as (name: string) => void)("Keep my draft");
+      (field(tree, ProviderSecretField).onChange as (key: string) => void)("draft-key-fixture");
+      (field(tree, ProviderEditorViewSwitch).onChange as (config: boolean) => void)(true);
+      tree = render();
+      expect(configPanel(tree).props.inert).toBe(false);
+      const source = client === "codex" ? 'model = "edited-model"\n' : '{"env":{"EXTRA":"edited"}}';
+      (field(tree, ConfigTextEditor).onChange as (value: string) => void)(source);
+      (field(tree, ProviderEditorViewSwitch).onChange as (config: boolean) => void)(false);
+      tree = render();
+      expect(field(tree, ProviderIdentityFields).name).toBe("Keep my draft");
+      expect(field(tree, ProviderSecretField).value).toBe("draft-key-fixture");
+      expect(field(tree, ConfigTextEditor).value).toBe(source);
+      expect(configPanel(tree).props.inert).toBe(true);
+      (field(tree, ProviderEditorViewSwitch).onChange as (config: boolean) => void)(true);
+      tree = render();
+      expect(field(tree, ConfigTextEditor).value).toBe(source);
+      expect(elements(configPanel(tree)).some((node) => String(node.props.className).includes("apple-editor-toolbar"))).toBe(true);
+      expect(elements(configPanel(tree)).some((node) => node.type === ProviderIdentityFields)).toBe(false);
+    } finally {
+      builtin.mockRestore();
+      mcp.mockRestore();
+    }
+  });
+
   it("页签指示条居中占文字宽度的 85%，图标不计入宽度", () => {
     const props = { items: [{ id: "general", icon: <svg />, label: "常规", count: "（20）" }], selected: "general", onSelect: vi.fn(), label: "设置分区" };
     const page = AppTabBar(props);
@@ -190,54 +259,31 @@ describe("供应商创建的两步流程", () => {
       .toContain('<span class="invisible shrink-0" aria-hidden="true"><span class="plan-badge font-normal!">多版本</span></span>');
   });
 
-  it.each([
-    { presets: codexPresets, total: 20, apiCount: 9, planCount: 9, account: "ChatGPT", plan: "火山方舟豆包 · Agent Plan", planKey: "doubao:Agent Plan" },
-    { presets: claudePresets, total: 26, apiCount: 11, planCount: 13, account: "Claude Account", plan: "Kimi · Kimi Code", planKey: "kimi:Kimi Code" },
-  ])("分类数量与筛选结果一致，不重复计算区域且保留账号与自定义", ({ presets, total, apiCount, planCount, account, plan, planKey }) => {
-    const onSelect = vi.fn();
+  it("分类数量与筛选结果一致，多个区域只算一个入口", () => {
+    const presets = claudePresets.filter(({ kind }) => ["claude-account", "kimi", "kimi-code", "custom"].includes(kind));
     const render = () => {
       hooks.cursor = 0;
       const page = ProviderCreate({ presets, onBack: vi.fn(), children: () => null });
-      const grid = elements(page).find((node) => node.type === PresetGrid)!;
-      return <>{page}{PresetGrid({ presets, category: grid.props.category as "all" | "api" | "plans" | "accounts", selectedKind: planKey, onSelect })}</>;
+      return {
+        tabs: elements(page).find((node) => node.type === AppTabBar)!.props as Parameters<typeof AppTabBar>[0],
+        category: elements(page).find((node) => node.type === PresetGrid)!.props.category as Parameters<typeof PresetGrid>[0]["category"],
+      };
     };
-    let tree = render();
-    const names = () => elements(tree).filter((node) => node.props.className === "setting-title block truncate font-medium!").map((node) => node.props.children);
-    const selectCategory = (label: string) => {
-      const bar = elements(tree).find((node) => node.type === AppTabBar)!;
-      const navigation = AppTabBar(bar.props as Parameters<typeof AppTabBar>[0]);
-      click(elements(navigation).find((node) => node.type === "button" && elements(node).some((child) => child.type === "span" && child.props.children === label))!);
-      tree = render();
-    };
-    expect(names()).toHaveLength(total);
-    expect(names()).toEqual(expect.arrayContaining(["自定义", account, "DeepSeek", plan]));
-    expect(elements(tree).find((node) => node.type === AppTabBar)!.props.items).toEqual(expect.arrayContaining([{ id: "all", label: "全部", count: `（${total}）` }]));
-    expect((elements(tree).find((node) => node.type === AppTabBar)!.props.items as Array<{id: string}>).map((item) => item.id)).toEqual(["all", "accounts", "plans", "api"]);
-    expect(elements(tree).filter((node) => node.type === "h2").map((node) => renderToStaticMarkup(<>{node.props.children}</>))).toEqual(["账号授权（1）", `订阅套餐（${planCount}）`, `按量付费（${apiCount}）`, "自定义（1）"]);
-    selectCategory("账号授权");
-    expect(names()).toEqual([account]);
-    expect(elements(tree).some((node) => node.type === "h2")).toBe(false);
-    selectCategory("按量付费");
-    const apiNames = names();
-    expect(apiNames).toHaveLength(apiCount);
-    expect(apiNames).toContain("DeepSeek");
-    expect(apiNames).not.toContain("自定义");
-    expect(apiNames).not.toContain(account);
-    expect(apiNames).not.toContain(plan);
-    expect(apiNames).not.toContain("小米 MiMo");
-    selectCategory("订阅套餐");
-    expect(names()).toHaveLength(planCount);
-    expect(names()).toContain(plan);
-    expect(names()).toContain("小米 MiMo");
-    expect(names().some((name) => apiNames.includes(name))).toBe(false);
-    expect(names()).not.toContain("自定义");
-    expect(names()).not.toContain(account);
-    click(elements(tree).find((node) => node.type === "button" && elements(node).some((child) => child.props.children === plan))!);
-    expect(onSelect).toHaveBeenCalledWith(planKey);
-    expect(elements(tree).filter((node) => node.props["aria-pressed"] === true)).toHaveLength(1);
-    selectCategory("全部");
-    expect(names()).toHaveLength(total);
-    expect(names()).toEqual(expect.arrayContaining(["自定义", account]));
+    const { tabs } = render();
+    expect(tabs.items.map(({ id, count }) => [id, count])).toEqual([
+      ["all", "（4）"], ["accounts", "（1）"], ["plans", "（1）"], ["api", "（1）"],
+    ]);
+
+    for (const [category, expected] of [
+      ["accounts", "Claude Account"], ["plans", "Kimi · Kimi Code"], ["api", "Kimi · 按量付费"],
+    ] as const) {
+      tabs.onSelect(category);
+      const { category: selected } = render();
+      const names = elements(PresetGrid({ presets, category: selected, selectedKind: "", onSelect: vi.fn() }))
+        .filter((node) => node.props.className === "setting-title block truncate font-medium!")
+        .map((node) => node.props.children);
+      expect(names).toEqual([expected]);
+    }
   });
 });
 

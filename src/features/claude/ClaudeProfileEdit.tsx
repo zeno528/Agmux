@@ -7,7 +7,7 @@ import { AppSelect } from "../../components/AppSelect";
 import { AppSwitch } from "../../components/AppSwitch";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import EndpointField from "../../components/EndpointField";
-import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
+import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "../../components/ProviderSetup";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "../../components/ProviderFields";
 import {
   claudeBalanceQueryKinds, claudePresets, claudePresetByKind,
@@ -89,6 +89,7 @@ function ClaudeProfileEditor({
   const [savingBalance, setSavingBalance] = useState(false);
   const [saving, setSaving] = useState(false);
   // 图标编辑：复用 Codex 的铅笔角标 + ProfileIconEdit 选择页，立即落库（create 态只记本地）
+  const [configView, setConfigView] = useState(false);
   const [pickingIcon, setPickingIcon] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
   const [modelMappings, setModelMappings] = useState<ClaudeModelMappings>(() => readModelMappings(initialEnvText));
@@ -374,8 +375,9 @@ function ClaudeProfileEditor({
           <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <span className="apple-title">{create ? tProfiles("toolbar.addProvider") : tProfiles("edit.editTitle")}</span>
         </button>
+        <ProviderEditorViewSwitch config={configView} disabled={saving} onChange={setConfigView} />
       </div>
-      <div className="apple-edit-content">
+      <div className={`apple-edit-content ${configView ? "hidden!" : ""}`} inert={configView}>
         <div className="apple-edit-surface">
           {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
             disabled={saving || fillingTemplate} onChangeProvider={onChangeProvider} onSelect={selectConnection} /> : null}
@@ -451,6 +453,10 @@ function ClaudeProfileEditor({
               }}
             />
           </div>
+        </div>
+      </div>
+      <div className={`apple-edit-content provider-config-view ${configView ? "" : "hidden!"}`} inert={!configView}>
+        <div className="apple-edit-surface">
           <div className="apple-panel-section flex flex-col">
             <div className="apple-editor-toolbar">
               <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
@@ -576,7 +582,7 @@ function ClaudeProfileEditor({
       </div>
       <div className="apple-edit-toolbar apple-edit-toolbar--footer">
         {editorDiagnostics.count > 0 ? (
-          <button type="button" className="chip-danger mr-auto flex min-w-0 items-center gap-1.5 rounded-lg border border-[var(--danger)]/20 bg-(--danger)/10 px-2.5 py-1 text-xs" aria-live="polite" onClick={() => editorRef.current?.focusFirstDiagnostic()}>
+          <button type="button" className="chip-danger mr-auto flex min-w-0 items-center gap-1.5 rounded-lg border border-[var(--danger)]/20 bg-(--danger)/10 px-2.5 py-1 text-xs" aria-live="polite" onClick={() => { setConfigView(true); requestAnimationFrame(() => editorRef.current?.focusFirstDiagnostic()); }}>
             <span className="h-1.5 w-1.5 rounded-full bg-(--danger)" />
             {tProfiles("edit.diagnosticsErrors", { count: editorDiagnostics.count })}
             {editorDiagnostics.firstLine !== null ? tProfiles("edit.diagnosticsLine", { line: editorDiagnostics.firstLine }) : ""}

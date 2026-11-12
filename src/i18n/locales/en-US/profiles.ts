@@ -124,6 +124,9 @@ export default {
     desktopOnly: "Launching a terminal needs the desktop app; the browser preview can't do it",
   },
   edit: {
+    editorView: "Editor view",
+    formView: "Form",
+    configView: "Config",
     back: "Back",
     editTitle: "Edit provider",
     selectProvider: "Select a provider",

@@ -124,6 +124,9 @@ export default {
     desktopOnly: "启动终端需要桌面版，浏览器预览不支持",
   },
   edit: {
+    editorView: "编辑视图",
+    formView: "表单",
+    configView: "配置",
     back: "返回",
     editTitle: "编辑供应商",
     selectProvider: "选择供应商",

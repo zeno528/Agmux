@@ -424,42 +424,27 @@ impl ClientSync for ClaudeDesktopSyncBody {
         trigger: &SyncTrigger,
         _material: SyncMaterial<'_>,
     ) -> AppResult<SyncOutcome> {
-        match trigger {
-            SyncTrigger::BeforeLiveOverwrite { target_id, .. } => {
-                let Some(active) = ctx.database.active_claude_desktop_profile()? else {
-                    return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
-                };
-                if active == *target_id {
-                    return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
-                }
-                ctx.sync_active_claude_desktop()
-            }
+        let active = ctx.database.active_claude_desktop_profile()?;
+        let Some(active) = active else {
+            return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
+        };
+        let should_sync = match trigger {
+            SyncTrigger::BeforeLiveOverwrite { target_id, .. } => active != *target_id,
             SyncTrigger::BeforeProfileRead { target_id, .. }
-            | SyncTrigger::BeforeProfileClone { target_id, .. } => {
-                if ctx.database.active_claude_desktop_profile()?.as_deref()
-                    != Some(target_id.as_str())
-                {
-                    return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
-                }
-                ctx.sync_active_claude_desktop()
+            | SyncTrigger::BeforeProfileClone { target_id, .. } => active == *target_id,
+            _ => true,
+        };
+        if !should_sync {
+            return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
+        }
+        match ctx.sync_active_claude_desktop() {
+            Err(error) if matches!(trigger, SyncTrigger::BeforeProcessStart { .. }) => {
+                tauri_plugin_log::log::warn!(
+                    "[sync.claude-desktop] trigger=before_process_start outcome=failure failure_kind=internal error={error:?} msg=\"拉起前回写失败，不拦重启\""
+                );
+                Ok(SyncOutcome::bare(SyncKind::TargetMismatch))
             }
-            SyncTrigger::StateRefresh | SyncTrigger::AfterCapture { .. } => {
-                if ctx.database.active_claude_desktop_profile()?.is_none() {
-                    return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
-                }
-                ctx.sync_active_claude_desktop()
-            }
-            // 重启前：回写失败只记日志不拦——桌面端配置坏了自己会报错误框，
-            // 拦下重启反而让"修完配置一键重启"这条自愈路径走不通。
-            SyncTrigger::BeforeProcessStart { .. } => match ctx.sync_active_claude_desktop() {
-                Ok(outcome) => Ok(outcome),
-                Err(error) => {
-                    tauri_plugin_log::log::warn!(
-                        "[sync.claude-desktop] trigger=before_process_start outcome=failure failure_kind=internal error={error:?} msg=\"拉起前回写失败，不拦重启\""
-                    );
-                    Ok(SyncOutcome::bare(SyncKind::TargetMismatch))
-                }
-            },
+            result => result,
         }
     }
 }

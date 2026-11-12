@@ -133,6 +133,19 @@ describe("ProfileCard 官网入口", () => {
     expect(html).not.toContain('aria-label="terminal.open"');
   });
 
+  it("激活供应商的草稿或模式变更后可重新使用，同时保留删除激活项的门控", () => {
+    const i18n = createInstance();
+    void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
+    const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
+      active: true, reapply: true, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test",
+    })));
+    const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(button).toContain('aria-label="actions.switch"');
+    expect(button).toContain('aria-pressed="false"');
+    expect(button).not.toContain('disabled=""');
+    expect(source).toContain('disabled={busyForDelete || active}');
+  });
+
   it("订阅与普通供应商共用同一套连通性悬停文案", () => {
     // 订阅不再单独定义一份「测试订阅认证连通性」，避免同一动作两套文案；
     // 无 provider 的官方订阅永不禁用，第三方供应商才走缺什么报什么
@@ -144,9 +157,16 @@ describe("ProfileCard 官网入口", () => {
     expect(source).not.toContain("connection.testSubscription");
   });
 
-  it("卡片操作按钮自持悬停文案，不继承卡片的「单击编辑」", () => {
-    // 图标操作按钮仍自持 title，避免继承 <article> 的 card.clickToEdit。
-    expect(source).toContain('title={active ? t("actions.inUse") : t("actions.switch")} onClick={onApply}');
+  it("卡片操作按钮的悬停和无障碍文案跟随当前操作，不继承卡片的编辑提示", () => {
+    const i18n = createInstance();
+    void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
+    const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
+      active: false, applyLabel: "Set default", busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test",
+    })));
+    const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    expect(buttons[0]).toContain('title="Set default"');
+    expect(buttons[0]).toContain('aria-label="Set default"');
+    expect(buttons[1]).toContain('title="actions.more"');
   });
 
   it("使用按钮两种状态共用固定尺寸，保留可见图标与禁用条件", () => {

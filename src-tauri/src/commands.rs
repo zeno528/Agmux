@@ -127,15 +127,24 @@ pub fn get_state(state: State<'_, AppContext>) -> AppResult<AppState> {
     state.get_state()
 }
 
-/// 前端启动里程碑上报（只写日志不落库）：与 native 埋点共用同一把进程起点尺子。
+/// 前端启动里程碑上报；窗口显示后异步恢复桌面端网关，不阻塞首帧。
 /// stage 由调用方给定（state_ready / window_shown），detail 是补充定位（如 raf 路径）。
 #[tauri::command]
 pub fn report_startup_mark(
     state: State<'_, crate::StartupClock>,
+    context: State<'_, AppContext>,
     stage: String,
     frontend_elapsed_ms: u64,
     detail: Option<String>,
 ) {
+    if stage == "window_shown" {
+        let context = context.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = context.restore_desktop_gateway() {
+                tauri_plugin_log::log::warn!("[gateway.claude-desktop.restore] outcome=failure failure_kind=internal error={error:?} msg=\"桌面端网关恢复失败\"");
+            }
+        });
+    }
     tauri_plugin_log::log::info!(
         "[app.startup] stage={stage} frontend_elapsed_ms={frontend_elapsed_ms} rust_elapsed_ms={} detail={:?} msg=\"前端启动里程碑\"",
         state.0.elapsed().as_millis(),
@@ -413,9 +422,6 @@ pub fn claude_desktop_save_profile(
     icon: Option<String>,
     show_balance: Option<bool>,
     description: Option<String>,
-    mode: Option<String>,
-    upstream_base_url: Option<String>,
-    upstream_api_key: Option<String>,
     fetched_models: Option<Vec<String>>,
     state: State<'_, AppContext>,
 ) -> AppResult<ClaudeDesktopProfileDetail> {
@@ -432,9 +438,6 @@ pub fn claude_desktop_save_profile(
             icon,
             show_balance: show_balance.unwrap_or(false),
             description,
-            mode,
-            upstream_base_url,
-            upstream_api_key,
             fetched_models,
         },
     )
@@ -454,12 +457,27 @@ pub fn claude_desktop_delete_profile(id: String, state: State<'_, AppContext>) -
 }
 
 #[tauri::command]
-pub fn claude_desktop_apply_profile(
+pub fn claude_desktop_set_members(
+    members: Vec<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_desktop_set_members(members)
+}
+
+#[tauri::command]
+pub async fn claude_desktop_apply_profile(
     id: String,
     overwrite: Option<bool>,
+    mode: Option<crate::models::ClaudeDesktopMode>,
+    members: Option<Vec<String>>,
     state: State<'_, AppContext>,
 ) -> Result<(), ProfileApplyError> {
-    state.claude_desktop_apply_confirmed(&id, overwrite.unwrap_or(false))
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.claude_desktop_apply_confirmed(&id, overwrite.unwrap_or(false), mode, members)
+    })
+    .await
+    .map_err(|error| app_err!("桌面端应用配置任务失败: {error}"))?
 }
 
 #[tauri::command]
@@ -487,10 +505,20 @@ pub async fn claude_desktop_test_profile(
 }
 
 #[tauri::command]
+pub async fn claude_desktop_get_diagnostics(
+    state: State<'_, AppContext>,
+) -> AppResult<crate::models::ClaudeDesktopDiagnostics> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.claude_desktop_diagnostics())
+        .await
+        .map_err(|error| app_err!("接入诊断任务失败: {error}"))?
+}
+
+#[tauri::command]
 pub fn claude_desktop_get_status(
     state: State<'_, AppContext>,
 ) -> AppResult<ClaudeDesktopAppStatus> {
-    Ok(state.claude_desktop_status())
+    state.claude_desktop_status()
 }
 
 #[tauri::command]

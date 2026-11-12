@@ -67,9 +67,9 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export class ProfileOverwriteRequired extends Error {}
 
-async function applyProfile(command: string, id: string, overwrite: boolean) {
+async function applyProfile(command: string, id: string, overwrite: boolean, args?: Record<string, unknown>) {
   try {
-    await call<void>(command, { id, overwrite });
+    await call<void>(command, { id, overwrite, ...args });
   } catch (error) {
     if (error && typeof error === "object" && "overwrite_required" in error && error.overwrite_required === true && "message" in error && typeof error.message === "string") {
       throw new ProfileOverwriteRequired(error.message);
@@ -89,7 +89,7 @@ export const api = {
   codexInstallCli: () => call<CliStatus>("codex_install_cli"),
   codexUpdateCli: () => call<CliStatus>("codex_update_cli"),
   getState: () => call<AppState>("get_state"),
-  // 启动里程碑：只写日志（Rust 侧折算到进程起点），无返回值语义
+  // 启动里程碑：Rust 折算到进程起点，出窗后在后台恢复桌面端网关
   reportStartupMark: (stage: string, frontendElapsedMs: number, detail?: string) =>
     call<void>("report_startup_mark", { stage, frontendElapsedMs, detail }),
   getCodexStatus: () => call<CodexAppStatus>("get_codex_status"),
@@ -201,13 +201,16 @@ export const api = {
   claudeDesktopListProfiles: () => call<ClaudeDesktopProfileSummary[]>("claude_desktop_list_profiles"),
   claudeDesktopGetProfile: (id: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_get_profile", { id }),
   claudeDesktopCaptureProfile: (name: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_capture_profile", { name }),
-  claudeDesktopSaveProfile: (input: { id?: string; name: string; kind?: string | null; baseUrl?: string | null; apiKey?: string | null; authScheme?: string | null; models?: ClaudeDesktopModelSlot[] | null; adminUrl?: string | null; icon?: string | null; showBalance?: boolean | null; description?: string | null; mode?: string | null; upstreamBaseUrl?: string | null; upstreamApiKey?: string | null; fetchedModels?: string[] | null }) =>
+  claudeDesktopSaveProfile: (input: { id?: string; name: string; kind?: string | null; baseUrl?: string | null; apiKey?: string | null; authScheme?: string | null; models?: ClaudeDesktopModelSlot[] | null; adminUrl?: string | null; icon?: string | null; showBalance?: boolean | null; description?: string | null; fetchedModels?: string[] | null }) =>
     call<ClaudeDesktopProfileDetail>("claude_desktop_save_profile", input),
   claudeDesktopDeleteProfile: (id: string) => call<void>("claude_desktop_delete_profile", { id }),
-  claudeDesktopApplyProfile: (id: string, overwrite = false) => applyProfile("claude_desktop_apply_profile", id, overwrite),
+  claudeDesktopSetMembers: (members: string[]) => call<void>("claude_desktop_set_members", { members }),
+  claudeDesktopApplyProfile: (id: string, overwrite = false, mode?: import("../types").ClaudeDesktopMode, members?: string[]) =>
+    applyProfile("claude_desktop_apply_profile", id, overwrite, { mode, members }),
   claudeDesktopReorderProfiles: (ids: string[]) => call<void>("claude_desktop_reorder_profiles", { ids }),
   claudeDesktopDuplicateProfile: (id: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_duplicate_profile", { id }),
   claudeDesktopTestProfile: (id: string) => call<CodexProfileConnectionResult>("claude_desktop_test_profile", { id }),
+  claudeDesktopGetDiagnostics: () => call<import("../types").ClaudeDesktopDiagnostics>("claude_desktop_get_diagnostics"),
   claudeDesktopGetStatus: () => call<ClaudeDesktopAppStatus>("claude_desktop_get_status"),
   claudeDesktopRestoreOfficial: () => call<void>("claude_desktop_restore_official"),
   claudeDesktopRestart: () => call<void>("claude_desktop_restart"),

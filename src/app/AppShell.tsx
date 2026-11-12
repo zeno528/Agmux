@@ -463,7 +463,7 @@ export default function AppShell() {
       plugins: <PluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpochOf("plugins")} />,
       skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
       claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude")} />,
-      claudeDesktopProfiles: <ClaudeDesktopProfilesView activeId={state.active_claude_desktop_profile_id} status={state.claude_desktop} onChanged={refresh} popEpoch={popEpochOf("claudeDesktopProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude-desktop")} />,
+      claudeDesktopProfiles: <ClaudeDesktopProfilesView activeId={state.active_claude_desktop_profile_id} status={state.claude_desktop} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeDesktopProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude-desktop")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
       agentTools: <AgentToolsView active={view === "agentTools"} />,

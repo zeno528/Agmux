@@ -12,7 +12,7 @@ import { codexEffortLevels } from "../../components/ReasoningEffortSlider";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import { DiagnosticsChip } from "../../components/DiagnosticsChip";
 import EndpointField from "../../components/EndpointField";
-import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
+import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "../../components/ProviderSetup";
 import { ProviderIdentityFields, ProviderSecretField } from "../../components/ProviderFields";
 import {
   balanceQueryProviders,
@@ -102,6 +102,7 @@ function CodexProfileEditor({
   const [boundAccountId, setBoundAccountId] = useState<string | null>(() => initialDetail?.account_id ?? null);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
   const [presetKind, setPresetKind] = useState(initialPreset?.kind ?? "");
+  const [configView, setConfigView] = useState(false);
   const [activeTab, setActiveTab] = useState<EditTab>("config");
   const [configText, setConfigText] = useState(() => initialConfigText);
   const [catalogText, setCatalogText] = useState(() => initialDetail?.raw_catalog ?? initialDetail?.catalog_content ?? "");
@@ -621,8 +622,9 @@ function CodexProfileEditor({
     }}>
       <div className="apple-page-bar apple-page-bar--roomy apple-edit-toolbar apple-edit-toolbar--header">
         <button type="button" className="apple-page-header apple-back-button" aria-label={t("edit.back")} onClick={create ? onChangeProvider : onBack}><ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" /><span className="apple-title">{create ? t("toolbar.addProvider") : t("edit.editTitle")}</span></button>
+        <ProviderEditorViewSwitch config={configView} disabled={saving || (create ? !presetFragment : !detail)} onChange={setConfigView} />
       </div>
-      <div className="apple-edit-content">
+      <div className={`apple-edit-content ${configView ? "hidden!" : ""}`} inert={configView}>
         {loadError ? <p className="muted mt-4 text-sm">{loadError}{create ? <button type="button" className="apple-inline-btn ml-2" onClick={() => void selectPreset()}>{t("edit.retryTemplate")}</button> : null}</p> : null}
         <div className="apple-edit-surface">
           {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
@@ -710,6 +712,10 @@ function CodexProfileEditor({
             {(!create || Boolean(selectedPreset?.admin_url)) ? <div className="mt-4"><div className="mb-1.5 flex items-center gap-2"><span className="field-label">{t("edit.adminUrlLabel")}</span><button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-5 shrink-0" disabled={!adminUrl.trim()} aria-label={t("card.openWebsite")} onClick={() => void api.openUrl(adminUrl.trim()).catch((error) => feedback.error(String(error)))}><ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden="true" />{t("card.openWebsite")}</button></div><input className="app-input" placeholder={t("edit.adminUrlPlaceholder")} value={adminUrl} onChange={(event) => setAdminUrl(event.target.value)} /></div> : null}
               {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{t("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{t("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={t("edit.balanceUsage")} onCheckedChange={(value) => void toggleBalance(value)} /></div> : null}
           </fieldset>
+        </div>
+      </div>
+      <div className={`apple-edit-content provider-config-view ${configView ? "" : "hidden!"}`} inert={!configView}>
+        <div className="apple-edit-surface">
           {create && !presetFragment ? <div className="apple-panel-section muted flex items-center gap-2" role="status">
             {!loadError ? <><LoadingSpinner />{t("loading", { ns: "common" })}</> : null}
           </div> : <div className="apple-panel-section flex flex-col">
@@ -740,7 +746,7 @@ function CodexProfileEditor({
           </div>}
         </div>
       </div>
-      <div className="apple-edit-toolbar apple-edit-toolbar--footer"><DiagnosticsChip diagnostics={editorDiagnostics} onFocusFirst={() => editorRef.current?.focusFirstDiagnostic()} /><button type="button" className="apple-action-button" onClick={onBack}>{t("dialog.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={saving || !canSave} onClick={() => void save()}><Save className="h-4 w-4" strokeWidth={2} />{saving ? t("edit.saving") : t("dialog.save")}</button></div>
+      <div className="apple-edit-toolbar apple-edit-toolbar--footer"><DiagnosticsChip diagnostics={editorDiagnostics} onFocusFirst={() => { setConfigView(true); requestAnimationFrame(() => editorRef.current?.focusFirstDiagnostic()); }} /><button type="button" className="apple-action-button" onClick={onBack}>{t("dialog.cancel")}</button><button type="button" className="apple-action-button app-button--primary" disabled={saving || !canSave} onClick={() => void save()}><Save className="h-4 w-4" strokeWidth={2} />{saving ? t("edit.saving") : t("dialog.save")}</button></div>
     </section>
   );
 }

@@ -98,23 +98,11 @@ export const codexCustomCatalogTemplate = `{
   ]
 }`;
 
-/** Claude Desktop（3P 第三方推理）预设：模型名必须是 Anthropic 目录真实 claude-* 名
- *  （桌面端强校验并原样发给上游），labelOverride 是菜单显示名；只给服务端认 claude
- *  名的直连供应商（DeepSeek 官方映射）；GLM/Kimi/MiniMax 需本地映射网关（Phase 2）。 */
-export interface DesktopPreset {
-  base_url: string;
-  admin_url: string | null;
-  /** 三档默认映射；name 会被原样发给上游（如 DeepSeek 按前缀映射到自家模型）。 */
-  default_models?: readonly { slot: "sonnet" | "opus" | "haiku" | "fable"; name: string; labelOverride?: string }[];
-}
-
 // 共享身份信息；只声明实际支持的客户端，每边独立填写地址、模型和区域端点。
 // 中文展示名继续用 getter，避免语言切换后名称停留在模块加载时的语言。
 export interface ProviderPreset extends Pick<ClientPreset, "kind" | "group" | "name" | "icon"> {
   codex?: Omit<ClientPreset, "kind" | "group" | "name" | "icon">;
   claude?: Omit<ClientPreset, "kind" | "group" | "name" | "icon">;
-  /** 无 desktop 块 = 该供应商暂不支持桌面端直连。 */
-  desktop?: DesktopPreset;
 }
 
 export const providerPresets: ProviderPreset[] = [
@@ -153,18 +141,6 @@ export const providerPresets: ProviderPreset[] = [
       base_url: "https://api.deepseek.com/anthropic",
       admin_url: "https://platform.deepseek.com",
       model: "",
-    },
-    // DeepSeek 官方在 /anthropic 端点按前缀映射：claude-opus*→deepseek-v4-pro、
-    // claude-sonnet/haiku*→deepseek-v4-flash，专为 Claude Desktop developer 模式设计
-    desktop: {
-      base_url: "https://api.deepseek.com/anthropic",
-      admin_url: "https://platform.deepseek.com",
-      default_models: [
-        { slot: "sonnet", name: "claude-sonnet-5-5", labelOverride: "DeepSeek V4 Flash" },
-        { slot: "opus", name: "claude-opus-5-5", labelOverride: "DeepSeek V4 Pro" },
-        { slot: "haiku", name: "claude-haiku-5-5", labelOverride: "DeepSeek V4 Flash" },
-        { slot: "fable", name: "claude-fable-5-1", labelOverride: "DeepSeek V4 Pro" },
-      ],
     },
   },
   // M Plan 与按量 API 共用端点，套餐计费由订阅 Key 区分。

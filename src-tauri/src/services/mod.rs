@@ -133,9 +133,7 @@ impl AppContext {
         let balance_cache = self.load_balance_cache();
         // Claude Desktop 状态与 Codex 同一轮刷新：进程表扫描同量级，
         // deployment_mode 读一次 3P 配置文件（与 harvest 的 live 读同级）
-        // Claude Desktop 状态与 Codex 同一轮刷新：进程表扫描同量级，
-        // deployment_mode 读一次 3P 配置文件（与 harvest 的 live 读同级）
-        let claude_desktop = self.claude_desktop_status();
+        let claude_desktop = self.claude_desktop_status()?;
 
         Ok(AppState {
             sync_failures: self

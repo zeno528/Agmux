@@ -1,24 +1,64 @@
-import { Camera, Layers2, Plus, RotateCw, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Activity, Camera, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { createPortal } from "react-dom";
 import { api } from "../../api";
+import { AppTabBar } from "../../components/AppTabBar";
+import { AppTooltip } from "../../components/AppTooltip";
+import { AppSwitch } from "../../components/AppSwitch";
+import { EmptyStateCard } from "../../components/EmptyStateCard";
+import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
+import { useMenuDismiss } from "../../components/useMenuDismiss";
+import { getCachedClaudeDesktopProfiles, loadClaudeDesktopProfiles, setClaudeDesktopProfilesCache } from "../../app/managementDataCache";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import { useFeedback } from "../../app/Feedback";
-import { AppSegmentedControl } from "../../components/AppSegmentedControl";
 import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
-import { EmptyStateCard } from "../../components/EmptyStateCard";
 import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
 import { ProfileCardActions, ProfileCardContent, connectionGate } from "../profiles/ProfileCard";
 import ProfileNameDialog from "../profiles/ProfileNameDialog";
 import ClaudeDesktopProfileEdit from "./ClaudeDesktopProfileEdit";
-import type { ClaudeDesktopAppStatus, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary, SyncFailure } from "../../types";
+import ClaudeDesktopDiagnostics from "./ClaudeDesktopDiagnostics";
+import type { ClaudeDesktopAppStatus, ClaudeDesktopMode, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary, ProfileBalanceInfo, SyncFailure } from "../../types";
 import { applyProfileWithConfirmation } from "../profiles/applyProfile";
 import { useProfileBalance } from "../profiles/useProfileBalance";
 import { claudeBalanceQueryKinds } from "../../presets";
+
+function DesktopActionsMenu({ status, busy, restarting, onCapture, onRestart, onRestore, onDiagnostics }: {
+  status: ClaudeDesktopAppStatus;
+  busy: boolean;
+  restarting: boolean;
+  onCapture: () => void;
+  onDiagnostics: () => void;
+  onRestart: () => void;
+  onRestore: () => void;
+}) {
+  const { t } = useTranslation("claudeDesktop");
+  const { t: tProfiles } = useTranslation("profiles");
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const position = useFixedMenuPosition(open, trigger.current, menu, "end");
+  useMenuDismiss(open, trigger, menu, setOpen);
+  const actions = [
+    { label: t("diagnostics.title"), icon: Activity, disabled: false, run: onDiagnostics },
+    { label: tProfiles("toolbar.capture"), icon: Camera, disabled: status.deployment_mode !== "3p", run: onCapture },
+    { label: t("status.restartButton"), icon: RotateCw, disabled: !status.installed || restarting, run: onRestart },
+    { label: t("status.restoreOfficial"), icon: Undo2, disabled: status.deployment_mode !== "3p", run: onRestore },
+  ];
+  return <>
+    <button ref={trigger} type="button" className="apple-action-button" aria-haspopup="menu" aria-expanded={open} disabled={busy || restarting} onClick={() => setOpen((value) => !value)}>
+      {t("status.more")}<ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
+    </button>
+    {open ? createPortal(<div ref={menu} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("status.more")} style={position}>
+      {actions.map(({ label, icon: Icon, disabled, run }) => <button key={label} type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || disabled} onClick={() => { setOpen(false); run(); }}>
+        <span className="flex items-center gap-2"><Icon size={16} strokeWidth={2} aria-hidden="true" />{label}</span>
+      </button>)}
+    </div>, document.body) : null}
+  </>;
+}
 
 function cardProfile(profile: ClaudeDesktopProfileSummary) {
   return {
@@ -34,13 +74,20 @@ function cardProfile(profile: ClaudeDesktopProfileSummary) {
   };
 }
 
-function ClaudeDesktopProfileCard({ profile, active, busy, testing, onEdit, onApply, onDuplicate, onTest, onRemove }: {
+function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, activationEpoch, coldStart, balanceCache, onEdit, onApply, onDuplicate, onTest, onRemove, member, onMember, applyLabel }: {
+  member?: boolean;
+  applyLabel?: string;
+  onMember?: () => void;
   profile: ClaudeDesktopProfileSummary;
   active: boolean;
+  reapply: boolean;
+  activationEpoch: number;
+  coldStart: boolean;
+  balanceCache: Record<string, ProfileBalanceInfo>;
+  onApply: () => void;
   busy: boolean;
   testing: boolean;
   onEdit: () => void;
-  onApply: () => void;
   onDuplicate: () => void;
   onTest: () => void;
   onRemove: () => void;
@@ -48,6 +95,7 @@ function ClaudeDesktopProfileCard({ profile, active, busy, testing, onEdit, onAp
   const feedback = useFeedback();
   const { t: tProfiles } = useTranslation("profiles");
   const { t: tClaude } = useTranslation("claude");
+  const { t: tDesktop } = useTranslation("claudeDesktop");
   const supportsBalance = claudeBalanceQueryKinds.has(profile.kind ?? "");
   const balance = useProfileBalance({
     profileId: profile.id,
@@ -55,8 +103,9 @@ function ClaudeDesktopProfileCard({ profile, active, busy, testing, onEdit, onAp
     supportsBalance,
     hasCredential: profile.has_key,
     active,
-    activationEpoch: 0,
-    coldStart: false,
+    activationEpoch,
+    coldStart,
+    cachedBalance: balanceCache[profile.id],
     source: "claude-desktop",
   });
   const connection = connectionGate(Boolean(profile.base_url), profile.has_key, {
@@ -67,32 +116,54 @@ function ClaudeDesktopProfileCard({ profile, active, busy, testing, onEdit, onAp
   return (
     <SortableCard id={profile.id} active={active} onClick={onEdit} title={tProfiles("card.clickToEdit")} handleTitle={tProfiles("card.dragToReorder")}>
       <ProfileCardContent profile={cardProfile(profile)} balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} />
-      <ProfileCardActions active={active} busy={busy} testing={testing} connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
+      <ProfileCardActions active={active} reapply={reapply} applyLabel={applyLabel} busy={busy} testing={testing}
+        modelControl={onMember ? <div className="flex items-center gap-2"><span className="setting-description">{tDesktop("modes.include")}</span><AppSwitch checked={Boolean(member)} disabled={busy} onCheckedChange={onMember} label={`${tDesktop("modes.include")} ${profile.name}`} /></div> : undefined}
+        connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
     </SortableCard>
   );
 }
 
-// 页面数据只在进页时加载（AppShell 按 view 挂载本组件），不入启动关键路径。
-export default function ClaudeDesktopProfilesView({ activeId, status, onChanged, popEpoch, syncFailure }: { activeId: string | null; status: ClaudeDesktopAppStatus; onChanged: () => void; popEpoch: number; syncFailure: SyncFailure | undefined }) {
+interface ClaudeDesktopProfilesViewProps {
+  activeId: string | null;
+  status: ClaudeDesktopAppStatus;
+  onChanged: () => Promise<void>;
+  activationEpoch: number;
+  coldStart: boolean;
+  balanceCache: Record<string, ProfileBalanceInfo>;
+  popEpoch: number;
+  syncFailure: SyncFailure | undefined;
+}
+
+export function selectedAggregateMembers(status: Pick<ClaudeDesktopAppStatus, "members" | "selected_members">, activeId: string | null): string[] {
+  return status.selected_members ?? [...new Set([...(activeId ? [activeId] : []), ...status.members])];
+}
+
+export default function ClaudeDesktopProfilesView({ activeId, status, onChanged, activationEpoch, coldStart, balanceCache, popEpoch, syncFailure }: ClaudeDesktopProfilesViewProps) {
   const feedback = useFeedback();
   const { t } = useTranslation("claudeDesktop");
   const { t: tProfiles } = useTranslation("profiles");
   const { t: tClaude } = useTranslation("claude");
-  const [items, setItems] = useState<ClaudeDesktopProfileSummary[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [mode, setMode] = useState<ClaudeDesktopMode>(status.mode);
+  const [members, setMembers] = useState<string[]>(() => selectedAggregateMembers(status, activeId));
+  const [editedActiveId, setEditedActiveId] = useState<string | null>(null);
+  useEffect(() => { setMode(status.mode); }, [status.mode]);
+  useEffect(() => { setMembers(selectedAggregateMembers(status, activeId)); }, [activeId, status.members.join("\0"), status.selected_members?.join("\0")]);
+  const cached = getCachedClaudeDesktopProfiles();
+  const [items, setItems] = useState<ClaudeDesktopProfileSummary[]>(cached ?? []);
+  const [loaded, setLoaded] = useState(cached !== null);
   const [busy, setBusy] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  // 只有捕获弹窗需要取名；卡片改名走编辑页（通用 rename 命令只覆盖 codex/claude 两表）
   const [modal, setModal] = useState<"capture" | null>(null);
   const [profileName, setProfileName] = useState("");
   const [editingProfile, setEditingProfile] = useState<ClaudeDesktopProfileSummary | null>(null);
   const [editDetail, setEditDetail] = useState<ClaudeDesktopProfileDetail | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      setItems(await api.claudeDesktopListProfiles());
+      setItems(await loadClaudeDesktopProfiles(true));
     } catch (error) {
       feedback.error(String(error));
     } finally {
@@ -100,7 +171,7 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); }, [activationEpoch]);
 
   // 侧栏重复点击本视图 = 弹回一级（对齐 ClaudeProfilesView）。
   useEffect(() => {
@@ -108,11 +179,13 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     setEditingProfile(null);
     setEditDetail(null);
     setCreatingProfile(false);
+    setDiagnosticsOpen(false);
   }, [popEpoch]);
 
   const persistOrder = async (previous: ClaudeDesktopProfileSummary[], next: ClaudeDesktopProfileSummary[]) => {
     try {
       await api.claudeDesktopReorderProfiles(next.map((item) => item.id));
+      setClaudeDesktopProfilesCache(next);
     } catch (error) {
       setItems(previous);
       feedback.error(String(error));
@@ -146,7 +219,8 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
-  const closeEdit = async () => {
+  const closeEdit = async (saved = false) => {
+    if (saved && editingProfile?.id === activeId) setEditedActiveId(activeId);
     setEditingProfile(null);
     setEditDetail(null);
     setCreatingProfile(false);
@@ -188,33 +262,60 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
+  if (diagnosticsOpen) return <ClaudeDesktopDiagnostics onBack={() => setDiagnosticsOpen(false)} />;
+
   if (creatingProfile || editingProfile) {
     return (
       <ClaudeDesktopProfileEdit
         profile={editingProfile}
         create={creatingProfile}
         initialDetail={editDetail}
-        onBack={() => void closeEdit()}
-        onChanged={() => {
-          void refresh();
-          onChanged();
-        }}
+        onBack={(saved) => void closeEdit(saved)}
       />
     );
   }
 
   const applyDesktopProfile = async (profile: ClaudeDesktopProfileSummary) => {
     if (busy) return;
+    let targetMode = mode;
+    const nextMembers = targetMode === "aggregate"
+      ? [...new Set([profile.id, ...members.filter((id) => items.some((item) => item.id === id))])]
+      : status.members;
     setBusy(true);
     try {
+      if (targetMode === "direct" && profile.requires_routing) {
+        if (!await feedback.confirm({ title: t("modes.mappingTitle"), description: t("modes.mappingDescription"), confirmText: t("modes.useRouting") })) return;
+        targetMode = "route";
+      }
       const applied = await applyProfileWithConfirmation(
-        (overwrite) => api.claudeDesktopApplyProfile(profile.id, overwrite),
+        (overwrite) => api.claudeDesktopApplyProfile(profile.id, overwrite, targetMode, nextMembers),
         () => feedback.confirm({ title: t("writeback.overwriteTitle", { ns: "common" }), description: t("writeback.overwriteDescription", { ns: "common", file: "claude_desktop_config.json", name: profile.name }), confirmText: t("writeback.overwriteConfirm", { ns: "common" }), destructive: true }),
       );
       if (!applied) return;
+      setEditedActiveId(null);
+      if (targetMode === "aggregate") setMembers(nextMembers);
+      setMode(targetMode);
       feedback.success(t("status.applyRestartHint"));
+      await refresh();
       onChanged();
     } catch (error) {
+      feedback.error(String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleMember = async (id: string) => {
+    if (busy || restarting) return;
+    const previous = members;
+    const next = members.includes(id) ? members.filter((member) => member !== id) : [...members, id];
+    setBusy(true);
+    setMembers(next);
+    try {
+      await api.claudeDesktopSetMembers(next.filter((member) => items.some((item) => item.id === member)));
+      await onChanged();
+    } catch (error) {
+      setMembers(previous);
       feedback.error(String(error));
     } finally {
       setBusy(false);
@@ -272,40 +373,12 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
-  // 状态与操作全部并入标题行：chip 显示安装/运行/模式（悬浮看路径），路由滑块与添加供应商同区。
-  const modeLabel = status.deployment_mode === "3p" ? t("status.mode3p") : status.deployment_mode === "1p" ? t("status.mode1p") : t("status.modeUnknown");
-  const activeProfile = items.find((item) => item.id === activeId) ?? null;
-
-  // 头部直连/路由切换 = 改当前激活 profile 的模式并重新应用（写盘后仍需完全重启桌面端）
-  const switchMode = async (target: "direct" | "route") => {
-    const current = items.find((item) => item.id === activeId);
-    if (busy || !current || (current.mode ?? "direct") === target) return;
-    setBusy(true);
-    try {
-      const detail = await api.claudeDesktopGetProfile(current.id);
-      await api.claudeDesktopSaveProfile({
-        id: detail.id, name: detail.name, kind: detail.kind,
-        baseUrl: detail.base_url, apiKey: detail.api_key, authScheme: detail.auth_scheme,
-        models: detail.models, adminUrl: detail.admin_url, icon: detail.icon,
-        showBalance: detail.show_balance, description: detail.description,
-        mode: target, upstreamBaseUrl: detail.upstream_base_url, upstreamApiKey: detail.upstream_api_key,
-        fetchedModels: detail.fetched_models,
-      });
-      const applied = await applyProfileWithConfirmation(
-        (overwrite) => api.claudeDesktopApplyProfile(current.id, overwrite),
-        () => feedback.confirm({ title: t("writeback.overwriteTitle", { ns: "common" }), description: t("writeback.overwriteDescription", { ns: "common", file: "claude_desktop_config.json", name: current.name }), confirmText: t("writeback.overwriteConfirm", { ns: "common" }), destructive: true }),
-      );
-      if (applied) {
-        feedback.success(t("status.applyRestartHint"));
-        await refresh();
-        onChanged();
-      }
-    } catch (error) {
-      feedback.error(String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const appliedMembers = [...new Set([...(activeId ? [activeId] : []), ...status.members])];
+  const membershipChanged = members.length !== appliedMembers.length || members.some((id) => !appliedMembers.includes(id));
+  const modes = ["direct", "route", "aggregate"] as const;
+  const icons = { direct: Plug, route: Route, aggregate: Layers2 };
+  const working = busy || restarting;
+  const openCapture = () => { setProfileName(""); setModal("capture"); };
 
   return (
     <section className="apple-scroll-page mx-auto w-full max-w-none">
@@ -313,68 +386,52 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
         <div className="provider-page-brand">
           <img src="/claude.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>{t("list.title")}</span>
-          <span
-            className={`apple-chip ${status.installed ? (status.running ? "chip-success" : "") : "chip-warn"}`}
-            title={status.installed ? `${t("status.path")}: ${status.display_path}` : undefined}
-          >
-            {status.installed ? `${status.running ? t("status.running") : t("status.notRunning")} · ${modeLabel}` : t("status.notInstalled")}
+          <span className={`apple-chip ${status.installed ? (status.running ? "chip-success" : "") : "chip-warn"}`} title={status.installed ? `${t("status.path")}: ${status.display_path}` : undefined}>
+            {t(status.installed ? status.running ? "status.running" : "status.notRunning" : "status.notInstalled")}
           </span>
           <SyncFailureIndicator failure={syncFailure} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <AppSegmentedControl
-            className="h-[var(--toolbar-control-height)] shrink-0"
-            role="tablist"
-            label={t("status.modeSwitchLabel")}
-            selectedIndex={activeProfile?.mode === "route" ? 1 : 0}
-          >
-            <button type="button" role="tab" aria-selected={(activeProfile?.mode ?? "direct") === "direct"} className="apple-action-button" disabled={busy || !activeProfile} title={!activeProfile ? t("status.switchNeedsActive") : undefined} onClick={() => void switchMode("direct")}>{t("status.directMode")}</button>
-            <button type="button" role="tab" aria-selected={activeProfile?.mode === "route"} className="apple-action-button" disabled={busy || !activeProfile} title={!activeProfile ? t("status.switchNeedsActive") : undefined} onClick={() => void switchMode("route")}>{t("status.routeMode")}</button>
-          </AppSegmentedControl>
-          <button type="button" className="apple-action-button" aria-label={t("status.restartButton")} title={t("status.restartButton")} disabled={busy || restarting || !status.installed} onClick={() => void restartDesktop()}>
-            <RotateCw className="h-4 w-4" />
-          </button>
-          <button type="button" className="apple-action-button" aria-label={t("status.restoreOfficial")} title={t("status.restoreOfficial")} disabled={busy} onClick={() => void restoreOfficial()}>
-            <Undo2 className="h-4 w-4" />
-          </button>
-          <button type="button" className="apple-action-button app-button--primary disabled:!opacity-100" disabled={busy} onClick={() => { if (!busy) setCreatingProfile(true); }}>
-            <Plus className="h-4 w-4" />
-            {tProfiles("toolbar.addProvider")}
+          <DesktopActionsMenu status={status} busy={busy} restarting={restarting} onCapture={openCapture} onDiagnostics={() => setDiagnosticsOpen(true)} onRestart={() => void restartDesktop()} onRestore={() => void restoreOfficial()} />
+          <button type="button" className="apple-action-button app-button--primary disabled:!opacity-100" disabled={working} onClick={() => setCreatingProfile(true)}>
+            <Plus size={16} strokeWidth={2} aria-hidden="true" />{tProfiles("toolbar.addProvider")}
           </button>
         </div>
       </header>
+      <div className="settings-tab-bar flex items-center gap-1">
+        <AppTabBar selected={mode} onSelect={setMode} label={t("modes.label")} items={modes.map((id) => {
+          const Icon = icons[id];
+          return { id, label: t(`modes.${id}`), icon: <Icon size={16} strokeWidth={2} aria-hidden="true" />, count: activeId && status.mode === id ? <span className="apple-chip">{t("modes.active")}</span> : undefined };
+        })} />
+        <AppTooltip label={t("modes.label")}>
+          <div className="field-subtitle">{t("modes.label")}</div>
+          {modes.map((id) => <p key={id} className="muted meta-xs"><strong className="font-semibold">{t(`modes.${id}`)}</strong>{" · "}{t(`modes.${id}Hint`)}</p>)}
+        </AppTooltip>
+      </div>
       <div className="apple-edit-content">
-        {!status.installed ? (
-          <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}>
-            <p className="muted">{t("status.notInstalledHint")}</p>
-          </EmptyStateCard>
-        ) : !loaded ? null : items.length === 0 ? (
-          <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}>
+        {activeId && status.mode !== "direct" && !status.gateway_running ? <p className="setting-description mb-4" role="status">{t("modes.gatewayStopped")}</p> : null}
+        {!status.installed ? <p className="setting-description mb-4">{t("status.notInstalledHint")}</p> : null}
+        {!loaded ? <EmptyStateCard icon={<Layers2 size={18} strokeWidth={2} />} loading>{null}</EmptyStateCard> : items.length === 0 ? (
+          <EmptyStateCard icon={<Layers2 size={18} strokeWidth={2} />}>
             <p className="muted">{t("list.emptyHint")}</p>
-            <button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={() => { setProfileName(""); setModal("capture"); }}>
-              <Camera className="h-4 w-4" strokeWidth={2} />
-              {tProfiles("toolbar.capture")}
-            </button>
+            {status.deployment_mode === "3p" ? <button type="button" className="apple-action-button" disabled={working} onClick={openCapture}><Camera size={16} strokeWidth={2} aria-hidden="true" />{tProfiles("toolbar.capture")}</button> : null}
           </EmptyStateCard>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}>
             <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
               <div className="profile-list relative space-y-[var(--gap-page)]">
-                {items.map((profile) => (
-                  <ClaudeDesktopProfileCard key={profile.id} profile={profile} active={profile.id === activeId} busy={busy} testing={testingId === profile.id} onEdit={() => void openEdit(profile)} onApply={() => void applyDesktopProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />
-                ))}
+                {items.map((profile) => <ClaudeDesktopProfileCard key={profile.id} profile={profile}
+                  active={profile.id === activeId} reapply={mode !== status.mode || profile.id === editedActiveId || (mode === "aggregate" && membershipChanged) || (mode !== "direct" && !status.gateway_running)}
+                  busy={working} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache}
+                  member={members.includes(profile.id)} onMember={mode === "aggregate" ? () => void toggleMember(profile.id) : undefined}
+                  onEdit={() => void openEdit(profile)} applyLabel={mode === "aggregate" ? t(profile.id === activeId && status.mode === "aggregate" ? "modes.applyChanges" : "modes.setDefault") : undefined} onApply={() => void applyDesktopProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />)}
               </div>
             </SortableContext>
-            {createPortal(
-              <DragOverlay dropAnimation={null}>
-                {dragPreview ? <CardDragPreview card={dragPreview} /> : null}
-              </DragOverlay>,
-              document.body,
-            )}
+            {createPortal(<DragOverlay dropAnimation={null}>{dragPreview ? <CardDragPreview card={dragPreview} /> : null}</DragOverlay>, document.body)}
           </DndContext>
         )}
       </div>
-      <ProfileNameDialog mode={modal} name={profileName} busy={busy} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
+      <ProfileNameDialog mode={modal} name={profileName} busy={working} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
     </section>
   );
 }

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{app_err, AppResult};
 use crate::models::{
-    ClaudeDesktopProfileInput, ClaudeProfileInput, CodexProfileKind, CodexProfilePayload,
-    CodexProfileSummary,
+    ClaudeDesktopProfileInput, ClaudeDesktopRouting, ClaudeProfileInput, CodexProfileKind,
+    CodexProfilePayload, CodexProfileSummary,
 };
 use crate::paths::AppPaths;
 use crate::services::codex_profile_config::{parse_provider_detail, stored_provider_api_key};
@@ -192,6 +192,17 @@ fn migrations() -> Migrations<'static> {
              ALTER TABLE claude_desktop_profiles ADD COLUMN upstream_api_key TEXT;
              ALTER TABLE claude_desktop_profiles ADD COLUMN gateway_token TEXT;
              ALTER TABLE claude_desktop_profiles ADD COLUMN fetched_models TEXT",
+        ),
+        M::up(
+            "ALTER TABLE app_state ADD COLUMN claude_desktop_routing TEXT;
+             UPDATE app_state SET claude_desktop_routing='{\"mode\":\"route\"}'
+               WHERE active_claude_desktop_profile_id IN
+                 (SELECT id FROM claude_desktop_profiles WHERE mode='route');
+             UPDATE claude_desktop_profiles SET
+               base_url=COALESCE(upstream_base_url, base_url),
+               api_key=COALESCE(upstream_api_key, api_key) WHERE mode='route';
+             UPDATE claude_desktop_profiles SET mode=NULL, upstream_base_url=NULL,
+               upstream_api_key=NULL, gateway_token=NULL",
         ),
     ])
 }
@@ -1175,21 +1186,39 @@ impl Database {
             .map(Option::flatten)
     }
 
-    pub fn set_active_claude_desktop_profile(&self, id: Option<&str>) -> AppResult<()> {
-        let connection = self.lock()?;
-        connection
-            .execute(
-                "INSERT INTO app_state(singleton, active_claude_desktop_profile_id) VALUES(1, ?1)
-                 ON CONFLICT(singleton) DO UPDATE SET active_claude_desktop_profile_id=excluded.active_claude_desktop_profile_id",
-                params![id],
+    pub fn claude_desktop_routing(&self) -> AppResult<ClaudeDesktopRouting> {
+        let raw: Option<String> = self
+            .lock()?
+            .query_row(
+                "SELECT claude_desktop_routing FROM app_state WHERE singleton=1",
+                [],
+                |row| row.get(0),
             )
-            .map_err(|error| app_err!("无法保存应用状态: {error}"))?;
+            .optional()
+            .map_err(|error| app_err!("无法读取路由状态: {error}"))?
+            .flatten();
+        raw.map(|raw| serde_json::from_str(&raw).map_err(|error| app_err!("路由状态无效: {error}")))
+            .unwrap_or_else(|| Ok(ClaudeDesktopRouting::default()))
+    }
+
+    pub(crate) fn save_claude_desktop_routing(
+        &self,
+        routing: &ClaudeDesktopRouting,
+    ) -> AppResult<()> {
+        let raw = serde_json::to_string(routing)
+            .map_err(|error| app_err!("路由状态序列化失败: {error}"))?;
+        self.lock()?.execute(
+            "INSERT INTO app_state(singleton, claude_desktop_routing) VALUES(1, ?1)
+             ON CONFLICT(singleton) DO UPDATE SET claude_desktop_routing=excluded.claude_desktop_routing",
+            params![raw],
+        ).map_err(|error| app_err!("无法保存路由选择: {error}"))?;
         Ok(())
     }
 
     pub(crate) fn commit_claude_desktop_apply(
         &self,
-        id: &str,
+        id: Option<&str>,
+        routing: &ClaudeDesktopRouting,
         message: &str,
         timestamp: &str,
     ) -> AppResult<()> {
@@ -1199,16 +1228,24 @@ impl Database {
             .map_err(|error| app_err!("无法开始配置切换事务: {error}"))?;
         transaction
             .execute(
-                "INSERT INTO app_state(singleton, active_claude_desktop_profile_id) VALUES(1, ?1)
-                 ON CONFLICT(singleton) DO UPDATE SET active_claude_desktop_profile_id=excluded.active_claude_desktop_profile_id",
-                params![id],
+                "INSERT INTO app_state(singleton, active_claude_desktop_profile_id, claude_desktop_routing) VALUES(1, ?1, ?2)
+                 ON CONFLICT(singleton) DO UPDATE SET active_claude_desktop_profile_id=excluded.active_claude_desktop_profile_id, claude_desktop_routing=excluded.claude_desktop_routing",
+                params![id, serde_json::to_string(routing).map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
             )
             .map_err(|error| app_err!("无法保存应用状态: {error}"))?;
         transaction
             .execute(
                 "INSERT INTO switch_events(profile_id, action, status, message, created_at)
-             VALUES(NULL, 'apply_claude_desktop', 'success', ?1, ?2)",
-                params![message, timestamp],
+             VALUES(NULL, ?1, 'success', ?2, ?3)",
+                params![
+                    if id.is_some() {
+                        "apply_claude_desktop"
+                    } else {
+                        "restore_claude_desktop"
+                    },
+                    message,
+                    timestamp
+                ],
             )
             .map_err(|error| app_err!("无法记录操作日志: {error}"))?;
         transaction
@@ -1233,18 +1270,6 @@ impl Database {
                 .push(row.map_err(|error| app_err!("Claude Desktop 供应商配置数据无效: {error}"))?);
         }
         Ok(profiles)
-    }
-
-    /// 路由网关令牌只在首次应用时生成一次，此后终身绑定（同 config_uuid 纪律）。
-    pub fn update_claude_desktop_gateway_token(&self, id: &str, token: &str) -> AppResult<()> {
-        let connection = self.lock()?;
-        connection
-            .execute(
-                "UPDATE claude_desktop_profiles SET gateway_token = ?2 WHERE id = ?1",
-                params![id, token],
-            )
-            .map_err(|error| app_err!("无法保存路由网关令牌: {error}"))?;
-        Ok(())
     }
 
     pub fn claude_desktop_profile(&self, id: &str) -> AppResult<StoredClaudeDesktopProfile> {
@@ -1276,9 +1301,9 @@ impl Database {
         connection
             .query_row(
                 &format!(
-                    "INSERT INTO claude_desktop_profiles(id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, mode, upstream_base_url, upstream_api_key, gateway_token, fetched_models)
+                    "INSERT INTO claude_desktop_profiles(id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, fetched_models)
                      VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11,
-                            (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM claude_desktop_profiles), ?12, ?13, ?14, ?15, ?16, NULL, ?17)
+                            (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM claude_desktop_profiles), ?12, ?13, ?14)
                      RETURNING {CLAUDE_DESKTOP_PROFILE_COLUMNS}"
                 ),
                 params![
@@ -1298,9 +1323,6 @@ impl Database {
                     timestamp,
                     input.show_balance,
                     &input.description,
-                    &input.mode,
-                    &input.upstream_base_url,
-                    &input.upstream_api_key,
                     input
                         .fetched_models
                         .as_ref()
@@ -1316,7 +1338,7 @@ impl Database {
         id: &str,
         input: &ClaudeDesktopProfileInput,
         timestamp: &str,
-        before_commit: impl FnOnce(&StoredClaudeDesktopProfile) -> AppResult<()>,
+        routing: Option<&ClaudeDesktopRouting>,
     ) -> AppResult<StoredClaudeDesktopProfile> {
         let mut connection = self.lock()?;
         let transaction = connection
@@ -1326,7 +1348,7 @@ impl Database {
         let updated = transaction
             .query_row(
                 &format!(
-                    "UPDATE claude_desktop_profiles SET name=?2, kind=?3, base_url=?4, api_key=?5, auth_scheme=?6, admin_url=?7, models=?8, icon=?9, show_balance=?10, description=?11, mode=?12, upstream_base_url=?13, upstream_api_key=?14, fetched_models=?15, updated_at=?16 WHERE id=?1
+                    "UPDATE claude_desktop_profiles SET name=?2, kind=?3, base_url=?4, api_key=?5, auth_scheme=?6, admin_url=?7, models=?8, icon=?9, show_balance=?10, description=?11, fetched_models=?12, updated_at=?13 WHERE id=?1
                      RETURNING {CLAUDE_DESKTOP_PROFILE_COLUMNS}"
                 ),
                 params![
@@ -1344,9 +1366,6 @@ impl Database {
                     &input.icon,
                     input.show_balance,
                     &input.description,
-                    &input.mode,
-                    &input.upstream_base_url,
-                    &input.upstream_api_key,
                     input
                         .fetched_models
                         .as_ref()
@@ -1358,7 +1377,15 @@ impl Database {
             .optional()
             .map_err(|error| app_err!("无法更新 Claude Desktop 供应商配置: {error}"))?
             .ok_or_else(|| app_err!("Claude Desktop 供应商配置不存在"))?;
-        before_commit(&updated)?;
+        if let Some(routing) = routing {
+            transaction
+                .execute(
+                    "UPDATE app_state SET claude_desktop_routing=?1 WHERE singleton=1",
+                    params![serde_json::to_string(routing)
+                        .map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
+                )
+                .map_err(|error| app_err!("无法保存路由状态: {error}"))?;
+        }
         transaction
             .commit()
             .map_err(|error| app_err!("无法提交配置更新事务: {error}"))?;
@@ -1381,6 +1408,30 @@ impl Database {
         }
         transaction.execute("UPDATE app_state SET active_claude_desktop_profile_id=NULL WHERE active_claude_desktop_profile_id=?1", params![id])
             .map_err(|error| app_err!("无法清除激活配置: {error}"))?;
+        let routing: Option<String> = transaction
+            .query_row(
+                "SELECT claude_desktop_routing FROM app_state WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| app_err!("无法读取路由状态: {error}"))?
+            .flatten();
+        if let Some(raw) = routing {
+            let mut routing: ClaudeDesktopRouting =
+                serde_json::from_str(&raw).map_err(|error| app_err!("路由状态无效: {error}"))?;
+            routing.members.retain(|member| member != id);
+            if let Some(members) = &mut routing.selected_members {
+                members.retain(|member| member != id);
+            }
+            transaction
+                .execute(
+                    "UPDATE app_state SET claude_desktop_routing=?1 WHERE singleton=1",
+                    params![serde_json::to_string(&routing)
+                        .map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
+                )
+                .map_err(|error| app_err!("无法清理聚合选择: {error}"))?;
+        }
         transaction
             .commit()
             .map_err(|error| app_err!("无法提交配置删除事务: {error}"))
@@ -1845,18 +1896,12 @@ pub struct StoredClaudeDesktopProfile {
     /// 卡片余额显示开关。
     pub show_balance: bool,
     pub description: Option<String>,
-    /// "direct" | "route"（None 视为 direct）。
-    pub mode: Option<String>,
-    pub upstream_base_url: Option<String>,
-    pub upstream_api_key: Option<String>,
-    /// 桌面端 profile 里的本地网关令牌，首次应用时生成、终身绑定。
-    pub gateway_token: Option<String>,
     /// 已获取的模型列表缓存（JSON 数组文本）。
     pub fetched_models: Option<String>,
 }
 
 const CLAUDE_DESKTOP_PROFILE_COLUMNS: &str =
-    "id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, mode, upstream_base_url, upstream_api_key, gateway_token, fetched_models";
+    "id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, fetched_models";
 
 fn claude_desktop_profile_from_row(
     row: &rusqlite::Row,
@@ -1879,11 +1924,7 @@ fn claude_desktop_profile_from_row(
         sort_order: row.get(12)?,
         show_balance: row.get(13)?,
         description: row.get(14)?,
-        mode: row.get(15)?,
-        upstream_base_url: row.get(16)?,
-        upstream_api_key: row.get(17)?,
-        gateway_token: row.get(18)?,
-        fetched_models: row.get(19)?,
+        fetched_models: row.get(15)?,
     })
 }
 
@@ -2042,6 +2083,29 @@ pub fn codex_profile_summary(profile: &StoredCodexProfile) -> CodexProfileSummar
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_legacy_route_migration_preserves_credentials_and_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(dir.path()).unwrap();
+        paths.ensure().unwrap();
+        {
+            let mut connection = Connection::open(&paths.database).unwrap();
+            migrations().to_version(&mut connection, 26).unwrap();
+            connection.execute_batch("INSERT INTO claude_desktop_profiles(id,name,config_uuid,created_at,updated_at,mode,upstream_base_url,upstream_api_key,models)
+                VALUES('legacy','Legacy','fixture','1','1','route','https://fixture.example','upstream-secret','[{\"slot\":\"sonnet\",\"name\":\"claude-sonnet-5\",\"upstream_model\":\"glm-fixture\"}]');
+                INSERT INTO app_state(singleton,active_claude_desktop_profile_id) VALUES(1,'legacy')").unwrap();
+        }
+        let db = Database::open(&paths).unwrap();
+        let profile = db.claude_desktop_profile("legacy").unwrap();
+        assert_eq!(profile.api_key.as_deref(), Some("upstream-secret"));
+        assert_eq!(profile.base_url.as_deref(), Some("https://fixture.example"));
+        assert!(profile.models.unwrap().contains("glm-fixture"));
+        assert_eq!(
+            db.claude_desktop_routing().unwrap().mode,
+            crate::models::ClaudeDesktopMode::Route
+        );
+    }
 
     #[test]
     fn account_models_preserve_valid_cache_and_survive_backup_and_legacy_restore() {
@@ -2252,7 +2316,7 @@ mod tests {
             connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            26
+            27
         );
     }
 
@@ -2389,7 +2453,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
         let show_balance: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('claude_profiles') WHERE name = 'show_balance'",

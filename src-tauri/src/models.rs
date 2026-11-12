@@ -526,19 +526,41 @@ pub struct ClaudeProfileInput {
     pub show_balance: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeDesktopMode {
+    #[default]
+    Direct,
+    Route,
+    Aggregate,
+}
+
+/// 模式归客户端，供应商只保存一份端点、凭证和模型。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClaudeDesktopRouting {
+    pub mode: ClaudeDesktopMode,
+    pub members: Vec<String>,
+    pub selected_members: Option<Vec<String>>,
+    pub port: u16,
+    pub token: String,
+    pub snapshot: Option<String>,
+    pub gateway_routes: Option<String>,
+}
+
 /// Claude Desktop 3P 的三档模型映射（inferenceModels 条目）。
-/// name 必须是 Anthropic 目录真实 claude-* 模型名（桌面端强校验，请求原样发给上游）；
+/// name 是实际请求模型，直连时还需符合 Desktop 的角色 ID 约束；
 /// label_override 是菜单显示名；supports_1m 声明 1M 上下文。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClaudeDesktopModelSlot {
     pub slot: String,
-    /// 桌面端目录名（claude-*）。直连=用户填；路由=按槽位自动取目录名。
+    /// 上游实际请求模型。
     pub name: String,
     pub label_override: Option<String>,
     #[serde(default)]
     pub supports_1m: bool,
-    /// 路由模式：目录名映射到的上游真实模型名。
-    #[serde(default)]
+    /// 兼容旧分支的模型映射，读取时归并到 name，新保存不再使用。
+    #[serde(default, skip_serializing)]
     pub upstream_model: Option<String>,
 }
 
@@ -551,12 +573,11 @@ pub struct ClaudeDesktopProfileSummary {
     pub has_key: bool,
     /// 首个槽位的模型名（卡片快速识别用）。
     pub model: Option<String>,
+    pub requires_routing: bool,
     pub kind: Option<String>,
     pub admin_url: Option<String>,
     pub icon: Option<String>,
     pub show_balance: bool,
-    /// "direct" | "route"（None 视为 direct）。
-    pub mode: Option<String>,
     pub updated_at: String,
 }
 
@@ -574,9 +595,6 @@ pub struct ClaudeDesktopProfileDetail {
     pub icon: Option<String>,
     pub show_balance: bool,
     pub description: Option<String>,
-    pub mode: Option<String>,
-    pub upstream_base_url: Option<String>,
-    pub upstream_api_key: Option<String>,
     pub fetched_models: Vec<String>,
     pub updated_at: String,
 }
@@ -594,9 +612,6 @@ pub struct ClaudeDesktopProfileInput {
     pub icon: Option<String>,
     pub show_balance: bool,
     pub description: Option<String>,
-    pub mode: Option<String>,
-    pub upstream_base_url: Option<String>,
-    pub upstream_api_key: Option<String>,
     pub fetched_models: Option<Vec<String>>,
 }
 
@@ -609,4 +624,80 @@ pub struct ClaudeDesktopAppStatus {
     pub source: String,
     /// 3P 配置里的 deploymentMode："1p" | "3p" | None（读不到）。
     pub deployment_mode: Option<String>,
+    pub mode: ClaudeDesktopMode,
+    pub members: Vec<String>,
+    pub selected_members: Option<Vec<String>>,
+    pub gateway_running: bool,
+}
+
+/// 接入诊断只输出路由元信息，不输出凭证、URL 查询参数和请求正文。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopRouteInfo {
+    pub desktop_model: String,
+    pub upstream_model: String,
+    pub label: String,
+    pub host: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaudeDesktopTokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cache_read_input_tokens: Option<u64>,
+    pub cache_creation_input_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeDesktopRequestOutcome {
+    Pending,
+    Completed,
+    HttpError,
+    NetworkError,
+    StreamError,
+    Incomplete,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopRequestInfo {
+    pub at_ms: u64,
+    pub path: String,
+    pub route: Option<ClaudeDesktopRouteInfo>,
+    pub status: Option<u16>,
+    pub upstream_status: Option<u16>,
+    pub header_ms: Option<u64>,
+    pub first_chunk_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub outcome: ClaudeDesktopRequestOutcome,
+    pub usage: ClaudeDesktopTokenUsage,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopModelUsage {
+    pub route: ClaudeDesktopRouteInfo,
+    pub requests: u64,
+    pub completed: u64,
+    pub failed: u64,
+    pub cancelled: u64,
+    pub usage_reported: u64,
+    pub tokens: ClaudeDesktopTokenUsage,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaudeDesktopGatewayActivity {
+    pub started_at_ms: Option<u64>,
+    pub requests: Vec<ClaudeDesktopRequestInfo>,
+    pub models: Vec<ClaudeDesktopModelUsage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopDiagnostics {
+    pub mode: ClaudeDesktopMode,
+    pub active_name: Option<String>,
+    pub gateway_running: bool,
+    pub gateway_url: Option<String>,
+    pub live_matches: bool,
+    pub routes: Vec<ClaudeDesktopRouteInfo>,
+    pub activity: ClaudeDesktopGatewayActivity,
 }

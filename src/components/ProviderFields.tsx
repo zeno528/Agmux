@@ -1,6 +1,7 @@
 import { Download, Eye, EyeOff, Pencil, Trash2, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { AppSelect } from "./AppSelect";
+import { AppTooltip } from "./AppTooltip";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { ProfileIconTile } from "./ProfileIconTile";
 
@@ -148,11 +149,11 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
           <div className="title-sm">{labels.mappingTitle ?? labels.models}</div>
-          {labels.mappingDescription ? <div className="setting-description mt-1">{labels.mappingDescription}</div> : null}
+          {labels.mappingDescription ? <AppTooltip label={labels.mappingTitle ?? labels.models}><p className="setting-description">{labels.mappingDescription}</p></AppTooltip> : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {onApplyModel && labels.quickSet ? (
             <div className="w-28 shrink-0">
               <AppSelect

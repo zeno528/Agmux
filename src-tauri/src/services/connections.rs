@@ -1998,12 +1998,11 @@ impl AppContext {
         if kind != "deepseek" && kind != "minimax" && kind != "zhipu" {
             return Err(app_err!("该供应商不支持用量查询"));
         }
-        let api_key = profile
-            .api_key
-            .as_deref()
+        let (base_url, api_key) = (profile.base_url.as_deref(), profile.api_key.as_deref());
+        let api_key = api_key
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| app_err!("该供应商没有配置 API Key，无法查询余额/用量"))?;
-        let base = claude_balance_base(kind, profile.base_url.as_deref());
+        let base = claude_balance_base(kind, base_url);
         let default_base = provider_default_balance_base(kind);
         query_supported_provider_balance(
             kind,

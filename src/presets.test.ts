@@ -270,29 +270,3 @@ describe("claudePresets Claude Code 模板", () => {
     expect(personalPlan.preset.endpoints[1].admin_url).toBe("https://console.tencentcloud.com/tokenhub/tokenplan");
   });
 });
-
-describe("providerPresets Claude Desktop（3P）模板", () => {
-  it("只有服务端认 claude 模型名的直连供应商携带 desktop 块", () => {
-    // GLM/Kimi/MiniMax 等需本地映射网关（Phase 2），解锁时才改这张 allowlist
-    const allowlist = ["deepseek"];
-    const carried = providerPresets.filter((preset) => preset.desktop).map((preset) => preset.kind).sort();
-    expect(carried).toEqual([...allowlist].sort());
-  });
-
-  it("desktop 块 base_url 与 claude 块端点同根，防两处漂移", () => {
-    for (const preset of providerPresets) {
-      if (!preset.desktop) continue;
-      const candidates = [preset.claude!.base_url, ...(preset.claude?.endpoints?.map((ep) => ep.base_url) ?? [])];
-      expect(candidates, `${preset.kind} desktop.base_url 需与 claude 端点一致`).toContain(preset.desktop.base_url);
-    }
-  });
-
-  it("desktop 默认模型名必须是 claude-* 槽位形态（桌面端强校验）", () => {
-    for (const preset of providerPresets) {
-      for (const model of preset.desktop?.default_models ?? []) {
-        expect(["sonnet", "opus", "haiku", "fable"], `${preset.kind} 无效槽位`).toContain(model.slot);
-        expect(model.name, `${preset.kind} 模型名须为 Anthropic 目录真名`).toMatch(/^claude-(sonnet|opus|haiku|fable)-/);
-      }
-    }
-  });
-});

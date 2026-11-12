@@ -93,6 +93,9 @@ interface ProfileCardActionsProps {
   busy: boolean;
   testing: boolean;
   allowInactiveDeleteWhileBusy?: boolean;
+  /** 当前项的草稿或客户端模式变更后，允许重新应用，删除仍受激活状态保护。 */
+  reapply?: boolean;
+  applyLabel?: string;
   modelControl?: ReactNode;
   /** 测试连通按钮是否禁用（调用方按各自领域判定：缺地址/缺密钥）。 */
   connectionDisabled: boolean;
@@ -105,8 +108,10 @@ interface ProfileCardActionsProps {
   onRemove?: () => void;
 }
 
-export function ProfileCardActions({ active, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
+export function ProfileCardActions({ active, reapply = false, applyLabel, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
+  const applied = active && !reapply;
   const { t } = useTranslation("profiles");
+  const switchLabel = applyLabel ?? t("actions.switch");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -131,9 +136,9 @@ export function ProfileCardActions({ active, busy, testing, allowInactiveDeleteW
     <div className="profile-card-actions flex shrink-0 items-center gap-2" title="" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.preventDefault()}>
       {modelControl}
       <div className="profile-card-action-buttons flex shrink-0 items-center gap-2">
-        <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary ${active ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={busy || active} aria-pressed={active} aria-label={active ? t("actions.inUse") : t("actions.switch")} title={active ? t("actions.inUse") : t("actions.switch")} onClick={onApply}>
-          <span className={active ? "invisible" : ""} aria-hidden="true">{t("actions.switch")}</span>
-          {active ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
+        <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary ${applied ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={busy || applied} aria-pressed={applied} aria-label={applied ? t("actions.inUse") : switchLabel} title={applied ? t("actions.inUse") : switchLabel} onClick={onApply}>
+          <span className={applied ? "invisible" : ""} aria-hidden="true">{switchLabel}</span>
+          {applied ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
         </button>
         {terminalProfileId ? <ProfileTerminalMenu profileId={terminalProfileId} active={active} /> : null}
         <button ref={menuTriggerRef} type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("actions.more")} title={t("actions.more")} aria-busy={testing} onClick={() => setMenuOpen((open) => !open)}>{testing ? <LoadingSpinner size="md" /> : <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}</button>

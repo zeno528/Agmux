@@ -279,6 +279,18 @@ const webClaudeProfiles: ClaudeProfileDetail[] = ["claude-account", "zhipu", "de
 let webActiveClaudeProfileId: string | null = webClaudeProfiles[0].id;
 let webClaudeCommonSettings: string | null = null;
 
+function desktopRequiresRouting(profile: Pick<ClaudeDesktopProfileDetail, "models" | "base_url">) {
+  let deepseek = false;
+  try {
+    const url = new URL(profile.base_url ?? "");
+    deepseek = url.protocol === "https:" && url.hostname === "api.deepseek.com" && url.pathname.replace(/\/+$/, "") === "/anthropic";
+  } catch { /* 未填写地址不启用供应商映射。 */ }
+  return profile.models.some(({ name }) => {
+    if (deepseek && ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro"].includes(name)) return false;
+    return name.toLowerCase().includes("[1m]") || !/^(?:anthropic\/)?claude-(?:sonnet|opus|haiku|fable)-.+$/i.test(name.trim());
+  });
+}
+
 // Claude Desktop（3P）供应商 fixture：与 claude_desktop_profiles 表同构，save/apply/delete 有状态
 const webClaudeDesktopProfiles: ClaudeDesktopProfileDetail[] = [{
   id: "cla-dt-web-deepseek",
@@ -295,13 +307,13 @@ const webClaudeDesktopProfiles: ClaudeDesktopProfileDetail[] = [{
   icon: "deepseek",
   show_balance: true,
   description: null,
-  mode: "direct",
-  upstream_base_url: null,
-  upstream_api_key: null,
   fetched_models: [],
   updated_at: "1700000000000",
 }];
 let webActiveClaudeDesktopProfileId: string | null = null;
+let webDesktopMode: import("../types").ClaudeDesktopMode = "direct";
+let webDesktopMembers: string[] = [];
+let webDesktopSelectedMembers: string[] | null = null;
 
 let webMarketplaces: PluginMarketplace[] = [
   {
@@ -702,7 +714,11 @@ function webState(): AppState {
       running: false,
       display_path: "/Applications/Claude.app",
       source: "auto",
-      deployment_mode: "3p",
+      deployment_mode: webActiveClaudeDesktopProfileId ? "3p" : "1p",
+      mode: webDesktopMode,
+      members: [...webDesktopMembers],
+      selected_members: webDesktopSelectedMembers ? [...webDesktopSelectedMembers] : null,
+      gateway_running: false,
     },
     settings: { ...webSettings },
     paths: webPaths,
@@ -1414,11 +1430,11 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
         base_url: profile.base_url,
         has_key: Boolean(profile.api_key),
         model: profile.models[0]?.name ?? null,
+        requires_routing: desktopRequiresRouting(profile),
         kind: profile.kind,
         admin_url: profile.admin_url,
         icon: profile.icon,
         show_balance: profile.show_balance,
-        mode: profile.mode,
         updated_at: profile.updated_at,
       })) as T;
     case "claude_desktop_get_profile": {
@@ -1441,9 +1457,6 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
         icon: null,
         show_balance: false,
         description: null,
-        mode: "direct",
-        upstream_base_url: null,
-        upstream_api_key: null,
         fetched_models: [],
         updated_at: String(Date.now()),
       };
@@ -1463,9 +1476,6 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
         icon: (args?.icon as string | null) ?? null,
         show_balance: Boolean(args?.showBalance),
         description: (args?.description as string | null) ?? null,
-        mode: (args?.mode as string | null) ?? "direct",
-        upstream_base_url: (args?.upstreamBaseUrl as string | null) ?? null,
-        upstream_api_key: (args?.upstreamApiKey as string | null) ?? null,
         fetched_models: (args?.fetchedModels as string[] | null) ?? [],
       };
       if (!base.name) throw new Error("配置名称不能为空");
@@ -1482,14 +1492,38 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "claude_desktop_delete_profile": {
       // 使用中的配置不可删除：与后端守卫一致
       if (webActiveClaudeDesktopProfileId === String(args?.id)) throw new Error("无法删除使用中的 Claude Desktop 供应商配置，请先切换到其他配置");
+      if (webActiveClaudeDesktopProfileId && webDesktopMode === "aggregate" && webDesktopMembers.includes(String(args?.id))) throw new Error("请先从聚合中移除并重新应用");
       const index = webClaudeDesktopProfiles.findIndex((item) => item.id === args?.id);
       if (index < 0) throw new Error("Claude Desktop 供应商配置不存在");
       webClaudeDesktopProfiles.splice(index, 1);
+      webDesktopMembers = webDesktopMembers.filter((id) => id !== String(args?.id));
+      if (webDesktopSelectedMembers) webDesktopSelectedMembers = webDesktopSelectedMembers.filter((id) => id !== String(args?.id));
+      return undefined as T;
+    }
+    case "claude_desktop_set_members": {
+      const members = args?.members;
+      if (!Array.isArray(members) || members.some((id) => typeof id !== "string" || !webClaudeDesktopProfiles.some((profile) => profile.id === id))) throw new Error("聚合供应商无效");
+      webDesktopSelectedMembers = [...new Set(members as string[])];
       return undefined as T;
     }
     case "claude_desktop_apply_profile": {
       if (args?.overwrite !== undefined && typeof args.overwrite !== "boolean") throw new Error("overwrite 必须为布尔值");
       if (!webClaudeDesktopProfiles.some((item) => item.id === args?.id)) throw new Error("Claude Desktop 供应商配置不存在");
+      const mode = args?.mode ?? webDesktopMode;
+      if (mode !== "direct" && mode !== "route" && mode !== "aggregate") throw new Error("接入模式无效");
+      const members = (args?.members as string[] | undefined) ?? webDesktopSelectedMembers ?? webDesktopMembers;
+      const profiles = mode === "aggregate" ? [...new Set([String(args?.id), ...members])] : [String(args?.id)];
+      for (const id of profiles) {
+        const profile = webClaudeDesktopProfiles.find((item) => item.id === id);
+        if (!profile || !profile.base_url || !profile.api_key) throw new Error("供应商缺少地址或密钥");
+        if (mode !== "direct" && !profile.models.length) throw new Error("至少需要一个模型");
+        if (mode === "direct" && desktopRequiresRouting(profile)) throw new Error("直连需要 Claude 角色模型 ID");
+      }
+      webDesktopMode = mode;
+      if (mode === "aggregate") {
+        webDesktopMembers = profiles;
+        webDesktopSelectedMembers = [...profiles];
+      }
       webActiveClaudeDesktopProfileId = String(args?.id);
       return undefined as T;
     }
@@ -1509,10 +1543,15 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "claude_desktop_test_profile":
       // 与 claude_test_profile 同理：浏览器不模拟连通成功
       throw new Error("请在桌面版验证 Claude API 端点和密钥，浏览器调试不模拟连通成功");
+    case "claude_desktop_get_diagnostics":
+      throw new Error("接入诊断需要在桌面版读取实际配置与请求记录，浏览器不模拟运行状态");
     case "claude_desktop_get_status":
-      return { installed: true, running: false, display_path: "/Applications/Claude.app", source: "auto", deployment_mode: "3p" } as T;
+      return webState().claude_desktop as T;
     case "claude_desktop_restore_official":
+      webDesktopSelectedMembers ??= [...webDesktopMembers];
       webActiveClaudeDesktopProfileId = null;
+      webDesktopMode = "direct";
+      webDesktopMembers = [];
       return undefined as T;
     // 浏览器无法拉起或重启本机应用，与 claude_open_terminal 同理
     case "claude_desktop_restart":
