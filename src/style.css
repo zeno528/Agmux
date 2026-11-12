@@ -2434,6 +2434,12 @@ pre.mcp-diff-line--add {
 }
 
 .apple-editor-scrollbar[hidden] { display: none; }
+/* 横向条略贴入底部渐隐区，用同色背景遮住它与保存栏之间的代码。 */
+.apple-edit-content:has(~ .apple-edit-toolbar--footer) .apple-editor-scrollbar {
+  bottom: -3px;
+  box-shadow: 0 var(--toolbar-scroll-fade) 0 var(--main-surface-bg);
+}
+
 .apple-editor-shell:hover .apple-editor-scrollbar,
 .apple-editor-scrollbar:active,
 .apple-editor-scrollbar:focus-visible { opacity: 1; }
