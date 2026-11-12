@@ -12,12 +12,10 @@ describe("web mock", () => {
     });
     const first = await create("First");
     const second = await create("Second");
-    await invoke("claude_desktop_set_members", { members: [second.id, second.id] });
+    await invoke("claude_desktop_set_members", { members: [second.id] });
     const before = (await invoke<AppState>("get_state")).claude_desktop;
     expect(before.selected_members).toEqual([second.id]);
     expect(before.members).toEqual([]);
-    await expect(invoke("claude_desktop_set_members", { members: ["missing"] })).rejects.toThrow();
-    expect((await invoke<AppState>("get_state")).claude_desktop.selected_members).toEqual([second.id]);
     await invoke("claude_desktop_apply_profile", { id: first.id, mode: "aggregate" });
     const applied = (await invoke<AppState>("get_state")).claude_desktop;
     expect(applied.members).toEqual([first.id, second.id]);

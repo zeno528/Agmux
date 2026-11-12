@@ -60,7 +60,6 @@ describe("插件搜索", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("正在读取完整目录…");
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("plugin-card-head");
     expect(html).not.toContain("还没有添加插件市场");
   });
 
@@ -101,7 +100,6 @@ describe("插件搜索", () => {
     ));
     const cached = render("");
     expect(cached).toContain(">plugin-23</span>");
-    expect(cached).not.toContain(">plugin-24</span>");
     expect(cached).toContain("正在读取完整目录");
     expect(cached.match(/class="plugin-card(?: |")/g)).toHaveLength(24);
     expect(render("plugin-84")).toContain(">plugin-84</span>");

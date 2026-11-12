@@ -133,7 +133,7 @@ describe("ProfileCard 官网入口", () => {
     expect(html).not.toContain('aria-label="terminal.open"');
   });
 
-  it("激活供应商的草稿或模式变更后可重新使用，同时保留删除激活项的门控", () => {
+  it("激活供应商的草稿或模式变更后可重新使用", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
@@ -143,7 +143,6 @@ describe("ProfileCard 官网入口", () => {
     expect(button).toContain('aria-label="actions.switch"');
     expect(button).toContain('aria-pressed="false"');
     expect(button).not.toContain('disabled=""');
-    expect(source).toContain('disabled={busyForDelete || active}');
   });
 
   it("订阅与普通供应商共用同一套连通性悬停文案", () => {

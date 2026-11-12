@@ -187,7 +187,7 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
           {create && initialPreset && onChangeProvider ? (
               <ProviderPresetControls
                 preset={initialPreset} baseUrl={baseUrl} disabled={saving}
-                onChangeProvider={onChangeProvider} onSelect={(connection) => setBaseUrl(connection.base_url)}
+                onChangeProvider={onChangeProvider} onSelect={(connection) => { setBaseUrl(connection.base_url); setFetchedModels([]); }}
               />
           ) : null}
           <div className="apple-panel-section">

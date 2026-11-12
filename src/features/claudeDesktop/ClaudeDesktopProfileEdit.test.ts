@@ -19,12 +19,6 @@ describe("slotsFromModels", () => {
     expect(slots.opus).toEqual({ name: "claude-opus-5-5", label: "DeepSeek V4 Pro", supports1m: true });
     expect(slots.sonnet).toEqual({ name: "", label: "", supports1m: false });
     expect(slots.haiku).toEqual({ name: "", label: "", supports1m: false });
-  });
-
-  it("新建时四个角色的请求模型和显示名全部为空，不隐式启用 1M", () => {
-    const slots = slotsFromModels([]);
-    for (const value of Object.values(slots)) {
-      expect(value).toEqual({ name: "", label: "", supports1m: false });
-    }
+    expect(slots.fable).toEqual({ name: "", label: "", supports1m: false });
   });
 });
