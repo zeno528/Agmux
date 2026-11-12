@@ -13,6 +13,7 @@ import { api } from "../api";
 import { webInvoke } from "../api/web-mock";
 import type { AppState, CodexProfileDetail, ClaudeProfileDetail, ClaudeProfileSummary } from "../types";
 import ClaudeProfileEdit from "../features/claude/ClaudeProfileEdit";
+import ClaudeCommonTemplateEdit from "../features/claude/ClaudeCommonTemplateEdit";
 import CodexProfileEdit from "../features/codex/CodexProfileEdit";
 import ConfigTextEditor from "./ConfigTextEditor";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "./ProviderFields";
@@ -119,6 +120,17 @@ describe("供应商创建的两步流程", () => {
       expect(field(tree, ConfigTextEditor).value).toBe(source);
       expect(elements(configPanel(tree)).some((node) => String(node.props.className).includes("apple-editor-toolbar"))).toBe(true);
       expect(elements(configPanel(tree)).some((node) => node.type === ProviderIdentityFields)).toBe(false);
+      if (client === "claude") {
+        click(elements(configPanel(tree)).find((node) => node.type === "button" && node.props.children === "编辑")!);
+        tree = render();
+        expect(elements(tree).find((node) => node.type === "section")?.props.inert).toBe(true);
+        const template = field(tree, ClaudeCommonTemplateEdit);
+        expect(template.sourceText).toBe(source);
+        (template.onBack as () => void)();
+        tree = render();
+        expect(configPanel(tree).props.inert).toBe(false);
+        expect(field(tree, ConfigTextEditor).value).toBe(source);
+      }
     } finally {
       builtin.mockRestore();
       mcp.mockRestore();

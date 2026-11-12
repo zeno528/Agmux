@@ -16,7 +16,7 @@ import {
 } from "../../presets";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
-import ClaudeCommonTemplateDialog from "./ClaudeCommonTemplateDialog";
+import ClaudeCommonTemplateEdit from "./ClaudeCommonTemplateEdit";
 import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBuiltinWebTools, patchBypassPermissions } from "./profileEnvText";
 import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
 import type { ClaudeProfileDetail, ClaudeProfileSummary } from "../../types";
@@ -102,7 +102,7 @@ function ClaudeProfileEditor({
   const templateRequest = useRef(0);
   const modelListRequest = useRef(0);
   const [fillingTemplate, setFillingTemplate] = useState(false);
-  const [templateOpen, setTemplateOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(false);
   const [editorDiagnostics, setEditorDiagnostics] = useState({ count: 0, firstLine: null as number | null });
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const envDirty = envText !== initialEnvText;
@@ -358,12 +358,11 @@ function ClaudeProfileEditor({
 
   if (pickingIcon) return <ProfileIconEdit icon={selectedIcon} onBack={() => setPickingIcon(false)} onSave={(icon) => void saveIcon(icon)} />;
 
-  return (
+  return (<>
     <section
-      className="apple-edit-page mx-auto flex w-full max-w-none flex-col"
+      className={`apple-edit-page mx-auto flex w-full max-w-none flex-col ${editingTemplate ? "hidden!" : ""}`}
+      inert={editingTemplate}
       onKeyDown={(event) => {
-        // 弹窗通过 Portal 冒泡到本页；Enter 只处理弹窗操作，不保存背景配置。
-        if (templateOpen) return;
         if (event.key === "Enter" && !event.nativeEvent.isComposing && !(event.target instanceof Element && event.target.closest(".apple-editor-shell"))) {
           event.preventDefault();
           void save();
@@ -475,7 +474,7 @@ function ClaudeProfileEditor({
                   <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => void fillCommonTemplate()}>
                     {t("commonTemplate.fill")}
                   </button>
-                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setTemplateOpen(true)}>
+                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setEditingTemplate(true)}>
                     {t("commonTemplate.edit")}
                   </button>
                 </div>
@@ -595,7 +594,7 @@ function ClaudeProfileEditor({
           {saving ? tProfiles("edit.saving") : tProfiles("dialog.save")}
         </button>
       </div>
-      {templateOpen ? <ClaudeCommonTemplateDialog sourceText={envText} onClose={() => setTemplateOpen(false)} /> : null}
     </section>
-  );
+    {editingTemplate ? <ClaudeCommonTemplateEdit sourceText={envText} onBack={() => setEditingTemplate(false)} /> : null}
+  </>);
 }

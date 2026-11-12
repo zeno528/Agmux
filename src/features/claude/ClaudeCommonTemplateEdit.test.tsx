@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { Children, isValidElement } from "react";
+import { Children, isValidElement, type ReactNode } from "react";
 import { api } from "../../api";
 import ConfigTextEditor from "../../components/ConfigTextEditor";
-import ClaudeCommonTemplateDialog from "./ClaudeCommonTemplateDialog";
+import ClaudeCommonTemplateEdit from "./ClaudeCommonTemplateEdit";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effect: () => {} }));
 vi.mock("react", async (original) => ({
@@ -19,19 +19,25 @@ vi.mock("../../app/Feedback", () => ({ useFeedback: () => ({ error: vi.fn() }) }
 vi.mock("../../components/ConfigTextEditor", () => ({ default: () => null }));
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; vi.restoreAllMocks(); });
 
-it.each([null, '{"env":{"API_TIMEOUT_MS":"1000000"}}'])("模板读取完成前不打开弹窗，首次打开即使用已读取内容：%s", async (saved) => {
+function findEditor(node: ReactNode): string | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<{ children?: ReactNode; value?: string }>(child)) continue;
+    if (child.type === ConfigTextEditor) return child.props.value;
+    const value = findEditor(child.props.children);
+    if (value !== undefined) return value;
+  }
+}
+
+it.each([null, '{"env":{"API_TIMEOUT_MS":"1000000"}}'])("模板页只在读取完成后显示编辑器：%s", async (saved) => {
   let finish!: (text: string | null) => void;
   vi.spyOn(api, "claudeGetCommonSettings").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-  const render = () => { hooks.cursor = 0; return ClaudeCommonTemplateDialog({ onClose: vi.fn() }); };
-  expect(render().props.open).toBe(false);
+  const render = () => {
+    hooks.cursor = 0;
+    return ClaudeCommonTemplateEdit({ sourceText: "{}", onBack: vi.fn() });
+  };
+  expect(findEditor(render())).toBeUndefined();
   hooks.effect();
-  expect(render().props.open).toBe(false);
   finish(saved);
   await Promise.resolve();
-  const dialog = render();
-  expect(dialog.props.open).toBe(true);
-  const group = Children.toArray(dialog.props.children).find(isValidElement)!;
-  const editor = Children.toArray((group.props as { children: React.ReactNode }).children)
-    .find((child) => isValidElement(child) && child.type === ConfigTextEditor);
-  expect(isValidElement(editor) && (editor.props as { value: string }).value).toBe(saved ?? "{}");
+  expect(findEditor(render())).toBe(saved ?? "{}");
 });

@@ -301,14 +301,10 @@ describe("AppShell 布局", () => {
     expect(styles).toContain(".apple-editor-shell {\n  min-width: 0;\n  isolation: isolate;");
   });
 
-  it("通用模板弹窗按窗口宽高固定占比，编辑器占满正文剩余高度", () => {
+  it("Skill 预览弹窗使用共享高度", () => {
     const skillsSource = readFileSync(new URL("../features/skills/SkillsView.tsx", import.meta.url), "utf8");
-    const templateRule = styles.match(/\.claude-template-dialog \{([^}]+)\}/)?.[1];
     expect(styles.includes("--dialog-preview-height: 60vh;")).toBe(true);
     expect(skillsSource.match(/h-\[var\(--dialog-preview-height\)\]/g)).toHaveLength(4);
-    expect(templateRule).toContain("width: 80vw;");
-    expect(templateRule).toContain("height: 80vh;");
-    expect(templateRule).toContain("--editor-available-height: 100%;");
     expect(styles.includes("--editor-available-height: min(34rem, 60vh);")).toBe(true);
   });
 

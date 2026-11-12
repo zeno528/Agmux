@@ -2639,32 +2639,6 @@ button:focus-visible {
   width: min(clamp(600px, 61.8vw, 680px), calc(100vw - 2rem));
 }
 
-/* 通用模板占窗口宽高的 80%，标题与操作栏之外的空间全部留给编辑器。 */
-.claude-template-dialog {
-  width: 80vw;
-  height: 80vh;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  --editor-available-height: 100%;
-}
-
-.claude-template-dialog .app-dialog-body {
-  min-height: 0;
-}
-
-.claude-template-dialog .editor-attach-group {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100%;
-}
-
-.claude-template-dialog .apple-editor-shell,
-.claude-template-dialog .apple-editor-surface,
-.claude-template-dialog .apple-editor-surface > div,
-.claude-template-dialog .cm-editor {
-  height: 100%;
-}
-
 .app-dialog-content--confirm .app-dialog-description {
   font-weight: 500;
 }
@@ -2696,15 +2670,13 @@ button:focus-visible {
 
 /* 带底部按钮的弹窗只给独立滚动区渐隐，按钮与静态正文保持完整。 */
 .app-dialog-content--hero .app-dialog-body:has(+ .app-dialog-actions),
-.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto,
-.claude-template-dialog .app-dialog-body:has(+ .app-dialog-actions) .cm-scroller {
+.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto {
   --dialog-scroll-mask: linear-gradient(black calc(100% - var(--toolbar-scroll-fade)), transparent);
   -webkit-mask-image: var(--dialog-scroll-mask);
   mask-image: var(--dialog-scroll-mask);
 }
 
-.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto,
-.claude-template-dialog .app-dialog-body:has(+ .app-dialog-actions) .cm-content {
+.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto {
   padding-bottom: var(--toolbar-scroll-fade);
 }
 
