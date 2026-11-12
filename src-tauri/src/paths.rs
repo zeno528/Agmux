@@ -73,7 +73,15 @@ impl AppPaths {
 }
 
 pub fn app_paths() -> AppResult<AppPaths> {
-    from_home(&home_dir())
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut paths = from_home(&home_dir())?;
+    // 重定向过的 %LOCALAPPDATA% 只在真实环境读取；from_home 保持纯 home 派生，
+    // 测试注入的临时 home 才能把 Claude Desktop 3P 路径一起隔离进 tempdir。
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        paths.claude_desktop_base = PathBuf::from(local);
+    }
+    Ok(paths)
 }
 
 /// 数据根目录名：正式版 `.agmux`，DEV（debug 构建）`.agmux-dev`。
@@ -108,8 +116,8 @@ pub fn from_home(home: &Path) -> AppResult<AppPaths> {
     })
 }
 
-/// macOS：`~/Library/Application Support`。Windows：`%LOCALAPPDATA%`（未设置时
-/// 按默认 `home\AppData\Local`；MSIX 候选在 claude_desktop 模块内按目录存在性选择）。
+/// macOS：`~/Library/Application Support`。Windows：默认 `home\AppData\Local`
+///（真实环境的 %LOCALAPPDATA% 覆盖在 app_paths；MSIX 候选在 claude_desktop 模块内按目录存在性选择）。
 /// 其他平台按 XDG 惯例给 `.config`（产品不支持，仅让路径可解析）。
 fn claude_desktop_base(home: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
@@ -118,9 +126,7 @@ fn claude_desktop_base(home: &Path) -> PathBuf {
     }
     #[cfg(windows)]
     {
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("AppData").join("Local"))
+        home.join("AppData").join("Local")
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {
@@ -180,6 +186,12 @@ mod tests {
         assert_eq!(
             paths.claude_desktop_base,
             home.join("Library").join("Application Support")
+        );
+        // from_home 不读 %LOCALAPPDATA%：测试注入的 home 必须连桌面端路径一起隔离
+        #[cfg(windows)]
+        assert_eq!(
+            paths.claude_desktop_base,
+            home.join("AppData").join("Local")
         );
         assert_eq!(paths.terminal, root.join("terminal"));
         assert_eq!(
