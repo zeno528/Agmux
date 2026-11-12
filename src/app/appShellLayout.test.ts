@@ -291,14 +291,12 @@ describe("AppShell 布局", () => {
     const toolbarRule = styles.match(/\n\.apple-editor-toolbar \{([^}]+)\}/)?.[1];
     expect(toolbarRule).toContain("position: sticky;");
     expect(toolbarRule).toContain("top: -1px;");
-    expect(toolbarRule).toContain("padding-top: 1px;");
+    expect(toolbarRule).toContain("padding-top: calc(var(--gap-page) + 1px);");
     expect(toolbarRule).toContain("margin-top: -1px;");
     expect(toolbarRule).toContain("z-index: 1;");
     expect(toolbarRule).toContain("background: var(--main-surface-bg);");
     const scrollportRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) \{([^}]+)\}/)?.[1];
-    const surfaceRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) > \.apple-edit-surface \{([^}]+)\}/)?.[1];
     expect(scrollportRule).toContain("padding-top: 0;");
-    expect(surfaceRule).toContain("padding-top: var(--gap-page);");
     expect(styles).not.toContain(".apple-editor-toolbar::before");
     expect(styles).toContain(".apple-editor-shell {\n  min-width: 0;\n  isolation: isolate;");
   });

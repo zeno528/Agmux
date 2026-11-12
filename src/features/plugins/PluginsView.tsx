@@ -9,7 +9,6 @@ import type { AppState } from "../../types";
 export type PluginHeaderState = { title: ReactNode; editing?: boolean };
 
 /// 与 MCP 一样把页头留在父层，切换客户端时保留滑块实例。
-/// 搜索框通栏放在正文首行（照看板层级：客户端维度 → 搜索 → 过滤 chips → 分区），作用于当前客户端的看板。
 export default function PluginsView({ state, activationEpoch, popEpoch }: { state: AppState; activationEpoch: number; popEpoch: number }) {
   const { t } = useTranslation("plugins");
   const [target, setTarget] = useState<ClientTarget>("codex");
@@ -20,9 +19,10 @@ export default function PluginsView({ state, activationEpoch, popEpoch }: { stat
   return (
     <section className={header?.editing ? "contents" : "apple-scroll-page mx-auto w-full max-w-none"}>
       {!header?.editing ? (
-        <header className="apple-page-bar flex-wrap justify-between gap-4">
+        <header className="apple-page-bar justify-between gap-3">
           {header?.title}
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-3">
+            <PluginSearchInput value={query} onChange={setQuery} className="min-w-0 w-full max-w-xs shrink!" />
             <ClientTargetSwitch
               key="target-switch"
               value={target}
@@ -39,8 +39,6 @@ export default function PluginsView({ state, activationEpoch, popEpoch }: { stat
         </header>
       ) : null}
       <div ref={contentRef} className={header?.editing ? "contents" : "apple-edit-content"}>
-        {/* 搜索只属于看板：详情/添加等子页（editing）不挂载 */}
-        {header?.editing ? null : <PluginSearchInput value={query} onChange={setQuery} className="mb-4 w-full" />}
         <Activity mode={target === "codex" ? "visible" : "hidden"}>
           <CodexPluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpoch} query={query} onHeaderChange={setHeader} />
         </Activity>

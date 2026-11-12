@@ -106,7 +106,6 @@ function ClaudeProfileEditor({
   const [editorDiagnostics, setEditorDiagnostics] = useState({ count: 0, firstLine: null as number | null });
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const envDirty = envText !== initialEnvText;
-  const envMinLines = Math.max(envText.split(/\r?\n/).length, 12);
   const { autoCompactDisabled, autoCompactWindow, effortLevel, autoMemoryEnabled, bashEditDiffEnabled, bypassPermissionsEnabled, webToolsDisabled } = readAdvancedSettings(envText);
   const gitAttributionHidden = readGitAttributionDisabled(envText);
   const agentTeamsEnabled = readEnvValue(envText, "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") === "1";
@@ -576,7 +575,7 @@ function ClaudeProfileEditor({
             </div>
             <div className="editor-attach-group">
               <div className="flex flex-col">
-                <ConfigTextEditor ref={editorRef} value={envText} language="json" minLines={envMinLines} placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
+                <ConfigTextEditor ref={editorRef} value={envText} language="json" placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
               </div>
             </div>
           </div>

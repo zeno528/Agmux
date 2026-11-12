@@ -418,11 +418,11 @@ export default function CodexPluginsView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PluginFilterChips value={filter} onChange={setFilter} updateCount={visibleUpdates.length} />
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checking || upgradingAll || Boolean(installing)} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
+          <button type="button" className="apple-action-button apple-action-button--small" disabled={checking || upgradingAll || Boolean(installing)} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
             <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
             {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
           </button>
-          <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
+          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setShowSources(true)}>
             <Store className="h-4 w-4" strokeWidth={2} />
             {t("sources.title")}
           </button>
@@ -486,14 +486,16 @@ export default function CodexPluginsView({
                     iconPath={plugin.icon_path}
                     onOpen={() => setSelectedPlugin(plugin)}
                     action={<div className="flex shrink-0 items-center gap-2">
-                      <PluginStatusDot enabled={plugin.enabled} />
                       {plugin.can_toggle ? <AppSwitch
                         size="sm"
                         checked={plugin.enabled}
                         disabled={Boolean(installing) || checking || upgradingAll}
                         label={t("action.toggleLabel", { name: plugin.display_name ?? plugin.name })}
                         onCheckedChange={(next) => void toggleEnabled(plugin, next)}
-                      /> : <span className="muted meta-xs" title={t("action.managedHelp")}>{t("action.managed")}</span>}
+                      /> : <>
+                        <PluginStatusDot enabled={plugin.enabled} />
+                        <span className="muted meta-xs" title={t("action.managedHelp")}>{t("action.managed")}</span>
+                      </>}
                     </div>}
                     foot={plugin.can_uninstall ? (
                       <button

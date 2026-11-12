@@ -194,11 +194,11 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PluginFilterChips value={filter} onChange={setFilter} />
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checking || busyKey !== null} onClick={() => void checkUpdates()}>
+          <button type="button" className="apple-action-button apple-action-button--small" disabled={checking || busyKey !== null} onClick={() => void checkUpdates()}>
             <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
             {t("action.checkUpdates")}
           </button>
-          <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
+          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setShowSources(true)}>
             <Store className="h-4 w-4" strokeWidth={2} />
             {t("sources.title")}
           </button>

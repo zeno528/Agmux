@@ -88,6 +88,14 @@ function usePageEnterAnimation(mainRef: { current: HTMLElement | null }, view: A
     if (!main) return;
     const played = new WeakSet<Element>(main.querySelectorAll(PAGE_ENTER_TARGET));
     const scan = (mutations: MutationRecord[]) => {
+      const pageStructure = ".apple-scroll-page, .apple-edit-page, .apple-edit-content";
+      // 编辑器滚动时会替换可见行，只有页容器变化才需要重扫进场目标。
+      if (!mutations.some(({ addedNodes, removedNodes }) =>
+        [...addedNodes, ...removedNodes].some((node) =>
+          node instanceof Element && (node.matches(pageStructure) || node.querySelector(pageStructure)),
+        ),
+      )) return;
+
       // 同级列表内容互换（MCP 客户端切换）不播放；编辑页进出会替换页面容器，仍照常播放。
       const peerSwitch = (["addedNodes", "removedNodes"] as const).every((key) =>
         mutations.some((mutation) => Array.from(mutation[key]).some((node) => node instanceof Element && node.matches(".apple-edit-content"))),

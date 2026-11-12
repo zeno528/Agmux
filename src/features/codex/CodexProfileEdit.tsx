@@ -126,7 +126,6 @@ function CodexProfileEditor({
   const fetchedModelDefaults = useRef<Record<string, string>>(initialDetail?.fetched_model_defaults ?? {});
   const presetTemplateRequest = useRef(0);
   const editorRef = useRef<ConfigTextEditorHandle>(null);
-  const editorMinLines = Math.max(configText.split(/\r?\n/).length, catalogText.split(/\r?\n/).length, authText.split(/\r?\n/).length);
 
   const selectedPreset = initialPreset ?? null;
   // 创建态由分段控件选择端点；已有配置仍按 provider id 反查地址输入框的端点档。
@@ -741,7 +740,7 @@ function CodexProfileEditor({
               </div>
             </div>
             <div className="editor-attach-group">
-              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" minLines={editorMinLines} placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" minLines={editorMinLines} readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" minLines={editorMinLines} placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
             </div>
           </div>}
         </div>

@@ -118,7 +118,7 @@ describe("插件搜索", () => {
     expect(html).toContain("<form");
   });
 
-  it("通栏搜索留在父层壳里、先于客户端看板渲染，客户端视图按名称吃 query", () => {
+  it("搜索由父层共享，客户端看板按名称使用 query", () => {
     expect(shell.split("<PluginSearchInput").length - 1).toBe(1);
     expect(shell.indexOf("<PluginSearchInput")).toBeLessThan(shell.indexOf("<CodexPluginsView"));
     expect(source).toContain("matchesQuery(plugin, query)");

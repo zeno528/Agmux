@@ -1421,7 +1421,19 @@ body.drag-active * {
   background: var(--main-surface-bg);
   padding-left: var(--gap-main);
   padding-right: var(--edit-footer-padding-right);
-  border-top: 1px solid var(--panel-border);
+}
+
+.apple-edit-toolbar--footer::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 100%;
+  height: 1.5rem;
+  pointer-events: none;
+  background: linear-gradient(transparent, var(--main-surface-bg));
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(transparent, black);
+  mask-image: linear-gradient(transparent, black);
 }
 
 .apple-edit-toolbar--footer .apple-action-button {
@@ -1458,23 +1470,14 @@ body.drag-active * {
   overscroll-behavior: contain;
 }
 
-/* 吸顶页的顶部留白随内容滚走，滚动视口本身不留缝。 */
+/* 留白归吸顶栏，滚动开始时操作栏即保持原位。 */
 .apple-edit-content:has(.apple-editor-toolbar) {
   padding-top: 0;
-}
-
-.apple-edit-content:has(.apple-editor-toolbar) > .apple-edit-surface {
-  padding-top: var(--gap-page);
 }
 
 /* 代码编辑页底部仅保留少量留白，让横向条贴近保存栏。 */
 .apple-edit-page > .apple-edit-content:has(.apple-editor-shell) {
   padding-bottom: calc(var(--gap-section) * 0.125);
-}
-
-/* 供应商配置独占正文可用空间；其他页面和弹窗仍按文档内容定高。 */
-.provider-config-view .cm-editor {
-  min-height: var(--editor-available-height, 0px);
 }
 
 /* 滚动容器的直接子项永不压缩：overflow:hidden 的卡片 flex 自动最小高度为 0，
@@ -2051,10 +2054,10 @@ body.drag-active * {
   margin-bottom: 0.75rem;
 }
 
-/* 网格随容器宽度自适应 2-4 列；行式内容（有更新、市场源弹层）仍走 apple-list-card。 */
+/* 窄窗口下单列卡片也能收缩到容器宽度。 */
 .plugin-board {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr));
   gap: var(--gap-section);
 }
 
@@ -2146,7 +2149,6 @@ button.plugin-card-name:hover {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 2.6em;
 }
 
 .plugin-card-foot {
@@ -2154,8 +2156,9 @@ button.plugin-card-name:hover {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-top: 0.625rem;
-  min-height: 1.75rem;
+  margin-top: auto;
+  padding-top: 0.625rem;
+  min-height: 2.375rem;
 }
 
 /* 卡片内的图标按钮比全局小一号（28px）：共享定义不动，宿主场景覆盖尺寸变量（尺寸随卡片密度收紧） */
@@ -2308,7 +2311,7 @@ pre.mcp-diff-line--add {
   position: sticky;
   /* 与标题栏重叠一像素，避免分数物理像素边界的合成细缝；内边距保住控件位置。 */
   top: -1px;
-  padding-top: 1px;
+  padding-top: calc(var(--gap-page) + 1px);
   margin-top: -1px;
   z-index: 1;
   background: var(--main-surface-bg);
@@ -2362,7 +2365,6 @@ pre.mcp-diff-line--add {
 }
 .apple-editor-scrollbar:hover::-webkit-slider-thumb { background: var(--scrollbar-thumb-hover); }
 
-/* 短文件不拉伸代码区；外层只负责在切换时保留最长文件的布局高度。 */
 .apple-editor-surface {
   overflow: hidden;
   border-radius: var(--radius-control-sm);
@@ -2380,8 +2382,7 @@ pre.mcp-diff-line--add {
 }
 
 /* CodeMirror 官方样式模式：圆角等容器外观由外层统管，surface 只在顶部直角贴合附属条。
-   底部圆角保留在 surface 自己身上：短文件时 surface 高度悬在 shell（min-height 撑起的
-   最长文件占位）中间，容器底缘的圆角裁不到它，底边必须是自己的圆角 */
+   有最小占位的页面里，surface 底边可能高于外框底边，因此自身保留底部圆角。 */
 .editor-attach-group .apple-editor-surface {
   border-radius: 0 0 var(--radius-control-sm) var(--radius-control-sm);
   box-shadow: none;
@@ -3733,7 +3734,7 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .app-input-action__button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .cm-editor {
-  /* 代码区按文档内容自适应，最长文件的共享占位由外层承担 */
+  /* 代码区按文档内容自适应，最小占位由外层承担 */
   height: auto;
   background: transparent;
   /* 缩进参考线复用分隔线 token，标记随行首空白绘制且不跟随光标变化 */
