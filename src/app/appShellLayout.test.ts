@@ -322,7 +322,7 @@ describe("AppShell 布局", () => {
     expect(styles).toContain(".apple-edit-content .editor-attach-group {\n  overflow: visible;");
     const trayRule = styles.match(/\n\.apple-edit-content \.editor-attach-group \{([^}]+)\}/)?.[1];
     expect(trayRule).toContain("box-shadow: none;");
-    expect(trayRule).toContain("border: 0.5px solid var(--panel-border);");
+    expect(trayRule).toContain("border: 1px solid var(--panel-border);");
     expect(styles).toContain(".apple-edit-content .cm-scroller::-webkit-scrollbar { width: 0; height: 0; }");
   });
 

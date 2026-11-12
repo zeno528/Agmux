@@ -116,8 +116,11 @@ export default {
   terminal: {
     open: "打开终端",
     menuLabel: "终端工作目录",
-    globalConfig: "使用当前已激活的配置启动",
-    profileConfig: "仅此终端使用该供应商配置",
+    projects: "项目",
+    launchHelp: "终端启动说明",
+    projectLaunch: "选择项目后，Claude Code 会在该项目目录中启动。",
+    globalConfig: "本次使用 Claude Code 当前的全局配置。",
+    profileConfig: "本次终端会话使用这张卡片的供应商配置。",
     new: "添加项目",
     remove: "移除该目录",
     pickDir: "选择工作目录",

@@ -1,5 +1,5 @@
 import { CircleQuestionMark } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 /** 出场动画时长，与 style.css 的 --motion-popover 保持一致。 */
@@ -14,15 +14,20 @@ interface AppTooltipProps {
   label: string;
   children: ReactNode;
   icon?: ReactNode;
+  placement?: "top" | "bottom";
+  compact?: boolean;
+  alignRightTo?: RefObject<HTMLElement | null>;
 }
 
-export function tooltipPosition(trigger: Pick<DOMRect, "left" | "top" | "bottom">, panel: { width: number; height: number }, viewport: { width: number; height: number }) {
+export function tooltipPosition(trigger: Pick<DOMRect, "left" | "top" | "bottom">, panel: { width: number; height: number }, viewport: { width: number; height: number }, placement: "top" | "bottom" = "bottom") {
   const gap = 8;
+  const above = trigger.top - panel.height - gap;
+  const below = trigger.bottom + gap;
   return {
     left: Math.max(gap, Math.min(trigger.left, viewport.width - panel.width - gap)),
-    top: trigger.bottom + gap + panel.height <= viewport.height
-      ? trigger.bottom + gap
-      : Math.max(gap, trigger.top - panel.height - gap),
+    top: (placement === "top" && above >= gap) || below + panel.height > viewport.height
+      ? Math.max(gap, above)
+      : below,
   };
 }
 
@@ -39,7 +44,7 @@ export function tooltipOriginX(trigger: Pick<DOMRect, "left" | "right">, panelLe
 }
 
 /** 与 MCP 差异说明同款的悬停卡片；Portal 避免被卡片的 overflow: hidden 裁切。 */
-export function AppTooltip({ label, children, icon }: AppTooltipProps) {
+export function AppTooltip({ label, children, icon, placement, compact = false, alignRightTo }: AppTooltipProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -73,14 +78,17 @@ export function AppTooltip({ label, children, icon }: AppTooltipProps) {
       const trigger = triggerRef.current?.getBoundingClientRect();
       const panel = panelRef.current;
       if (!trigger || !panel) return;
-      const pos = tooltipPosition(trigger, { width: panel.offsetWidth, height: panel.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+      const rightEdge = alignRightTo?.current?.getBoundingClientRect().right;
+      panel.style.maxWidth = rightEdge === undefined ? "" : `min(${compact ? "16rem" : "100vw - 1rem"}, ${rightEdge - 8}px)`;
+      const box = { width: panel.offsetWidth, height: panel.offsetHeight };
+      const pos = tooltipPosition(trigger, box, { width: window.innerWidth, height: window.innerHeight }, placement);
       // 原点必须按"解算后的落位"算，不能读 panel.offsetLeft/offsetTop：
       // 卡片此刻还没拿到 left/top（正是这次 setPosition 要写进去的），
       // 读自身偏移只会拿到未定位的值，横向原点因此算反、从错误的一侧展开。
-      const box = { width: panel.offsetWidth, height: panel.offsetHeight };
       setPosition({
-        ...pos,
-        "--app-popover-origin": `${tooltipOriginX(trigger, pos.left, box.width)} ${tooltipOriginY(trigger, pos.top)}`,
+        top: pos.top,
+        ...(rightEdge === undefined ? { left: pos.left } : { right: window.innerWidth - rightEdge }),
+        "--app-popover-origin": `${rightEdge === undefined ? tooltipOriginX(trigger, pos.left, box.width) : "100%"} ${tooltipOriginY(trigger, pos.top)}`,
       });
     };
     place();
@@ -90,7 +98,7 @@ export function AppTooltip({ label, children, icon }: AppTooltipProps) {
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open]);
+  }, [open, placement, compact, alignRightTo]);
 
   return <>
     <button
@@ -113,7 +121,7 @@ export function AppTooltip({ label, children, icon }: AppTooltipProps) {
         ref={panelRef}
         id={id}
         role="tooltip"
-        className="app-popover fixed z-50 w-80 max-w-[calc(100vw-1rem)] space-y-1.5 rounded-[var(--radius-control)] border border-(--panel-border) bg-(--panel-bg) p-3 shadow-lg"
+        className={`app-popover fixed z-50 space-y-1.5 rounded-[var(--radius-control)] border border-(--panel-border) bg-(--panel-bg) p-3 shadow-lg ${compact ? "w-max max-w-[min(16rem,calc(100vw-1rem))]" : "w-80 max-w-[calc(100vw-1rem)]"}`}
         data-popover-in={open && placed ? "" : undefined}
         data-popover-out={open ? undefined : (placed ? "" : undefined)}
         style={position ?? { visibility: "hidden" }}

@@ -211,7 +211,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
           }}
         >
           <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
-          <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
+          <span className="apple-wordmark whitespace-nowrap">Agmux</span>
         </div>
         {sidebar.sidebarFlyoutArmed ? (
           <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
@@ -224,7 +224,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
               aria-label={t("sidebar.collapse")}
               onClick={sidebar.toggleSidebar}
             >
-              <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
+              <PanelLeft size={18} strokeWidth={2} className="[&_rect]:[rx:3.5px]" aria-hidden="true" />
             </button>
             {sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span> : null}
           </>

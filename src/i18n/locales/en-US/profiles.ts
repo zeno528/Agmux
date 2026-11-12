@@ -116,8 +116,11 @@ export default {
   terminal: {
     open: "Open terminal",
     menuLabel: "Terminal working directory",
-    globalConfig: "Start with the currently active configuration",
-    profileConfig: "Use this provider's configuration only in this terminal",
+    projects: "Projects",
+    launchHelp: "About launching the terminal",
+    projectLaunch: "Choose a project to start Claude Code in its folder.",
+    globalConfig: "This launch uses your current global Claude Code settings.",
+    profileConfig: "This terminal session uses the provider settings from this card.",
     new: "Add project",
     remove: "Remove this directory",
     pickDir: "Choose a working directory",
