@@ -29,7 +29,7 @@ interface UseProfileBalanceOptions {
   coldStart: boolean;
   cachedBalance?: ProfileBalanceInfo | null;
   authQuotaKey?: string | null;
-  source: "codex" | "claude";
+  source: "codex" | "claude" | "claude-desktop";
 }
 
 export function useProfileBalance({ profileId, showBalance, supportsBalance, hasCredential, active, activationEpoch, coldStart, cachedBalance, authQuotaKey, source }: UseProfileBalanceOptions) {
@@ -62,7 +62,7 @@ export function useProfileBalance({ profileId, showBalance, supportsBalance, has
     }
     const request = (async () => {
       try {
-        const result = source === "claude" ? await api.claudeGetProfileBalance(profileId) : await api.codexGetProfileBalance(profileId);
+        const result = source === "codex" ? await api.codexGetProfileBalance(profileId) : source === "claude-desktop" ? await api.claudeDesktopGetProfileBalance(profileId) : await api.claudeGetProfileBalance(profileId);
         const infos = result.balance_infos;
         if (!infos[0]) throw new Error("查询未返回余额/用量数据"); // i18n-exempt: 该消息只被当布尔用，界面渲染的是固定文案 balance.queryFailed
         setBalanceError("");

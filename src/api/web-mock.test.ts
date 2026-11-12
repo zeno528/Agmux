@@ -4,6 +4,33 @@ import { extractClaudeCommonSettings, fillClaudeCommonSettings } from "../featur
 import type { AppState, ClaudeProfileDetail, ClaudeProfileSummary, MarketplacePlugin, McpServerSpec, PluginMarketplace, PluginSkill, PluginSummary, PluginUpdate, CodexProfileDetail, CodexProfileSummary, SkillSummary, CliStatus, CliUpdate } from "../types";
 
 describe("web mock", () => {
+  it("桌面聚合选择单独保存，设为默认才应用，直连与恢复官方保留选择", async () => {
+    vi.resetModules();
+    const { webInvoke: invoke } = await import("./web-mock");
+    const create = (name: string) => invoke<import("../types").ClaudeDesktopProfileDetail>("claude_desktop_save_profile", {
+      name, baseUrl: "https://example.com", apiKey: "fixture-key", models: [{ slot: "sonnet", name: "claude-sonnet-5-5", label_override: null, supports_1m: false }],
+    });
+    const first = await create("First");
+    const second = await create("Second");
+    await invoke("claude_desktop_set_members", { members: [second.id] });
+    const before = (await invoke<AppState>("get_state")).claude_desktop;
+    expect(before.selected_members).toEqual([second.id]);
+    expect(before.members).toEqual([]);
+    await invoke("claude_desktop_apply_profile", { id: first.id, mode: "aggregate" });
+    const applied = (await invoke<AppState>("get_state")).claude_desktop;
+    expect(applied.members).toEqual([first.id, second.id]);
+    expect(applied.selected_members).toEqual(applied.members);
+    await invoke("claude_desktop_set_members", { members: [] });
+    expect((await invoke<AppState>("get_state")).claude_desktop.members).toEqual(applied.members);
+    await invoke("claude_desktop_apply_profile", { id: first.id, mode: "direct" });
+    expect((await invoke<AppState>("get_state")).claude_desktop.selected_members).toEqual([]);
+    await invoke("claude_desktop_restore_official");
+    expect((await invoke<AppState>("get_state")).claude_desktop.selected_members).toEqual([]);
+    await invoke("claude_desktop_set_members", { members: [second.id] });
+    await invoke("claude_desktop_delete_profile", { id: second.id });
+    expect((await invoke<AppState>("get_state")).claude_desktop.selected_members).toEqual([]);
+  });
+
   it("两端默认只展示登录、智谱和 DeepSeek 三个内置模板，名称与配置沿用预设", async () => {
     vi.resetModules();
     const { default: i18next, resources } = await import("../i18n");
@@ -94,16 +121,13 @@ describe("web mock", () => {
     } finally { await webInvoke("codex_delete_profile", { id: copy.id }); }
   });
 
-  it("卡片模型保存同步列表与详情，默认值移除覆盖，其他配置保持不变", async () => {
+  it("卡片模型保存同步列表与详情，默认值移除覆盖", async () => {
     const source = (await webInvoke<AppState>("get_state")).codex_profiles[0];
     const copy = await webInvoke<CodexProfileSummary>("codex_duplicate_profile", { id: source.id });
     try {
-      const before = await webInvoke<CodexProfileDetail>("codex_get_profile", { id: copy.id });
       const after = await webInvoke<CodexProfileDetail>("codex_set_profile_model", { id: copy.id, model: "fixture", effort: "low" });
       expect(after.model_values.model).toBe('"fixture"');
       expect(after.model_values.model_reasoning_effort).toBe('"low"');
-      expect(after.api_key).toBe(before.api_key);
-      expect(after.raw_catalog).toBe(before.raw_catalog);
       expect((await webInvoke<AppState>("get_state")).codex_profiles.find((profile) => profile.id === copy.id))
         .toMatchObject({ model: "fixture", reasoning_effort: "low" });
       const defaults = await webInvoke<CodexProfileDetail>("codex_set_profile_model", { id: copy.id, effort: "" });

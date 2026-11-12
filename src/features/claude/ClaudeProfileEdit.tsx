@@ -5,9 +5,10 @@ import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { AppSelect } from "../../components/AppSelect";
 import { AppSwitch } from "../../components/AppSwitch";
+import { AppTooltip } from "../../components/AppTooltip";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import EndpointField from "../../components/EndpointField";
-import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
+import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "../../components/ProviderSetup";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "../../components/ProviderFields";
 import {
   claudeBalanceQueryKinds, claudePresets, claudePresetByKind,
@@ -15,7 +16,7 @@ import {
 } from "../../presets";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
-import ClaudeCommonTemplateDialog from "./ClaudeCommonTemplateDialog";
+import ClaudeCommonTemplateEdit from "./ClaudeCommonTemplateEdit";
 import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBuiltinWebTools, patchBypassPermissions } from "./profileEnvText";
 import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
 import type { ClaudeProfileDetail, ClaudeProfileSummary } from "../../types";
@@ -89,6 +90,7 @@ function ClaudeProfileEditor({
   const [savingBalance, setSavingBalance] = useState(false);
   const [saving, setSaving] = useState(false);
   // 图标编辑：复用 Codex 的铅笔角标 + ProfileIconEdit 选择页，立即落库（create 态只记本地）
+  const [configView, setConfigView] = useState(false);
   const [pickingIcon, setPickingIcon] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
   const [modelMappings, setModelMappings] = useState<ClaudeModelMappings>(() => readModelMappings(initialEnvText));
@@ -100,11 +102,10 @@ function ClaudeProfileEditor({
   const templateRequest = useRef(0);
   const modelListRequest = useRef(0);
   const [fillingTemplate, setFillingTemplate] = useState(false);
-  const [templateOpen, setTemplateOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(false);
   const [editorDiagnostics, setEditorDiagnostics] = useState({ count: 0, firstLine: null as number | null });
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const envDirty = envText !== initialEnvText;
-  const envMinLines = Math.max(envText.split(/\r?\n/).length, 12);
   const { autoCompactDisabled, autoCompactWindow, effortLevel, autoMemoryEnabled, bashEditDiffEnabled, bypassPermissionsEnabled, webToolsDisabled } = readAdvancedSettings(envText);
   const gitAttributionHidden = readGitAttributionDisabled(envText);
   const agentTeamsEnabled = readEnvValue(envText, "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") === "1";
@@ -180,7 +181,7 @@ function ClaudeProfileEditor({
       value: modelMappings[key],
       hint: purpose ? `${key} — ${purpose}` : key,
       displayValue: displayKey ? modelDisplayNames[displayKey] : undefined,
-      displayPlaceholder: displayKey ? t("displayNamePlaceholder") : key === "CLAUDE_CODE_SUBAGENT_MODEL" ? t("displayNameUnavailable") : t("displayNameNotApplicable"),
+      displayPlaceholder: displayKey ? t("displayNamePlaceholder") : key === "CLAUDE_CODE_SUBAGENT_MODEL" ? t("displayNameUnavailable") : t("displayNameCurrentPurpose"),
       displayDisabled: !displayKey,
       onDisplayChange: displayKey ? (value: string) => setModelDisplayNames((current) => ({ ...current, [displayKey]: value })) : undefined,
       oneMillion: hasOneMillionModelSuffix(modelMappings[key]),
@@ -357,12 +358,11 @@ function ClaudeProfileEditor({
 
   if (pickingIcon) return <ProfileIconEdit icon={selectedIcon} onBack={() => setPickingIcon(false)} onSave={(icon) => void saveIcon(icon)} />;
 
-  return (
+  return (<>
     <section
-      className="apple-edit-page mx-auto flex w-full max-w-none flex-col"
+      className={`apple-edit-page mx-auto flex w-full max-w-none flex-col ${editingTemplate ? "hidden!" : ""}`}
+      inert={editingTemplate}
       onKeyDown={(event) => {
-        // 弹窗通过 Portal 冒泡到本页；Enter 只处理弹窗操作，不保存背景配置。
-        if (templateOpen) return;
         if (event.key === "Enter" && !event.nativeEvent.isComposing && !(event.target instanceof Element && event.target.closest(".apple-editor-shell"))) {
           event.preventDefault();
           void save();
@@ -374,8 +374,9 @@ function ClaudeProfileEditor({
           <ChevronLeft className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
           <span className="apple-title">{create ? tProfiles("toolbar.addProvider") : tProfiles("edit.editTitle")}</span>
         </button>
+        <ProviderEditorViewSwitch config={configView} disabled={saving} onChange={setConfigView} />
       </div>
-      <div className="apple-edit-content">
+      <div className={`apple-edit-content ${configView ? "hidden!" : ""}`} inert={configView}>
         <div className="apple-edit-surface">
           {create && selectedPreset && onChangeProvider ? <ProviderPresetControls preset={selectedPreset} baseUrl={baseUrl}
             disabled={saving || fillingTemplate} onChangeProvider={onChangeProvider} onSelect={selectConnection} /> : null}
@@ -384,13 +385,14 @@ function ClaudeProfileEditor({
               idPrefix={create ? `claude-profile-${initialPreset!.kind}-${initialPreset!.plan?.replace(/ /g, "-")}` : "claude-profile"} name={name} description={description}
               icon={selectedIcon ?? claudePresetByKind(kind)?.icon ?? null}
               onIcon={() => setPickingIcon(true)} onName={setName} onDescription={setDescription}
+              nameHelp={accountLogin ? <AppTooltip label={t("accountLoginHelp")}><p className="setting-description">{t("accountLoginHelp")}</p></AppTooltip> : undefined}
               labels={{
                 changeIcon: tProfiles("edit.changeIcon"), changeIconLabel: tProfiles("edit.changeIconLabel"),
                 name: tProfiles("edit.nameLabel"), namePlaceholder: tProfiles("edit.namePlaceholder"),
                 description: tProfiles("edit.descriptionLabel"), descriptionPlaceholder: tProfiles("edit.descriptionPlaceholder"),
               }}
             />
-            {accountLogin ? <p className="setting-description mt-4 rounded-lg border-l-2 border-(--accent) bg-(--selection-bg) px-3 py-2">{t("accountLoginHelp")}</p> : <>
+            {!accountLogin ? <>
             <label className="field-label mb-1.5 mt-4 block">{t("protocolLabel")}</label>
             <div className="app-input flex min-w-0 items-center gap-2">
               <Webhook className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
@@ -418,7 +420,7 @@ function ClaudeProfileEditor({
               testTitle={!authToken.trim() || !baseUrl.trim() ? tProfiles("edit.checkProviderFields") : undefined}
               testing={testing} onTest={() => void testConnection()}
             />
-            </>}
+            </> : null}
             <div className="mt-4">
               <div className="mb-1.5 flex items-center gap-2">
                 <span className="field-label">{tProfiles("edit.adminUrlLabel")}</span>
@@ -451,6 +453,10 @@ function ClaudeProfileEditor({
               }}
             />
           </div>
+        </div>
+      </div>
+      <div className={`apple-edit-content provider-config-view ${configView ? "" : "hidden!"}`} inert={!configView}>
+        <div className="apple-edit-surface">
           <div className="apple-panel-section flex flex-col">
             <div className="apple-editor-toolbar">
               <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
@@ -468,7 +474,7 @@ function ClaudeProfileEditor({
                   <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => void fillCommonTemplate()}>
                     {t("commonTemplate.fill")}
                   </button>
-                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setTemplateOpen(true)}>
+                  <button type="button" className="editor-ghost shrink-0 enabled:hover:text-accent!" disabled={saving || fillingTemplate} onClick={() => setEditingTemplate(true)}>
                     {t("commonTemplate.edit")}
                   </button>
                 </div>
@@ -568,7 +574,7 @@ function ClaudeProfileEditor({
             </div>
             <div className="editor-attach-group">
               <div className="flex flex-col">
-                <ConfigTextEditor ref={editorRef} value={envText} language="json" minLines={envMinLines} placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
+                <ConfigTextEditor ref={editorRef} value={envText} language="json" placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
               </div>
             </div>
           </div>
@@ -576,7 +582,7 @@ function ClaudeProfileEditor({
       </div>
       <div className="apple-edit-toolbar apple-edit-toolbar--footer">
         {editorDiagnostics.count > 0 ? (
-          <button type="button" className="chip-danger mr-auto flex min-w-0 items-center gap-1.5 rounded-lg border border-[var(--danger)]/20 bg-(--danger)/10 px-2.5 py-1 text-xs" aria-live="polite" onClick={() => editorRef.current?.focusFirstDiagnostic()}>
+          <button type="button" className="chip-danger mr-auto flex min-w-0 items-center gap-1.5 rounded-lg border border-[var(--danger)]/20 bg-(--danger)/10 px-2.5 py-1 text-xs" aria-live="polite" onClick={() => { setConfigView(true); requestAnimationFrame(() => editorRef.current?.focusFirstDiagnostic()); }}>
             <span className="h-1.5 w-1.5 rounded-full bg-(--danger)" />
             {tProfiles("edit.diagnosticsErrors", { count: editorDiagnostics.count })}
             {editorDiagnostics.firstLine !== null ? tProfiles("edit.diagnosticsLine", { line: editorDiagnostics.firstLine }) : ""}
@@ -588,7 +594,7 @@ function ClaudeProfileEditor({
           {saving ? tProfiles("edit.saving") : tProfiles("dialog.save")}
         </button>
       </div>
-      {templateOpen ? <ClaudeCommonTemplateDialog sourceText={envText} onClose={() => setTemplateOpen(false)} /> : null}
     </section>
-  );
+    {editingTemplate ? <ClaudeCommonTemplateEdit sourceText={envText} onBack={() => setEditingTemplate(false)} /> : null}
+  </>);
 }

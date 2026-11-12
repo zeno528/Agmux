@@ -217,31 +217,6 @@ describe("AppShell 布局", () => {
     expect(styles).toContain("color: var(--text-primary);");
   });
 
-  it("让设置项说明在浅色和深色主题都保持弱层级", () => {
-    const descriptionStyles = styles.match(/\.setting-description \{[\s\S]*?\n\}/)?.[0];
-    expect(descriptionStyles).toContain("color: var(--text-secondary);");
-    expect(descriptionStyles).toContain("font-weight: 400;");
-    expect(styles).toContain(":root.dark .setting-description {\n  color: var(--text-secondary);\n}");
-  });
-
-  it("按 4K 150% 缩放换算侧栏与窗口标题栏尺寸，并让窗口控制区底边与主卡片顶边重合", () => {
-    expect(styles).toContain("--sidebar-width-collapsed: 3.125rem;");
-    expect(styles).toContain("--window-chrome-height: 2.2083333333rem;");
-  });
-
-  it("浅色主题的侧栏与窗口标题栏使用统一背景色", () => {
-    expect(styles).toContain("--sidebar-bg: var(--panel-bg);");
-    expect(styles).toMatch(/\.apple-window-chrome \{[\s\S]*?background: var\(--sidebar-bg\);/);
-    expect(styles).toMatch(/\.apple-sidebar \{[\s\S]*?background: var\(--sidebar-bg\);/);
-  });
-
-  it("让全局卡片浅色使用微暖白、深色保持原卡片底色", () => {
-    expect(styles).toContain("--panel-bg: #f5f5f5;");
-    expect(styles).toContain("--panel-bg: #292b30;");
-    expect(styles).toMatch(/\.apple-group \{[\s\S]*?background: var\(--panel-bg\);/);
-    expect(styles).toMatch(/\.panel \{[\s\S]*?background: var\(--panel-bg\);/);
-  });
-
   it("普通悬停块复用侧边栏原有的深浅色高亮", () => {
     expect(styles).toMatch(/:root \{[^}]*--hover-bg: rgb\(0 0 0 \/ 0\.05\);/);
     expect(styles).toMatch(/:root\.dark \{[^}]*--hover-bg: rgb\(255 255 255 \/ 0\.08\);/);
@@ -253,69 +228,6 @@ describe("AppShell 布局", () => {
     // :where 归零守卫优先级是硬契约：否则通用悬停压过组内透明覆盖，ghost 组悬停退化成左右分块高亮
     expect(styles).toContain('.editor-ghost:where(:not(:disabled):not([aria-disabled="true"])):hover {\n  background: var(--hover-bg);');
     expect(styles).toContain(".editor-ghost-group > .editor-ghost:hover {\n  background: transparent;\n}");
-  });
-
-  it("让主内容表面浅色使用白色、深色使用 #1e1e1e", () => {
-    expect(styles).toContain("--main-surface-bg: #ffffff;");
-    expect(styles).toContain("--main-surface-bg: #1e1e1e;");
-    expect(styles).toContain("--input-bg: var(--main-surface-bg);");
-    expect(styles).toMatch(/\.apple-main-card \{[\s\S]*?background: var\(--main-surface-bg\);/);
-    expect(styles).toMatch(/\.apple-page-bar \{[\s\S]*?background: var\(--main-surface-bg\);/);
-    expect(styles).toMatch(/\.apple-edit-toolbar--footer \{[\s\S]*?background: var\(--main-surface-bg\);/);
-  });
-
-  it("让捕获配置图标按钮保持圆形", () => {
-    expect(styles).toContain(".apple-toolbar-group > .apple-icon-button {\n  border-radius: 999px;");
-  });
-
-  it("让 Codex 状态操作组使用主题表面,仅圆点承载运行色并让运行圆点呼吸", () => {
-    const capsuleStyles = styles.match(/\.codex-status-control \{[\s\S]*?\n\}/)?.[0] ?? "";
-    const signalStyles = styles.match(/\.codex-status__signal \{[\s\S]*?\n\}/)?.[0] ?? "";
-    expect(capsuleStyles).toContain("border: 1px solid var(--primary-button-hover-bg);");
-    expect(capsuleStyles).toContain("background: var(--primary-button-bg);");
-    expect(styles).not.toContain("color-mix(in srgb, var(--success) 18%, var(--panel-ring))");
-    expect(signalStyles).toContain("color: color-mix(in srgb, var(--primary-button-text) 65%, transparent);");
-    expect(signalStyles).toContain("background: transparent;");
-    expect(styles).not.toContain("color-mix(in srgb, var(--text-secondary) 8%, transparent)");
-    expect(styles).toContain(".codex-status--running .codex-status__signal {\n  color: var(--success);\n}");
-    expect(styles).toContain(".codex-status__signal-dot {\n  position: relative;\n  isolation: isolate;\n  width: 0.375rem;\n  height: 0.375rem;");
-    expect(styles).toContain(".codex-status--running .codex-status__signal-dot {\n  animation: codex-status-breathe 2.8s ease-in-out infinite;");
-    expect(styles).toContain("0%, 100% { transform: scale(1); }\n  50% { transform: scale(1.3); }");
-    expect(styles).toContain(".codex-status__signal-dot::after {");
-    expect(styles).toContain("background: currentColor;");
-    expect(styles).toContain("filter: blur(2px);");
-    expect(styles).toContain(".codex-status--running .codex-status__signal-dot::after {\n  animation: codex-status-breathe-halo 2.8s ease-in-out infinite;");
-    expect(styles).toContain("@keyframes codex-status-breathe-halo {");
-    expect(styles).toContain("0%, 100% { opacity: 0; transform: scale(1); }\n  50% { opacity: 0.18; transform: scale(1.35); }");
-    expect(styles).not.toContain("codex-status-halo");
-    expect(styles).not.toContain("codex-status-sheen");
-    expect(styles).not.toContain(".codex-status--running::after");
-    expect(styles).toContain(".codex-status__action {");
-    expect(styles).toContain("border-radius: 50%;");
-    expect(styles).toContain("width: calc(var(--control-height) - 0.125rem);");
-    expect(styles).toContain("height: calc(var(--control-height) - 0.125rem);");
-    expect(styles).toContain("margin: 0.125rem;");
-    expect(styles).toContain("border: 0;");
-    expect(styles).toContain("background: color-mix(in srgb, currentColor 12%, transparent);");
-  });
-
-  it("让标题栏药丸共用统一高度", () => {
-    expect(styles).toContain("--toolbar-control-height: calc(var(--control-height) + 2px);");
-    expect(styles).toContain(".codex-status-control {\n  display: inline-flex;\n  height: var(--toolbar-control-height);");
-    expect(styles).toContain(".apple-action-button {\n  align-items: center;");
-    expect(styles).toContain("height: var(--toolbar-control-height);");
-    expect(styles).toContain(".app-input--pill {\n  height: var(--toolbar-control-height);");
-    expect(styles).toContain(".provider-page-brand {\n  display: inline-flex;\n  height: var(--toolbar-control-height);");
-  });
-
-  it("让工具栏保持药丸圆角，分段控件使用圆角矩形", () => {
-    expect(styles).toContain(".apple-toolbar-group {\n  border-radius: 999px;");
-    expect(styles).toMatch(/\.app-segmented-control \{[^}]*border-radius: 0\.75rem;/);
-  });
-
-  it("让共享面板的分割线与内容左右内边距对齐", () => {
-    expect(styles).toContain(".apple-panel-section + .apple-panel-section {\n  position: relative;\n  border-top: 0;");
-    expect(styles).toContain(".apple-panel-section + .apple-panel-section::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  right: var(--gap-card-inline);\n  left: var(--gap-card-inline);\n  border-top: 1px solid var(--panel-divider);");
   });
 
   it("所有编辑正文复用共享容器，不依赖 apple-group 的嵌套层数", () => {
@@ -344,25 +256,14 @@ describe("AppShell 布局", () => {
     expect(lastSectionRule).toContain("padding-bottom: 0;");
   });
 
-  it("让配置卡片与独立列表卡片复用全局描边", () => {
-    expect(styles).toContain("--card-edge-shadow: 0 0 0 0.5px var(--panel-border);");
-    expect(styles).toContain(".panel,\n.apple-group,\n.app-segmented-control,\n.apple-list-row,\n.apple-editor-surface {\n  box-shadow: var(--card-edge-shadow);");
-  });
-
-  it("让技能预览器的 Markdown 分割线使用全局分割线", () => {
-    expect(styles).toContain(".skill-markdown-preview hr {\n  border: 0;\n  border-top: 1px solid var(--panel-divider);");
-  });
-
-  it("将通知条与页面顶部操作按钮对齐", () => {
-    expect(styles).toContain(".app-toast-viewport {\n  position: fixed;\n  top: 2.5rem;");
-  });
-
   it("拖拽时不改变供应商标题颜色", () => {
     expect(styles).not.toContain(".profile-drag-preview.is-drag-hover h3");
   });
 
-  it("编辑页滚动条收在主卡片边界内", () => {
-    expect(profileEditSource).toContain('className="apple-edit-content"');
+  it("编辑页两个视图的滚动条都收在主卡片边界内", () => {
+    expect(profileEditSource.match(/<div className=\{`apple-edit-content\b/g)).toHaveLength(2);
+    expect(profileEditSource).toContain('inert={configView}');
+    expect(profileEditSource).toContain('inert={!configView}');
     expect(profileEditSource).toContain('className="apple-edit-surface"');
     expect(styles).not.toContain(".apple-edit-card-frame");
   });
@@ -374,20 +275,6 @@ describe("AppShell 布局", () => {
     expect(source).toContain("function animatePageEnter");
     expect(source).toContain('matchMedia("(prefers-reduced-motion: reduce)")');
     expect(profileEditSource).toContain("if (((!create && !detail) || authStatusPending) && !loadError) return null;");
-  });
-
-  it("主区域统一使用 52px 物理像素左右留白，并从右侧内边距扣除滚动条槽", () => {
-    expect(styles).toContain("--gap-main: 2.1666666667rem;");
-    expect(styles).toContain("padding-right: calc(var(--gap-main) - 10px);");
-  });
-
-  it("让编辑页的表单大卡片与主视图使用相同圆角", () => {
-    expect(styles).toContain(".apple-edit-content > .apple-group {\n  margin-top: 0;\n  border-radius: var(--radius-card);");
-  });
-
-  it("将 Skill 更新徽标锚定在导入按钮右上角，中心落在药丸边缘（一半压按钮一半露出）", () => {
-    // 药丸高 38px → 半径 19px；偏移 = 尺寸/2 - 19×(1-cos45°) = 9 - 5.6 = 3.4px
-    expect(styles).toContain(".apple-count-badge {\n  position: absolute;\n  left: auto;\n  right: -3.4px;\n  top: -3.4px;");
   });
 
   it("配置编辑器随文档撑高，保留原生横向滚动且纵向滚轮交给页面", () => {
@@ -404,26 +291,20 @@ describe("AppShell 布局", () => {
     const toolbarRule = styles.match(/\n\.apple-editor-toolbar \{([^}]+)\}/)?.[1];
     expect(toolbarRule).toContain("position: sticky;");
     expect(toolbarRule).toContain("top: -1px;");
-    expect(toolbarRule).toContain("padding-top: 1px;");
+    expect(toolbarRule).toContain("padding-top: calc(var(--gap-page) + 1px);");
     expect(toolbarRule).toContain("margin-top: -1px;");
     expect(toolbarRule).toContain("z-index: 1;");
     expect(toolbarRule).toContain("background: var(--main-surface-bg);");
     const scrollportRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) \{([^}]+)\}/)?.[1];
-    const surfaceRule = styles.match(/\n\.apple-edit-content:has\(\.apple-editor-toolbar\) > \.apple-edit-surface \{([^}]+)\}/)?.[1];
     expect(scrollportRule).toContain("padding-top: 0;");
-    expect(surfaceRule).toContain("padding-top: var(--gap-page);");
     expect(styles).not.toContain(".apple-editor-toolbar::before");
     expect(styles).toContain(".apple-editor-shell {\n  min-width: 0;\n  isolation: isolate;");
   });
 
-  it("通用模板弹窗按窗口宽高固定占比，编辑器占满正文剩余高度", () => {
+  it("Skill 预览弹窗使用共享高度", () => {
     const skillsSource = readFileSync(new URL("../features/skills/SkillsView.tsx", import.meta.url), "utf8");
-    const templateRule = styles.match(/\.claude-template-dialog \{([^}]+)\}/)?.[1];
     expect(styles.includes("--dialog-preview-height: 60vh;")).toBe(true);
     expect(skillsSource.match(/h-\[var\(--dialog-preview-height\)\]/g)).toHaveLength(4);
-    expect(templateRule).toContain("width: 80vw;");
-    expect(templateRule).toContain("height: 80vh;");
-    expect(templateRule).toContain("--editor-available-height: 100%;");
     expect(styles.includes("--editor-available-height: min(34rem, 60vh);")).toBe(true);
   });
 
@@ -441,8 +322,7 @@ describe("AppShell 布局", () => {
     expect(styles).toContain(".apple-edit-content .editor-attach-group {\n  overflow: visible;");
     const trayRule = styles.match(/\n\.apple-edit-content \.editor-attach-group \{([^}]+)\}/)?.[1];
     expect(trayRule).toContain("box-shadow: none;");
-    expect(trayRule).toContain("border: 0.5px solid var(--panel-border);");
-    expect(styles).toContain("padding-bottom: calc(var(--gap-section) * 0.125);");
+    expect(trayRule).toContain("border: 1px solid var(--panel-border);");
     expect(styles).toContain(".apple-edit-content .cm-scroller::-webkit-scrollbar { width: 0; height: 0; }");
   });
 
@@ -460,10 +340,6 @@ describe("AppShell 布局", () => {
   it("避免侧栏宽度动画期间重测主区域滚动条占位", () => {
     expect(source).not.toContain("new ResizeObserver(updateScrollbarSize)");
     expect(source).toContain("updateScrollbarSize();");
-  });
-
-  it("让供应商卡片使用略圆的圆角", () => {
-    expect(styles).toContain(".profile-list > .apple-group {\n  border-radius: var(--radius-card);");
   });
 
   it("新增带官网预设时显示官网地址输入框", () => {

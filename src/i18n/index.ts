@@ -3,6 +3,7 @@ import { initReactI18next } from "react-i18next";
 import { resolveLanguage, type AppLanguage } from "./resolve";
 import zhCommon from "./locales/zh-CN/common";
 import zhClaude from "./locales/zh-CN/claude";
+import zhClaudeDesktop from "./locales/zh-CN/claudeDesktop";
 import zhMcp from "./locales/zh-CN/mcp";
 import zhPlugins from "./locales/zh-CN/plugins";
 import zhProfiles from "./locales/zh-CN/profiles";
@@ -11,6 +12,7 @@ import zhSkills from "./locales/zh-CN/skills";
 import zhUpdates from "./locales/zh-CN/updates";
 import enCommon from "./locales/en-US/common";
 import enClaude from "./locales/en-US/claude";
+import enClaudeDesktop from "./locales/en-US/claudeDesktop";
 import enMcp from "./locales/en-US/mcp";
 import enPlugins from "./locales/en-US/plugins";
 import enProfiles from "./locales/en-US/profiles";
@@ -21,8 +23,8 @@ import enUpdates from "./locales/en-US/updates";
 export const defaultNS = "common";
 
 export const resources = {
-  "zh-CN": { common: zhCommon, claude: zhClaude, mcp: zhMcp, plugins: zhPlugins, profiles: zhProfiles, settings: zhSettings, skills: zhSkills, updates: zhUpdates },
-  "en-US": { common: enCommon, claude: enClaude, mcp: enMcp, plugins: enPlugins, profiles: enProfiles, settings: enSettings, skills: enSkills, updates: enUpdates },
+  "zh-CN": { common: zhCommon, claude: zhClaude, claudeDesktop: zhClaudeDesktop, mcp: zhMcp, plugins: zhPlugins, profiles: zhProfiles, settings: zhSettings, skills: zhSkills, updates: zhUpdates },
+  "en-US": { common: enCommon, claude: enClaude, claudeDesktop: enClaudeDesktop, mcp: enMcp, plugins: enPlugins, profiles: enProfiles, settings: enSettings, skills: enSkills, updates: enUpdates },
 } as const;
 
 /**

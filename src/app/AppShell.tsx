@@ -14,6 +14,7 @@ import McpView from "../features/mcp/McpView";
 import PluginsView from "../features/plugins/PluginsView";
 import SkillsView from "../features/skills/SkillsView";
 import ClaudeProfilesView from "../features/claude/ClaudeProfilesView";
+import ClaudeDesktopProfilesView from "../features/claudeDesktop/ClaudeDesktopProfilesView";
 import AccountsView from "../features/accounts/AccountsView";
 import SettingsView from "../features/settings/SettingsView";
 import AgentToolsView from "../features/settings/AgentToolsView";
@@ -87,6 +88,14 @@ function usePageEnterAnimation(mainRef: { current: HTMLElement | null }, view: A
     if (!main) return;
     const played = new WeakSet<Element>(main.querySelectorAll(PAGE_ENTER_TARGET));
     const scan = (mutations: MutationRecord[]) => {
+      const pageStructure = ".apple-scroll-page, .apple-edit-page, .apple-edit-content";
+      // 编辑器滚动时会替换可见行，只有页容器变化才需要重扫进场目标。
+      if (!mutations.some(({ addedNodes, removedNodes }) =>
+        [...addedNodes, ...removedNodes].some((node) =>
+          node instanceof Element && (node.matches(pageStructure) || node.querySelector(pageStructure)),
+        ),
+      )) return;
+
       // 同级列表内容互换（MCP 客户端切换）不播放；编辑页进出会替换页面容器，仍照常播放。
       const peerSwitch = (["addedNodes", "removedNodes"] as const).every((key) =>
         mutations.some((mutation) => Array.from(mutation[key]).some((node) => node instanceof Element && node.matches(".apple-edit-content"))),
@@ -140,12 +149,17 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
     void Promise.allSettled([
       listen("tray-open-settings", () => latest.current.openSettings()),
       listen("tray-open-accounts", () => latest.current.openAccounts()),
-      listen<{ client: "codex" | "claude"; id: string }>("tray-switch-profile", async ({ payload: { client, id } }) => {
+      listen<{ client: "codex" | "claude" | "claude-desktop"; id: string }>("tray-switch-profile", async ({ payload: { client, id } }) => {
         const state = stateRef.current;
         if (busy.current) return;
+        const activeClient = client === "codex"
+          ? state?.active_codex_profile_id
+          : client === "claude"
+            ? state?.active_claude_profile_id
+            : state?.active_claude_desktop_profile_id;
         if (!state || (client === "codex"
           ? !state.codex_profiles.some((profile) => profile.id === id) || state.active_codex_profile_id === id
-          : state.active_claude_profile_id === id)) {
+          : activeClient === id)) {
           await latest.current.refresh();
           return;
         }
@@ -153,7 +167,10 @@ function TrayActions({ stateRef, refresh, openSettings, openAccounts }: {
         const { feedback, t, refresh } = latest.current;
         try {
           await switchProfileFromTray(client, id, state, refresh);
-          feedback.success(t("feedback.applySuccess", { ns: "common" }));
+          // 桌面端无热重载：切完必须完全重启才生效，toast 里直接说清
+          feedback.success(client === "claude-desktop"
+            ? t("status.applyRestartHint", { ns: "claudeDesktop" })
+            : t("feedback.applySuccess", { ns: "common" }));
         } catch (error) {
           const message = String(error);
           await refresh();
@@ -194,7 +211,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
           }}
         >
           <img src="/logo.svg" alt="Agmux" className="app-logo" draggable="false" />
-          <span className="apple-sidebar-label apple-wordmark whitespace-nowrap">Agmux</span>
+          <span className="apple-wordmark whitespace-nowrap">Agmux</span>
         </div>
         {sidebar.sidebarFlyoutArmed ? (
           <span className="apple-sidebar-flyout" aria-hidden="true">{t(sidebar.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")}</span>
@@ -207,7 +224,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
               aria-label={t("sidebar.collapse")}
               onClick={sidebar.toggleSidebar}
             >
-              <PanelLeft size={16} strokeWidth={2} className="[&_rect]:[rx:4]" aria-hidden="true" />
+              <PanelLeft size={18} strokeWidth={2} className="[&_rect]:[rx:3.5px]" aria-hidden="true" />
             </button>
             {sidebar.sidebarFlyoutArmed ? <span className="apple-sidebar-flyout" aria-hidden="true">{t("sidebar.collapse")}</span> : null}
           </>
@@ -261,9 +278,9 @@ export default function AppShell() {
   useEffect(() => {
     const language = setupI18n(state?.settings.language);
     if (isTauri && state) {
-      void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id, state.active_claude_profile_id).catch(() => undefined);
+      void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id, state.active_claude_profile_id, state.active_claude_desktop_profile_id).catch(() => undefined);
     }
-  }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id, state?.active_claude_profile_id]);
+  }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id, state?.active_claude_profile_id, state?.active_claude_desktop_profile_id]);
   const { start: startPolling, stop: stopPolling } = useCodexPolling(stateRef, updateCodex);
   const { activationEpoch, activate, deactivate } = useActivationRefresh();
   // 页面进场动画：只监听页内内容切换，一级切页不补播（见 usePageEnterAnimation）。
@@ -454,6 +471,7 @@ export default function AppShell() {
       plugins: <PluginsView state={state} activationEpoch={activationEpoch} popEpoch={popEpochOf("plugins")} />,
       skills: <SkillsView activationEpoch={activationEpoch} popEpoch={popEpochOf("skills")} />,
       claudeProfiles: <ClaudeProfilesView activeId={state.active_claude_profile_id} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude")} />,
+      claudeDesktopProfiles: <ClaudeDesktopProfilesView activeId={state.active_claude_desktop_profile_id} status={state.claude_desktop} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeDesktopProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude-desktop")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
       agentTools: <AgentToolsView active={view === "agentTools"} />,
@@ -474,6 +492,7 @@ export default function AppShell() {
       items: [
         { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "codex"), badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
         { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "claude"), badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
+        { view: "claudeDesktopProfiles", labelKey: "nav.groupClaudeDesktop", icon: <img src="/claude.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "claude-desktop"), onSelect: () => navTo("claudeDesktopProfiles") },
       ],
     },
     {

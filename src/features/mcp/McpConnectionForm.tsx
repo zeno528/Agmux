@@ -86,8 +86,8 @@ export default function McpConnectionForm({
           <div>
             <div className="field-label mb-1.5">{t("edit.name")}</div>
             {nameReadOnly ? (
-              <div className="app-input flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium text-(--text-secondary)">{name}</span>
+              <div className="app-input app-input--readonly flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium">{name}</span>
               </div>
             ) : <input className="app-input mono" maxLength={64} placeholder={t("edit.namePlaceholder")} value={name} onChange={(event) => setName(event.target.value)} />}
           </div>

@@ -7,6 +7,10 @@ import type {
   CliUpdate,
   AuthStatus,
   BrowserLoginStart,
+  ClaudeDesktopAppStatus,
+  ClaudeDesktopModelSlot,
+  ClaudeDesktopProfileDetail,
+  ClaudeDesktopProfileSummary,
   ClaudeMarketplace,
   ClaudePluginInventory,
   ClaudePluginUpdate,
@@ -63,9 +67,9 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export class ProfileOverwriteRequired extends Error {}
 
-async function applyProfile(command: string, id: string, overwrite: boolean) {
+async function applyProfile(command: string, id: string, overwrite: boolean, args?: Record<string, unknown>) {
   try {
-    await call<void>(command, { id, overwrite });
+    await call<void>(command, { id, overwrite, ...args });
   } catch (error) {
     if (error && typeof error === "object" && "overwrite_required" in error && error.overwrite_required === true && "message" in error && typeof error.message === "string") {
       throw new ProfileOverwriteRequired(error.message);
@@ -85,7 +89,7 @@ export const api = {
   codexInstallCli: () => call<CliStatus>("codex_install_cli"),
   codexUpdateCli: () => call<CliStatus>("codex_update_cli"),
   getState: () => call<AppState>("get_state"),
-  // 启动里程碑：只写日志（Rust 侧折算到进程起点），无返回值语义
+  // 启动里程碑：Rust 折算到进程起点，出窗后在后台恢复桌面端网关
   reportStartupMark: (stage: string, frontendElapsedMs: number, detail?: string) =>
     call<void>("report_startup_mark", { stage, frontendElapsedMs, detail }),
   getCodexStatus: () => call<CodexAppStatus>("get_codex_status"),
@@ -133,6 +137,8 @@ export const api = {
     call<ProfileBalance>("codex_get_profile_balance", { id }),
   claudeGetProfileBalance: (id: string) =>
     call<ProfileBalance>("claude_get_profile_balance", { id }),
+  claudeDesktopGetProfileBalance: (id: string) =>
+    call<ProfileBalance>("claude_desktop_get_profile_balance", { id }),
   exportDatabase: () => call<string>("export_database"),
   exportDatabaseTo: (directory: string) => call<string>("export_database_to", { directory }),
   importDatabase: (path: string) => call<void>("import_database", { path }),
@@ -192,6 +198,22 @@ export const api = {
   claudeOpenTerminal: (id: string, cwd: string | null) => call<void>("claude_open_terminal", { id, cwd }),
   claudeDeleteProfile: (id: string) => call<void>("claude_delete_profile", { id }),
   claudeApplyProfile: (id: string, overwrite = false) => applyProfile("claude_apply_profile", id, overwrite),
+  claudeDesktopListProfiles: () => call<ClaudeDesktopProfileSummary[]>("claude_desktop_list_profiles"),
+  claudeDesktopGetProfile: (id: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_get_profile", { id }),
+  claudeDesktopCaptureProfile: (name: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_capture_profile", { name }),
+  claudeDesktopSaveProfile: (input: { id?: string; name: string; kind?: string | null; baseUrl?: string | null; apiKey?: string | null; authScheme?: string | null; models?: ClaudeDesktopModelSlot[] | null; adminUrl?: string | null; icon?: string | null; showBalance?: boolean | null; description?: string | null; fetchedModels?: string[] | null }) =>
+    call<ClaudeDesktopProfileDetail>("claude_desktop_save_profile", input),
+  claudeDesktopDeleteProfile: (id: string) => call<void>("claude_desktop_delete_profile", { id }),
+  claudeDesktopSetMembers: (members: string[]) => call<void>("claude_desktop_set_members", { members }),
+  claudeDesktopApplyProfile: (id: string, overwrite = false, mode?: import("../types").ClaudeDesktopMode, members?: string[]) =>
+    applyProfile("claude_desktop_apply_profile", id, overwrite, { mode, members }),
+  claudeDesktopReorderProfiles: (ids: string[]) => call<void>("claude_desktop_reorder_profiles", { ids }),
+  claudeDesktopDuplicateProfile: (id: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_duplicate_profile", { id }),
+  claudeDesktopTestProfile: (id: string) => call<CodexProfileConnectionResult>("claude_desktop_test_profile", { id }),
+  claudeDesktopGetDiagnostics: () => call<import("../types").ClaudeDesktopDiagnostics>("claude_desktop_get_diagnostics"),
+  claudeDesktopGetStatus: () => call<ClaudeDesktopAppStatus>("claude_desktop_get_status"),
+  claudeDesktopRestoreOfficial: () => call<void>("claude_desktop_restore_official"),
+  claudeDesktopRestart: () => call<void>("claude_desktop_restart"),
   getSkillContent: (name: string) => call<string>("get_skill_content", { name }),
   getImportSkillContent: (sourcePath: string) => call<string>("get_import_skill_content", { sourcePath }),
   scanUnmanagedSkills: () => call<SkillCandidate[]>("scan_unmanaged_skills"),
@@ -258,8 +280,8 @@ export const api = {
   revertMcpLiveEntries: (actions: McpDiffEntryAction[]) => call<number>("revert_mcp_live_entries", { actions }),
   restartCodex: () => call<void>("restart_codex"),
   setWindowTheme: (dark: boolean) => call<void>("set_window_theme", { dark }),
-  setTrayMenu: (language: string, profiles: Pick<CodexProfileSummary, "id" | "name">[], activeProfileId: string | null, activeClaudeProfileId: string | null) =>
-    call<void>("set_tray_menu", { language, profiles, activeProfileId, activeClaudeProfileId }),
+  setTrayMenu: (language: string, profiles: Pick<CodexProfileSummary, "id" | "name">[], activeProfileId: string | null, activeClaudeProfileId: string | null, activeClaudeDesktopProfileId: string | null) =>
+    call<void>("set_tray_menu", { language, profiles, activeProfileId, activeClaudeProfileId, activeClaudeDesktopProfileId }),
   authStartBrowserLogin: () => call<BrowserLoginStart>("auth_start_browser_login"),
   authPollBrowserLogin: () => call<ManagedAccount | null>("auth_poll_browser_login"),
   authCancelBrowserLogin: () => call<void>("auth_cancel_browser_login"),

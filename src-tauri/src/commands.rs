@@ -9,9 +9,11 @@ use crate::codex::config as codex_config;
 use crate::codex_builtin;
 use crate::error::{app_err, AppResult, ProfileApplyError};
 use crate::models::{
-    AppState, AuthSource, ClaudeProfileDetail, ClaudeProfileInput, ClaudeProfileSummary,
-    CodexAppStatus, CodexProfileDetail, CodexProfileSummary, McpDiffEntryAction, McpServerSpec,
-    McpSyncPreview, ProfileBalanceInfo, Settings, TrayClickAction,
+    AppState, AuthSource, ClaudeDesktopAppStatus, ClaudeDesktopModelSlot,
+    ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary, ClaudeProfileDetail,
+    ClaudeProfileInput, ClaudeProfileSummary, CodexAppStatus, CodexProfileDetail,
+    CodexProfileSummary, McpDiffEntryAction, McpServerSpec, McpSyncPreview, ProfileBalanceInfo,
+    Settings, TrayClickAction,
 };
 use crate::services::{
     AppContext, ClaudeMarketplace, ClaudePluginInventory, ClaudePluginUpdate,
@@ -125,15 +127,24 @@ pub fn get_state(state: State<'_, AppContext>) -> AppResult<AppState> {
     state.get_state()
 }
 
-/// 前端启动里程碑上报（只写日志不落库）：与 native 埋点共用同一把进程起点尺子。
+/// 前端启动里程碑上报；窗口显示后异步恢复桌面端网关，不阻塞首帧。
 /// stage 由调用方给定（state_ready / window_shown），detail 是补充定位（如 raf 路径）。
 #[tauri::command]
 pub fn report_startup_mark(
     state: State<'_, crate::StartupClock>,
+    context: State<'_, AppContext>,
     stage: String,
     frontend_elapsed_ms: u64,
     detail: Option<String>,
 ) {
+    if stage == "window_shown" {
+        let context = context.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = context.restore_desktop_gateway() {
+                tauri_plugin_log::log::warn!("[gateway.claude-desktop.restore] outcome=failure failure_kind=internal error={error:?} msg=\"桌面端网关恢复失败\"");
+            }
+        });
+    }
     tauri_plugin_log::log::info!(
         "[app.startup] stage={stage} frontend_elapsed_ms={frontend_elapsed_ms} rust_elapsed_ms={} detail={:?} msg=\"前端启动里程碑\"",
         state.0.elapsed().as_millis(),
@@ -369,6 +380,159 @@ pub async fn claude_test_profile(
     state: State<'_, AppContext>,
 ) -> AppResult<CodexProfileConnectionResult> {
     state.claude_test_profile(&id).await
+}
+
+// ==================== Claude Desktop（3P 第三方推理）供应商 ====================
+
+#[tauri::command]
+pub fn claude_desktop_list_profiles(
+    state: State<'_, AppContext>,
+) -> AppResult<Vec<ClaudeDesktopProfileSummary>> {
+    state.claude_desktop_list()
+}
+
+#[tauri::command]
+pub fn claude_desktop_get_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeDesktopProfileDetail> {
+    state.claude_desktop_get(&id)
+}
+
+#[tauri::command]
+pub fn claude_desktop_capture_profile(
+    name: String,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeDesktopProfileDetail> {
+    state.claude_desktop_capture(&name)
+}
+
+// ponytail: 参数即表单字段一一对应，IPC 边界保持散参（camelCase 自动映射），service 层才收拢成 Input
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn claude_desktop_save_profile(
+    id: Option<String>,
+    name: String,
+    kind: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    auth_scheme: Option<String>,
+    models: Option<Vec<ClaudeDesktopModelSlot>>,
+    admin_url: Option<String>,
+    icon: Option<String>,
+    show_balance: Option<bool>,
+    description: Option<String>,
+    fetched_models: Option<Vec<String>>,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeDesktopProfileDetail> {
+    state.claude_desktop_save(
+        id.as_deref(),
+        crate::models::ClaudeDesktopProfileInput {
+            name,
+            kind,
+            base_url,
+            api_key,
+            auth_scheme,
+            models,
+            admin_url,
+            icon,
+            show_balance: show_balance.unwrap_or(false),
+            description,
+            fetched_models,
+        },
+    )
+}
+
+#[tauri::command]
+pub async fn claude_desktop_get_profile_balance(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<crate::services::ProfileBalance> {
+    state.claude_desktop_get_profile_balance(&id).await
+}
+
+#[tauri::command]
+pub fn claude_desktop_delete_profile(id: String, state: State<'_, AppContext>) -> AppResult<()> {
+    state.claude_desktop_delete(&id)
+}
+
+#[tauri::command]
+pub fn claude_desktop_set_members(
+    members: Vec<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_desktop_set_members(members)
+}
+
+#[tauri::command]
+pub async fn claude_desktop_apply_profile(
+    id: String,
+    overwrite: Option<bool>,
+    mode: Option<crate::models::ClaudeDesktopMode>,
+    members: Option<Vec<String>>,
+    state: State<'_, AppContext>,
+) -> Result<(), ProfileApplyError> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.claude_desktop_apply_confirmed(&id, overwrite.unwrap_or(false), mode, members)
+    })
+    .await
+    .map_err(|error| app_err!("桌面端应用配置任务失败: {error}"))?
+}
+
+#[tauri::command]
+pub fn claude_desktop_reorder_profiles(
+    ids: Vec<String>,
+    state: State<'_, AppContext>,
+) -> AppResult<()> {
+    state.claude_desktop_reorder(&ids)
+}
+
+#[tauri::command]
+pub fn claude_desktop_duplicate_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeDesktopProfileDetail> {
+    state.claude_desktop_duplicate(&id)
+}
+
+#[tauri::command]
+pub async fn claude_desktop_test_profile(
+    id: String,
+    state: State<'_, AppContext>,
+) -> AppResult<CodexProfileConnectionResult> {
+    state.claude_desktop_test_profile(&id).await
+}
+
+#[tauri::command]
+pub async fn claude_desktop_get_diagnostics(
+    state: State<'_, AppContext>,
+) -> AppResult<crate::models::ClaudeDesktopDiagnostics> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.claude_desktop_diagnostics())
+        .await
+        .map_err(|error| app_err!("接入诊断任务失败: {error}"))?
+}
+
+#[tauri::command]
+pub fn claude_desktop_get_status(
+    state: State<'_, AppContext>,
+) -> AppResult<ClaudeDesktopAppStatus> {
+    state.claude_desktop_status()
+}
+
+#[tauri::command]
+pub fn claude_desktop_restore_official(state: State<'_, AppContext>) -> AppResult<()> {
+    state.claude_desktop_restore_official()
+}
+
+/// 与 restart_codex 同理：退出等待 + 启动轮询会阻塞数秒，放专用 blocking 线程。
+#[tauri::command]
+pub async fn claude_desktop_restart(state: State<'_, AppContext>) -> AppResult<()> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.restart_claude_desktop())
+        .await
+        .map_err(|error| app_err!("Claude Desktop 重启任务失败: {error}"))?
 }
 
 #[tauri::command]
@@ -1136,9 +1300,18 @@ pub fn set_tray_menu(
     profiles: Vec<crate::TrayProfile>,
     active_profile_id: Option<String>,
     active_claude_profile_id: Option<String>,
+    active_claude_desktop_profile_id: Option<String>,
 ) -> AppResult<()> {
     let claude_profiles = state
         .claude_list()?
+        .into_iter()
+        .map(|profile| crate::TrayProfile {
+            id: profile.id,
+            name: profile.name,
+        })
+        .collect::<Vec<_>>();
+    let claude_desktop_profiles = state
+        .claude_desktop_list()?
         .into_iter()
         .map(|profile| crate::TrayProfile {
             id: profile.id,
@@ -1152,6 +1325,8 @@ pub fn set_tray_menu(
         active_profile_id.as_deref(),
         &claude_profiles,
         active_claude_profile_id.as_deref(),
+        &claude_desktop_profiles,
+        active_claude_desktop_profile_id.as_deref(),
     )
     .map_err(|error| app_err!("更新托盘菜单失败: {error}"))?;
     app.tray_by_id("main")

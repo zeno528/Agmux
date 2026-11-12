@@ -123,14 +123,27 @@ describe("ProfileCard 官网入口", () => {
   it("卡片只常驻使用与更多，菜单保留测试和删除门控", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
+    for (const onApply of [() => undefined, undefined]) {
+      const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
+        active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, connectionDisabled: false, connectionTitle: "Test", onApply,
+      })));
+      const buttons = html.match(/<button\b[^>]*>/g) ?? [];
+      expect(buttons).toHaveLength(onApply ? 2 : 1);
+      expect(buttons[buttons.length - 1]).toContain('aria-haspopup="menu"');
+      expect(html).not.toContain('aria-label="terminal.open"');
+    }
+  });
+
+  it("激活供应商的草稿或模式变更后可重新使用", () => {
+    const i18n = createInstance();
+    void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, connectionDisabled: false, connectionTitle: "Test",
+      active: true, reapply: true, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
     })));
-    const buttons = html.match(/<button\b[^>]*>/g) ?? [];
-    expect(buttons).toHaveLength(2);
-    expect(buttons[1]).toContain('aria-haspopup="menu"');
-    // 不传 terminalProfileId 的卡片（Codex）不渲染终端入口，只有 Claude 卡传
-    expect(html).not.toContain('aria-label="terminal.open"');
+    const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(button).toContain('aria-label="actions.switch"');
+    expect(button).toContain('aria-pressed="false"');
+    expect(button).not.toContain('disabled=""');
   });
 
   it("订阅与普通供应商共用同一套连通性悬停文案", () => {
@@ -144,9 +157,16 @@ describe("ProfileCard 官网入口", () => {
     expect(source).not.toContain("connection.testSubscription");
   });
 
-  it("卡片操作按钮自持悬停文案，不继承卡片的「单击编辑」", () => {
-    // 图标操作按钮仍自持 title，避免继承 <article> 的 card.clickToEdit。
-    expect(source).toContain('title={active ? t("actions.inUse") : t("actions.switch")} onClick={onApply}');
+  it("卡片操作按钮的悬停和无障碍文案跟随当前操作，不继承卡片的编辑提示", () => {
+    const i18n = createInstance();
+    void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
+    const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
+      active: false, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
+    })));
+    const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    expect(buttons[0]).toContain('title="actions.switch"');
+    expect(buttons[0]).toContain('aria-label="actions.switch"');
+    expect(buttons[1]).toContain('title="actions.more"');
   });
 
   it("使用按钮两种状态共用固定尺寸，保留可见图标与禁用条件", () => {
@@ -154,7 +174,7 @@ describe("ProfileCard 官网入口", () => {
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     for (const [active, busy] of [[false, false], [true, false], [false, true]]) {
       const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-        active, busy, testing: false, connectionDisabled: false, connectionTitle: "Test",
+        active, busy, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
       })));
       const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
       expect(button).toContain('class="apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary');

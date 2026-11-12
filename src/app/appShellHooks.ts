@@ -7,7 +7,7 @@ export type { AppView };
 
 /** 设置里的 startup_view 是透传字符串，手改坏值在此回落默认页。 */
 export function asAppView(value: string | null | undefined): AppView {
-  const appViews: AppView[] = ["codexProfiles", "claudeProfiles", "plugins", "accounts", "mcp", "skills", "agentTools", "settings"];
+  const appViews: AppView[] = ["codexProfiles", "claudeProfiles", "claudeDesktopProfiles", "plugins", "accounts", "mcp", "skills", "agentTools", "settings"];
   return appViews.includes(value as AppView) ? value as AppView : "codexProfiles";
 }
 

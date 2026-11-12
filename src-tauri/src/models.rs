@@ -456,7 +456,10 @@ pub struct AppState {
     pub active_codex_profile_id: Option<String>,
     /// Claude Code 侧当前激活的供应商（claude_profiles 表）。
     pub active_claude_profile_id: Option<String>,
+    /// Claude Desktop（3P）侧当前激活的供应商（claude_desktop_profiles 表）。
+    pub active_claude_desktop_profile_id: Option<String>,
     pub codex: CodexAppStatus,
+    pub claude_desktop: ClaudeDesktopAppStatus,
     pub settings: Settings,
     pub paths: Vec<PathInfo>,
     pub auth_status: AuthStatus,
@@ -521,4 +524,180 @@ pub struct ClaudeProfileInput {
     pub raw_settings: Option<String>,
     pub icon: Option<String>,
     pub show_balance: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeDesktopMode {
+    #[default]
+    Direct,
+    Route,
+    Aggregate,
+}
+
+/// 模式归客户端，供应商只保存一份端点、凭证和模型。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClaudeDesktopRouting {
+    pub mode: ClaudeDesktopMode,
+    pub members: Vec<String>,
+    pub selected_members: Option<Vec<String>>,
+    pub port: u16,
+    pub token: String,
+    pub snapshot: Option<String>,
+    pub gateway_routes: Option<String>,
+}
+
+/// Claude Desktop 3P 的三档模型映射（inferenceModels 条目）。
+/// name 是实际请求模型，直连时还需符合 Desktop 的角色 ID 约束；
+/// label_override 是菜单显示名；supports_1m 声明 1M 上下文。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClaudeDesktopModelSlot {
+    pub slot: String,
+    /// 上游实际请求模型。
+    pub name: String,
+    pub label_override: Option<String>,
+    #[serde(default)]
+    pub supports_1m: bool,
+    /// 兼容旧分支的模型映射，读取时归并到 name，新保存不再使用。
+    #[serde(default, skip_serializing)]
+    pub upstream_model: Option<String>,
+}
+
+/// Claude Desktop 供应商列表摘要：API Key 只回是否已设置。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopProfileSummary {
+    pub id: String,
+    pub name: String,
+    pub base_url: Option<String>,
+    pub has_key: bool,
+    /// 首个槽位的模型名（卡片快速识别用）。
+    pub model: Option<String>,
+    pub requires_routing: bool,
+    pub kind: Option<String>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    pub updated_at: String,
+}
+
+/// Claude Desktop 供应商详情：编辑回显含 API Key 明文（对齐 ClaudeProfileDetail.auth_token）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopProfileDetail {
+    pub id: String,
+    pub name: String,
+    pub kind: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub auth_scheme: String,
+    pub models: Vec<ClaudeDesktopModelSlot>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    pub description: Option<String>,
+    pub fetched_models: Vec<String>,
+    pub updated_at: String,
+}
+
+/// claude_desktop_save_profile 的载荷。
+#[derive(Debug, Clone, Default)]
+pub struct ClaudeDesktopProfileInput {
+    pub name: String,
+    pub kind: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub auth_scheme: Option<String>,
+    pub models: Option<Vec<ClaudeDesktopModelSlot>>,
+    pub admin_url: Option<String>,
+    pub icon: Option<String>,
+    pub show_balance: bool,
+    pub description: Option<String>,
+    pub fetched_models: Option<Vec<String>>,
+}
+
+/// Claude Desktop 应用状态（对齐 CodexAppStatus 的每帧刷新语义）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopAppStatus {
+    pub installed: bool,
+    pub running: bool,
+    pub display_path: String,
+    pub source: String,
+    /// 3P 配置里的 deploymentMode："1p" | "3p" | None（读不到）。
+    pub deployment_mode: Option<String>,
+    pub mode: ClaudeDesktopMode,
+    pub members: Vec<String>,
+    pub selected_members: Option<Vec<String>>,
+    pub gateway_running: bool,
+}
+
+/// 接入诊断只输出路由元信息，不输出凭证、URL 查询参数和请求正文。
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopRouteInfo {
+    pub desktop_model: String,
+    pub upstream_model: String,
+    pub label: String,
+    pub host: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaudeDesktopTokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cache_read_input_tokens: Option<u64>,
+    pub cache_creation_input_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeDesktopRequestOutcome {
+    Pending,
+    Completed,
+    HttpError,
+    NetworkError,
+    StreamError,
+    Incomplete,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopRequestInfo {
+    pub at_ms: u64,
+    pub path: String,
+    pub route: Option<ClaudeDesktopRouteInfo>,
+    pub status: Option<u16>,
+    pub upstream_status: Option<u16>,
+    pub header_ms: Option<u64>,
+    pub first_chunk_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub outcome: ClaudeDesktopRequestOutcome,
+    pub usage: ClaudeDesktopTokenUsage,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopModelUsage {
+    pub route: ClaudeDesktopRouteInfo,
+    pub requests: u64,
+    pub completed: u64,
+    pub failed: u64,
+    pub cancelled: u64,
+    pub usage_reported: u64,
+    pub tokens: ClaudeDesktopTokenUsage,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaudeDesktopGatewayActivity {
+    pub started_at_ms: Option<u64>,
+    pub requests: Vec<ClaudeDesktopRequestInfo>,
+    pub models: Vec<ClaudeDesktopModelUsage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaudeDesktopDiagnostics {
+    pub mode: ClaudeDesktopMode,
+    pub active_name: Option<String>,
+    pub gateway_running: bool,
+    pub gateway_url: Option<String>,
+    pub live_matches: bool,
+    pub routes: Vec<ClaudeDesktopRouteInfo>,
+    pub activity: ClaudeDesktopGatewayActivity,
 }

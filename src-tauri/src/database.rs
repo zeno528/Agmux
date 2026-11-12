@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{app_err, AppResult};
 use crate::models::{
-    ClaudeProfileInput, CodexProfileKind, CodexProfilePayload, CodexProfileSummary,
+    ClaudeDesktopProfileInput, ClaudeDesktopRouting, ClaudeProfileInput, CodexProfileKind,
+    CodexProfilePayload, CodexProfileSummary,
 };
 use crate::paths::AppPaths;
 use crate::services::codex_profile_config::{parse_provider_detail, stored_provider_api_key};
@@ -161,6 +162,48 @@ fn migrations() -> Migrations<'static> {
                updated_at TEXT NOT NULL
              )",
         ),
+        // Claude Desktop（3P 第三方推理模式）第一期：独立供应商表与激活位。
+        // 其 live 配置在 Claude-3p 目录，与 Claude Code 的 ~/.claude 完全独立，故独立建表。
+        M::up(
+            "CREATE TABLE claude_desktop_profiles (
+               id TEXT PRIMARY KEY,
+               name TEXT NOT NULL,
+               kind TEXT,
+               base_url TEXT,
+               api_key TEXT,
+               auth_scheme TEXT NOT NULL DEFAULT 'bearer',
+               admin_url TEXT,
+               models TEXT,
+               config_uuid TEXT NOT NULL,
+               icon TEXT,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL,
+               sort_order INTEGER NOT NULL DEFAULT 0
+             );
+             ALTER TABLE app_state ADD COLUMN active_claude_desktop_profile_id TEXT",
+        ),
+        // 桌面端卡片余额开关（对齐 claude_profiles.show_balance；历史迁移只能末尾追加）。
+        M::up("ALTER TABLE claude_desktop_profiles ADD COLUMN show_balance INTEGER NOT NULL DEFAULT 0"),
+        M::up("ALTER TABLE claude_desktop_profiles ADD COLUMN description TEXT"),
+        // 路由模式（本地映射网关）：模式位、上游端点与密钥、网关令牌、模型列表缓存。
+        M::up(
+            "ALTER TABLE claude_desktop_profiles ADD COLUMN mode TEXT;
+             ALTER TABLE claude_desktop_profiles ADD COLUMN upstream_base_url TEXT;
+             ALTER TABLE claude_desktop_profiles ADD COLUMN upstream_api_key TEXT;
+             ALTER TABLE claude_desktop_profiles ADD COLUMN gateway_token TEXT;
+             ALTER TABLE claude_desktop_profiles ADD COLUMN fetched_models TEXT",
+        ),
+        M::up(
+            "ALTER TABLE app_state ADD COLUMN claude_desktop_routing TEXT;
+             UPDATE app_state SET claude_desktop_routing='{\"mode\":\"route\"}'
+               WHERE active_claude_desktop_profile_id IN
+                 (SELECT id FROM claude_desktop_profiles WHERE mode='route');
+             UPDATE claude_desktop_profiles SET
+               base_url=COALESCE(upstream_base_url, base_url),
+               api_key=COALESCE(upstream_api_key, api_key) WHERE mode='route';
+             UPDATE claude_desktop_profiles SET mode=NULL, upstream_base_url=NULL,
+               upstream_api_key=NULL, gateway_token=NULL",
+        ),
     ])
 }
 
@@ -243,6 +286,23 @@ impl Database {
             .and_then(|_| connection.pragma_update(None, "foreign_keys", "ON"))
             .and_then(|_| connection.pragma_update(None, "synchronous", "NORMAL"))
             .map_err(|error| app_err!("无法初始化 SQLite: {error}"))?;
+
+        // 库被更高版本的应用迁移过（装了新版本后又换回旧版本安装包）：rusqlite_migration
+        // 只会报 "migration number that is too high"，看不出该做什么。这里先拦一道，
+        // 换成能照做的提示；本应用不会降级修改用户库。
+        let database_version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|error| app_err!("无法读取数据库版本: {error}"))?;
+        let pending = migrations()
+            .pending_migrations(&connection)
+            .map_err(|error| app_err!("无法读取数据库版本: {error}"))?;
+        if pending < 0 {
+            let app_version = database_version + pending as i64;
+            return Err(app_err!(
+                "本地数据库已由更高版本的 Agmux 创建（数据库 v{database_version} > 本应用支持的 v{app_version}），\
+                 请安装更新版本后再打开；本应用不会降级修改数据库"
+            ));
+        }
 
         migrations()
             .to_latest(&mut connection)
@@ -1113,6 +1173,328 @@ impl Database {
         Ok(())
     }
 
+    pub fn active_claude_desktop_profile(&self) -> AppResult<Option<String>> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT active_claude_desktop_profile_id FROM app_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| app_err!("无法读取应用状态: {error}"))
+            .map(Option::flatten)
+    }
+
+    pub fn claude_desktop_routing(&self) -> AppResult<ClaudeDesktopRouting> {
+        let raw: Option<String> = self
+            .lock()?
+            .query_row(
+                "SELECT claude_desktop_routing FROM app_state WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| app_err!("无法读取路由状态: {error}"))?
+            .flatten();
+        raw.map(|raw| serde_json::from_str(&raw).map_err(|error| app_err!("路由状态无效: {error}")))
+            .unwrap_or_else(|| Ok(ClaudeDesktopRouting::default()))
+    }
+
+    pub(crate) fn save_claude_desktop_routing(
+        &self,
+        routing: &ClaudeDesktopRouting,
+    ) -> AppResult<()> {
+        let raw = serde_json::to_string(routing)
+            .map_err(|error| app_err!("路由状态序列化失败: {error}"))?;
+        self.lock()?.execute(
+            "INSERT INTO app_state(singleton, claude_desktop_routing) VALUES(1, ?1)
+             ON CONFLICT(singleton) DO UPDATE SET claude_desktop_routing=excluded.claude_desktop_routing",
+            params![raw],
+        ).map_err(|error| app_err!("无法保存路由选择: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn commit_claude_desktop_apply(
+        &self,
+        id: Option<&str>,
+        routing: &ClaudeDesktopRouting,
+        message: &str,
+        timestamp: &str,
+    ) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始配置切换事务: {error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO app_state(singleton, active_claude_desktop_profile_id, claude_desktop_routing) VALUES(1, ?1, ?2)
+                 ON CONFLICT(singleton) DO UPDATE SET active_claude_desktop_profile_id=excluded.active_claude_desktop_profile_id, claude_desktop_routing=excluded.claude_desktop_routing",
+                params![id, serde_json::to_string(routing).map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
+            )
+            .map_err(|error| app_err!("无法保存应用状态: {error}"))?;
+        transaction
+            .execute(
+                "INSERT INTO switch_events(profile_id, action, status, message, created_at)
+             VALUES(NULL, ?1, 'success', ?2, ?3)",
+                params![
+                    if id.is_some() {
+                        "apply_claude_desktop"
+                    } else {
+                        "restore_claude_desktop"
+                    },
+                    message,
+                    timestamp
+                ],
+            )
+            .map_err(|error| app_err!("无法记录操作日志: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| app_err!("无法提交配置切换事务: {error}"))
+    }
+
+    pub fn claude_desktop_profiles(&self) -> AppResult<Vec<StoredClaudeDesktopProfile>> {
+        let connection = self.lock()?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT {CLAUDE_DESKTOP_PROFILE_COLUMNS}
+                 FROM claude_desktop_profiles ORDER BY sort_order ASC, created_at ASC, id ASC"
+            ))
+            .map_err(|error| app_err!("无法读取 Claude Desktop 供应商配置: {error}"))?;
+        let rows = statement
+            .query_map([], claude_desktop_profile_from_row)
+            .map_err(|error| app_err!("无法读取 Claude Desktop 供应商配置: {error}"))?;
+        let mut profiles = Vec::new();
+        for row in rows {
+            profiles
+                .push(row.map_err(|error| app_err!("Claude Desktop 供应商配置数据无效: {error}"))?);
+        }
+        Ok(profiles)
+    }
+
+    pub fn claude_desktop_profile(&self, id: &str) -> AppResult<StoredClaudeDesktopProfile> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                &format!(
+                    "SELECT {CLAUDE_DESKTOP_PROFILE_COLUMNS} FROM claude_desktop_profiles WHERE id = ?1"
+                ),
+                params![id],
+                claude_desktop_profile_from_row,
+            )
+            .optional()
+            .map_err(|error| app_err!("无法读取 Claude Desktop 供应商配置: {error}"))?
+            .ok_or_else(|| app_err!("Claude Desktop 供应商配置不存在"))
+    }
+
+    pub fn insert_claude_desktop_profile(
+        &self,
+        input: &ClaudeDesktopProfileInput,
+        config_uuid: &str,
+        timestamp: &str,
+    ) -> AppResult<StoredClaudeDesktopProfile> {
+        let id = format!(
+            "cla-dt-{timestamp}-{}",
+            PROFILE_ID_SEQ.fetch_add(1, Ordering::Relaxed)
+        );
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                &format!(
+                    "INSERT INTO claude_desktop_profiles(id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, fetched_models)
+                     VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11,
+                            (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM claude_desktop_profiles), ?12, ?13, ?14)
+                     RETURNING {CLAUDE_DESKTOP_PROFILE_COLUMNS}"
+                ),
+                params![
+                    id,
+                    &input.name,
+                    &input.kind,
+                    &input.base_url,
+                    &input.api_key,
+                    &input.auth_scheme,
+                    &input.admin_url,
+                    input
+                        .models
+                        .as_ref()
+                        .map(|models| serde_json::to_string(models).unwrap_or_default()),
+                    config_uuid,
+                    &input.icon,
+                    timestamp,
+                    input.show_balance,
+                    &input.description,
+                    input
+                        .fetched_models
+                        .as_ref()
+                        .map(|models| serde_json::to_string(models).unwrap_or_default()),
+                ],
+                claude_desktop_profile_from_row,
+            )
+            .map_err(|error| app_err!("无法保存 Claude Desktop 供应商配置: {error}"))
+    }
+
+    pub fn update_claude_desktop_profile(
+        &self,
+        id: &str,
+        input: &ClaudeDesktopProfileInput,
+        timestamp: &str,
+        routing: Option<&ClaudeDesktopRouting>,
+    ) -> AppResult<StoredClaudeDesktopProfile> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始配置更新事务: {error}"))?;
+        // config_uuid 不随更新变化：文件名终身不变，切回同一供应商复用同一份文件。
+        let updated = transaction
+            .query_row(
+                &format!(
+                    "UPDATE claude_desktop_profiles SET name=?2, kind=?3, base_url=?4, api_key=?5, auth_scheme=?6, admin_url=?7, models=?8, icon=?9, show_balance=?10, description=?11, fetched_models=?12, updated_at=?13 WHERE id=?1
+                     RETURNING {CLAUDE_DESKTOP_PROFILE_COLUMNS}"
+                ),
+                params![
+                    id,
+                    &input.name,
+                    &input.kind,
+                    &input.base_url,
+                    &input.api_key,
+                    &input.auth_scheme,
+                    &input.admin_url,
+                    input
+                        .models
+                        .as_ref()
+                        .map(|models| serde_json::to_string(models).unwrap_or_default()),
+                    &input.icon,
+                    input.show_balance,
+                    &input.description,
+                    input
+                        .fetched_models
+                        .as_ref()
+                        .map(|models| serde_json::to_string(models).unwrap_or_default()),
+                    timestamp
+                ],
+                claude_desktop_profile_from_row,
+            )
+            .optional()
+            .map_err(|error| app_err!("无法更新 Claude Desktop 供应商配置: {error}"))?
+            .ok_or_else(|| app_err!("Claude Desktop 供应商配置不存在"))?;
+        if let Some(routing) = routing {
+            transaction
+                .execute(
+                    "UPDATE app_state SET claude_desktop_routing=?1 WHERE singleton=1",
+                    params![serde_json::to_string(routing)
+                        .map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
+                )
+                .map_err(|error| app_err!("无法保存路由状态: {error}"))?;
+        }
+        transaction
+            .commit()
+            .map_err(|error| app_err!("无法提交配置更新事务: {error}"))?;
+        Ok(updated)
+    }
+
+    pub fn delete_claude_desktop_profile(&self, id: &str) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始配置删除事务: {error}"))?;
+        let changed = transaction
+            .execute(
+                "DELETE FROM claude_desktop_profiles WHERE id=?1",
+                params![id],
+            )
+            .map_err(|error| app_err!("无法删除 Claude Desktop 供应商配置: {error}"))?;
+        if changed == 0 {
+            return Err(app_err!("Claude Desktop 供应商配置不存在"));
+        }
+        transaction.execute("UPDATE app_state SET active_claude_desktop_profile_id=NULL WHERE active_claude_desktop_profile_id=?1", params![id])
+            .map_err(|error| app_err!("无法清除激活配置: {error}"))?;
+        let routing: Option<String> = transaction
+            .query_row(
+                "SELECT claude_desktop_routing FROM app_state WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| app_err!("无法读取路由状态: {error}"))?
+            .flatten();
+        if let Some(raw) = routing {
+            let mut routing: ClaudeDesktopRouting =
+                serde_json::from_str(&raw).map_err(|error| app_err!("路由状态无效: {error}"))?;
+            routing.members.retain(|member| member != id);
+            if let Some(members) = &mut routing.selected_members {
+                members.retain(|member| member != id);
+            }
+            transaction
+                .execute(
+                    "UPDATE app_state SET claude_desktop_routing=?1 WHERE singleton=1",
+                    params![serde_json::to_string(&routing)
+                        .map_err(|error| app_err!("路由状态序列化失败: {error}"))?],
+                )
+                .map_err(|error| app_err!("无法清理聚合选择: {error}"))?;
+        }
+        transaction
+            .commit()
+            .map_err(|error| app_err!("无法提交配置删除事务: {error}"))
+    }
+
+    pub fn reorder_claude_desktop_profiles(
+        &self,
+        ids: &[String],
+        timestamp: &str,
+    ) -> AppResult<()> {
+        let mut connection = self.lock()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| app_err!("无法开始排序事务: {error}"))?;
+        for (index, id) in ids.iter().enumerate() {
+            transaction
+                .execute(
+                    "UPDATE claude_desktop_profiles SET sort_order = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![id, index as i64, timestamp],
+                )
+                .map_err(|error| app_err!("保存排序失败: {error}"))?;
+        }
+        transaction
+            .commit()
+            .map_err(|error| app_err!("提交排序事务失败: {error}"))
+    }
+
+    pub fn set_claude_desktop_profile_icon(
+        &self,
+        id: &str,
+        icon: Option<&str>,
+        timestamp: &str,
+    ) -> AppResult<()> {
+        let connection = self.lock()?;
+        let changed = connection
+            .execute(
+                "UPDATE claude_desktop_profiles SET icon=?2, updated_at=?3 WHERE id=?1",
+                params![id, icon, timestamp],
+            )
+            .map_err(|error| app_err!("无法更新 Claude Desktop 供应商配置图标: {error}"))?;
+        if changed == 0 {
+            return Err(app_err!("Claude Desktop 供应商配置不存在"));
+        }
+        Ok(())
+    }
+
+    /// Agmux 拥有的全部 configLibrary 文件名（写 _meta.json 时判定哪些条目是自己的）。
+    pub fn claude_desktop_config_uuids(&self) -> AppResult<Vec<String>> {
+        let connection = self.lock()?;
+        let mut statement = connection
+            .prepare("SELECT config_uuid FROM claude_desktop_profiles")
+            .map_err(|error| app_err!("无法读取 Claude Desktop 供应商配置: {error}"))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| app_err!("无法读取 Claude Desktop 供应商配置: {error}"))?;
+        let mut uuids = Vec::new();
+        for row in rows {
+            uuids
+                .push(row.map_err(|error| app_err!("Claude Desktop 供应商配置数据无效: {error}"))?);
+        }
+        Ok(uuids)
+    }
+
     pub fn record_event(
         &self,
         profile_id: Option<&str>,
@@ -1490,6 +1872,62 @@ fn claude_profile_from_row(row: &rusqlite::Row) -> rusqlite::Result<StoredClaude
     })
 }
 
+/// Claude Desktop（3P）供应商行：字段固定即列，对齐 StoredClaudeProfile。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredClaudeDesktopProfile {
+    pub id: String,
+    pub name: String,
+    /// 创建时选择的预设 kind（自定义为 NULL）。
+    pub kind: Option<String>,
+    pub base_url: Option<String>,
+    /// 网关 API Key 明文（对齐 auth_token 纪律：不落日志，summary 只回 has_key）。
+    pub api_key: Option<String>,
+    /// "bearer" | "x-api-key"（3P 的 inferenceGatewayAuthScheme）。
+    pub auth_scheme: String,
+    pub admin_url: Option<String>,
+    /// 三档模型映射（JSON 数组文本，ClaudeDesktopModelSlot）。
+    pub models: Option<String>,
+    /// configLibrary/<uuid>.json 文件名：创建时生成一次，终身不变。
+    pub config_uuid: String,
+    pub icon: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub sort_order: i64,
+    /// 卡片余额显示开关。
+    pub show_balance: bool,
+    pub description: Option<String>,
+    /// 已获取的模型列表缓存（JSON 数组文本）。
+    pub fetched_models: Option<String>,
+}
+
+const CLAUDE_DESKTOP_PROFILE_COLUMNS: &str =
+    "id, name, kind, base_url, api_key, auth_scheme, admin_url, models, config_uuid, icon, created_at, updated_at, sort_order, show_balance, description, fetched_models";
+
+fn claude_desktop_profile_from_row(
+    row: &rusqlite::Row,
+) -> rusqlite::Result<StoredClaudeDesktopProfile> {
+    Ok(StoredClaudeDesktopProfile {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        kind: row.get(2)?,
+        base_url: row.get(3)?,
+        api_key: row.get(4)?,
+        auth_scheme: row
+            .get::<_, Option<String>>(5)?
+            .unwrap_or_else(|| "bearer".into()),
+        admin_url: row.get(6)?,
+        models: row.get(7)?,
+        config_uuid: row.get(8)?,
+        icon: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        sort_order: row.get(12)?,
+        show_balance: row.get(13)?,
+        description: row.get(14)?,
+        fetched_models: row.get(15)?,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredAccount {
     pub id: String,
@@ -1645,6 +2083,29 @@ pub fn codex_profile_summary(profile: &StoredCodexProfile) -> CodexProfileSummar
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_legacy_route_migration_preserves_credentials_and_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(dir.path()).unwrap();
+        paths.ensure().unwrap();
+        {
+            let mut connection = Connection::open(&paths.database).unwrap();
+            migrations().to_version(&mut connection, 26).unwrap();
+            connection.execute_batch("INSERT INTO claude_desktop_profiles(id,name,config_uuid,created_at,updated_at,mode,upstream_base_url,upstream_api_key,models)
+                VALUES('legacy','Legacy','fixture','1','1','route','https://fixture.example','upstream-secret','[{\"slot\":\"sonnet\",\"name\":\"claude-sonnet-5\",\"upstream_model\":\"glm-fixture\"}]');
+                INSERT INTO app_state(singleton,active_claude_desktop_profile_id) VALUES(1,'legacy')").unwrap();
+        }
+        let db = Database::open(&paths).unwrap();
+        let profile = db.claude_desktop_profile("legacy").unwrap();
+        assert_eq!(profile.api_key.as_deref(), Some("upstream-secret"));
+        assert_eq!(profile.base_url.as_deref(), Some("https://fixture.example"));
+        assert!(profile.models.unwrap().contains("glm-fixture"));
+        assert_eq!(
+            db.claude_desktop_routing().unwrap().mode,
+            crate::models::ClaudeDesktopMode::Route
+        );
+    }
 
     #[test]
     fn account_models_preserve_valid_cache_and_survive_backup_and_legacy_restore() {
@@ -1855,7 +2316,7 @@ mod tests {
             connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            22
+            27
         );
     }
 
@@ -1992,7 +2453,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 22);
+        assert_eq!(version, 27);
         let show_balance: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('claude_profiles') WHERE name = 'show_balance'",
@@ -2001,6 +2462,24 @@ mod tests {
             )
             .unwrap();
         assert_eq!(show_balance, 1);
+    }
+
+    /// 库被更高版本的应用迁移过（装了新版本后又换回旧版本安装包）：
+    /// 报错要能直接照做，而不是 rusqlite_migration 的原始 "migration number that is too high"。
+    #[test]
+    fn open_reports_database_migrated_by_newer_app_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::from_home(dir.path()).unwrap();
+        paths.ensure().unwrap();
+        {
+            let connection = Connection::open(&paths.database).unwrap();
+            let latest = migrations().pending_migrations(&connection).unwrap();
+            connection
+                .pragma_update(None, "user_version", latest + 1)
+                .unwrap();
+        }
+        let error = Database::open(&paths).unwrap_err();
+        assert!(error.0.contains("更高版本"), "{}", error.0);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, CodeXml, Settings } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { presetConnectionName, presetConnections, presetEntries, presetEntryCategory, presetRegionName, type ClientPreset, type PresetConnection } from "../presets";
@@ -7,6 +7,20 @@ import { ProfileIconTile } from "./ProfileIconTile";
 import PresetGrid from "./PresetGrid";
 import { AppTabBar } from "./AppTabBar";
 import { AppSearchInput } from "./AppSearchInput";
+
+export function ProviderEditorViewSwitch({ config, disabled, onChange }: {
+  config: boolean;
+  disabled: boolean;
+  onChange: (config: boolean) => void;
+}) {
+  const { t } = useTranslation("profiles");
+  return <div className="ml-auto shrink-0" onKeyDown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}>
+    <AppSegmentedControl selectedIndex={config ? 1 : 0} label={t("edit.editorView")} className="h-8 w-44">
+      <button type="button" className="flex items-center justify-center gap-1.5 text-sm" aria-pressed={!config} disabled={disabled} onClick={() => onChange(false)}><Settings size={14} aria-hidden="true" />{t("edit.formView")}</button>
+      <button type="button" className="flex items-center justify-center gap-1.5 text-sm" aria-pressed={config} disabled={disabled} onClick={() => onChange(true)}><CodeXml size={14} aria-hidden="true" />{t("edit.configView")}</button>
+    </AppSegmentedControl>
+  </div>;
+}
 
 export function ProviderCreate({ presets, onBack, children }: {
   presets: readonly ClientPreset[];

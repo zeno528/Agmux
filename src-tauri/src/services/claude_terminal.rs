@@ -315,27 +315,39 @@ fn ps_quote(value: &str) -> String {
 }
 
 /// 两套 macOS 启动路径共用的 claude 调用行（posix 单引号字面量）。
+/// `-u NO_COLOR` 对齐 Windows 分支：从 agent 会话启动的父进程带着 NO_COLOR=1/TERM=dumb，
+/// TERM 会被 Ghostty/Terminal 的 pty 重设，但 NO_COLOR 原样漏进 surface 让 claude 变单色。
 #[cfg(target_os = "macos")]
 fn claude_invocation(arguments: &str, executable: Option<&Path>) -> String {
     let executable = executable
         .map(|path| posix_quote(&path.to_string_lossy()))
         .unwrap_or_else(|| "claude".into());
     format!(
-        "env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL {executable}{arguments}"
+        "env -u NO_COLOR -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL {executable}{arguments}"
     )
 }
 
 /// Ghostty 走官方 CLI `-e`（文档 config/reference：common -e flag）：脚本交给
-/// 用户的登录 shell 加载 PATH，工作目录用进程 current_dir 传递。单实例时 CLI 经
-/// IPC 转发给已有实例后立即退出；无实例时本进程常驻为 GUI——因此 spawn 发射
-/// 不等待（与 Windows ShellExecuteW 同语义）。
+/// 用户的登录 shell 加载 PATH。macOS 直接 exec 是独立新实例（无 GTK 式 IPC 转发），
+/// 进程 cwd 与脚本内 cd 双保险。spawn 发射不等待（与 Windows ShellExecuteW 同语义）。
 #[cfg(target_os = "macos")]
-fn ghostty_launch_script(banner: &str, arguments: &str, executable: Option<&Path>) -> String {
-    format!(
-        "echo {}; {}",
-        posix_quote(banner),
-        claude_invocation(arguments, executable)
-    )
+fn ghostty_launch_script(
+    dir: Option<&str>,
+    banner: &str,
+    arguments: &str,
+    executable: Option<&Path>,
+) -> String {
+    // cd 必须写进脚本：Ghostty 的 surface 初始目录受 window-inherit-working-directory
+    // 与窗口恢复影响，不总是继承进程 current_dir（症状：选了目录却在默认路径启动）。
+    let claude = claude_invocation(arguments, executable);
+    match dir {
+        Some(dir) => format!(
+            "echo {}; cd {} && {claude}",
+            posix_quote(banner),
+            posix_quote(dir)
+        ),
+        None => format!("echo {}; {claude}", posix_quote(banner)),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -416,6 +428,7 @@ fn launch_ghostty(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult
     };
     let native = super::claude_cli::native_path(&crate::paths::home_dir());
     let script = ghostty_launch_script(
+        dir,
         banner,
         arguments,
         native.is_file().then_some(native.as_path()),
@@ -435,6 +448,8 @@ fn launch_ghostty(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult
 }
 
 /// 未装 Ghostty 时的兜底：Terminal.app 系统必带。
+/// 冷启动必须先 `launch` 再 `do script`：冷 `activate` 会先开一个默认空窗口，
+/// 且 `do script` 可能落到 macOS 恢复的旧窗口上——命令丢失或开错位置。
 #[cfg(target_os = "macos")]
 fn launch_macos(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<()> {
     let claude = claude_invocation(arguments, None);
@@ -444,9 +459,16 @@ fn launch_macos(dir: Option<&str>, banner: &str, arguments: &str) -> AppResult<(
     };
     let script = format!("echo {}; {line}", posix_quote(banner));
     let applescript = format!(
-        r#"tell application "Terminal"
-    activate
-    do script "{escaped}"
+        r#"set was_running to application "Terminal" is running
+tell application "Terminal"
+    if was_running then
+        activate
+        do script "{escaped}"
+    else
+        launch
+        do script "{escaped}"
+        activate
+    end if
 end tell"#,
         escaped = script.replace('\\', "\\\\").replace('"', "\\\"")
     );
@@ -732,6 +754,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn ghostty_script_quotes_paths_and_stays_single_line() {
         let script = ghostty_launch_script(
+            Some("/Users/u's Projects"),
             "Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json",
             &claude_arguments(
                 "/Users/u/.agmux/terminal/claude_p1.json",
@@ -746,16 +769,26 @@ mod tests {
         assert_eq!(
             script,
             "echo 'Agmux Claude terminal: /Users/u/.agmux/terminal/claude_p1.json'; \
-             env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
+             cd '/Users/u'\\''s Projects' && \
+             env -u NO_COLOR -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_MODEL claude --settings '/Users/u/.agmux/terminal/claude_p1.json' \
              --setting-sources 'project,local' --add-dir '/Users/u/.agmux/terminal/shared' --mcp-config '/Users/u'\\''s home/.claude.json' --model 'sonnet'\\''s'"
         );
+        // 无目录时不能出现 cd，保持直接启动
+        let script = ghostty_launch_script(
+            None,
+            "banner",
+            &claude_arguments("s.json", "m", None, "shared"),
+            None,
+        );
+        assert!(script.starts_with("echo 'banner'; env -u "));
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn active_terminal_uses_default_claude_settings() {
-        let script = ghostty_launch_script("banner", "", None);
-        assert!(script.ends_with(" claude"));
+        let script = ghostty_launch_script(Some("/tmp"), "banner", "", None);
+        assert!(script.ends_with("claude"));
+        assert!(script.contains("cd '/tmp' && "));
         assert!(!script.contains("--settings"));
         assert!(!script.contains("--model"));
     }
@@ -832,8 +865,12 @@ mod tests {
         for shell in ["/bin/zsh", "/bin/bash"] {
             let shell = macos_login_shell(None, || Ok(format!("UserShell: {shell}"))).unwrap();
             for executable in [None, Some(claude.as_path())] {
-                let script =
-                    ghostty_launch_script("banner", " --model 'fixture model'", executable);
+                let script = ghostty_launch_script(
+                    Some(root.path().to_str().unwrap()),
+                    "banner",
+                    " --model 'fixture model'",
+                    executable,
+                );
                 let output = Command::new(&shell)
                     .args([GHOSTTY_SHELL_FLAGS, &ghostty_shell_script(&shell, &script)])
                     .env("HOME", root.path())
@@ -854,7 +891,7 @@ mod tests {
         let output = Command::new("/bin/sh")
             .args([
                 "-c",
-                &ghostty_launch_script("banner", " --model 'fixture model'", Some(&claude)),
+                &ghostty_launch_script(None, "banner", " --model 'fixture model'", Some(&claude)),
             ])
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .output()

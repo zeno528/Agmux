@@ -62,6 +62,8 @@ fn tray_labels(
     }
 }
 
+// ponytail: 三客户端的切换菜单各自一组 (profiles, active_id) 散参，语义并列不宜收拢
+#[allow(clippy::too_many_arguments)]
 pub fn tray_menu(
     app: &tauri::AppHandle,
     language: &str,
@@ -69,6 +71,8 @@ pub fn tray_menu(
     active_profile_id: Option<&str>,
     claude_profiles: &[TrayProfile],
     active_claude_profile_id: Option<&str>,
+    claude_desktop_profiles: &[TrayProfile],
+    active_claude_desktop_profile_id: Option<&str>,
 ) -> tauri::Result<Menu<tauri::Wry>> {
     let (show, switch, accounts, settings, quit) = tray_labels(language);
     let show_item = MenuItem::with_id(app, "show", show, true, None::<&str>)?;
@@ -80,6 +84,12 @@ pub fn tray_menu(
             "Claude Code",
             claude_profiles,
             active_claude_profile_id,
+        ),
+        (
+            "claude-desktop",
+            "Claude Desktop",
+            claude_desktop_profiles,
+            active_claude_desktop_profile_id,
         ),
     ] {
         let active = profiles
@@ -129,6 +139,7 @@ pub fn tray_menu(
             &separator_one,
             &switch_menus[0].0,
             &switch_menus[1].0,
+            &switch_menus[2].0,
             &separator_two,
             &accounts_item,
             &settings_item,
@@ -198,7 +209,22 @@ pub fn run() {
     }));
 
     let paths = paths::app_paths().expect("无法定位用户数据目录");
-    let database = Arc::new(database::Database::open(&paths).expect("无法初始化 Agmux 数据库"));
+    let database = match database::Database::open(&paths) {
+        Ok(database) => Arc::new(database),
+        Err(error) => {
+            // 启动期硬错误发生在日志插件就绪之前，panic 文本不会落进 agmux.log。
+            // 另写一份到日志目录，省得下次只能对着系统「意外退出」弹窗猜原因。
+            let log_path = paths.logs.join("startup-error.log");
+            let _ = std::fs::write(
+                &log_path,
+                format!(
+                    "[{}] 数据库初始化失败：{error}\n",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                ),
+            );
+            panic!("无法初始化 Agmux 数据库: {error}");
+        }
+    };
     let context = AppContext::new_with_database(paths.clone(), database.clone());
     let oauth_state = auth::CodexOAuthState(Arc::new(auth::codex_oauth::CodexOAuthManager::new(
         database,
@@ -379,6 +405,21 @@ pub fn run() {
             commands::claude_test_profile,
             commands::claude_test_connection,
             commands::claude_fetch_models,
+            commands::claude_desktop_list_profiles,
+            commands::claude_desktop_get_profile,
+            commands::claude_desktop_capture_profile,
+            commands::claude_desktop_save_profile,
+            commands::claude_desktop_get_profile_balance,
+            commands::claude_desktop_delete_profile,
+            commands::claude_desktop_apply_profile,
+            commands::claude_desktop_set_members,
+            commands::claude_desktop_reorder_profiles,
+            commands::claude_desktop_duplicate_profile,
+            commands::claude_desktop_test_profile,
+            commands::claude_desktop_get_status,
+            commands::claude_desktop_get_diagnostics,
+            commands::claude_desktop_restore_official,
+            commands::claude_desktop_restart,
             commands::claude_get_cli_status,
             commands::claude_check_cli_update,
             commands::claude_install_cli,
@@ -485,9 +526,19 @@ pub fn run() {
 
             // 启动时钟交给命令层：前端里程碑（state_ready / window_shown）折算到进程起点
             app.manage(StartupClock(startup_started));
-            let menu = tray_menu(app.handle(), &settings.language, &[], None, &[], None)?;
+            let menu = tray_menu(
+                app.handle(),
+                &settings.language,
+                &[],
+                None,
+                &[],
+                None,
+                &[],
+                None,
+            )?;
             TrayIconBuilder::with_id("main")
-                .tooltip("Agmux")
+                // DEV 与正式版可以同时跑（数据目录、bundle id 都分开），托盘上标出 DEV 免得分不清
+                .tooltip(if cfg!(debug_assertions) { "Agmux DEV" } else { "Agmux" })
                 .icon(
                     // Windows 上 default_window_icon 取 ICO 第一帧（16x16），托盘按 DPI 放大后发糊；
                     // 固定用 32x32 PNG（macOS 的 default_window_icon 本就取自该文件）。
@@ -522,7 +573,7 @@ pub fn run() {
                     }
                     "quit" => app.exit(0),
                     id => {
-                        for client in ["codex", "claude"] {
+                        for client in ["codex", "claude", "claude-desktop"] {
                             if let Some(profile_id) = id.strip_prefix(&format!("{client}-profile:")) {
                                 let _ = app.emit("tray-switch-profile", serde_json::json!({
                                     "client": client, "id": profile_id,

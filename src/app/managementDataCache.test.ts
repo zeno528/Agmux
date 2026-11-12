@@ -1,14 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CliStatus } from "../types";
 
-const { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
+const { codexListMcpServers, claudeListMcpServers, claudeDesktopListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } = vi.hoisted(() => ({
   codexListMcpServers: vi.fn(),
   claudeListMcpServers: vi.fn(),
-  claudeListProfiles: vi.fn(),
+  claudeDesktopListProfiles: vi.fn(),
   claudeListPlugins: vi.fn(),
   listPluginCatalog: vi.fn(),
   listPlugins: vi.fn(),
-  listDatabaseBackups: vi.fn(),
   getProxyStatus: vi.fn(),
   codexGetCliStatus: vi.fn(),
   claudeGetCliStatus: vi.fn(),
@@ -21,16 +20,15 @@ const localStorageMock = {
   setItem: (key: string, value: string) => persistedStorage.set(key, value),
 };
 
-vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, listDatabaseBackups, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
+vi.mock("../api", () => ({ api: { codexListMcpServers, claudeListMcpServers, claudeDesktopListProfiles, claudeListPlugins, listPluginCatalog, listPlugins, getProxyStatus, codexGetCliStatus, claudeGetCliStatus, codexCheckCliUpdate, claudeCheckCliUpdate } }));
 
 describe("managementDataCache", () => {
   beforeEach(() => {
     vi.resetModules();
     codexListMcpServers.mockReset();
     claudeListMcpServers.mockReset();
-    claudeListProfiles.mockReset();
+    claudeDesktopListProfiles.mockReset();
     claudeListPlugins.mockReset();
-    listDatabaseBackups.mockReset();
     getProxyStatus.mockReset();
     codexGetCliStatus.mockReset();
     claudeGetCliStatus.mockReset();
@@ -206,56 +204,35 @@ describe("managementDataCache", () => {
     expect(cache.cliUpdateCheckStale("codex")).toBe(false);
   });
 
-  it("returns the cached MCP list when the management page remounts", async () => {
+  it("reuses the cached MCP list and keeps client lists separate", async () => {
     const servers = [{ name: "github", command: "github-mcp-server", args: [], env: {}, enabled: null }];
     codexListMcpServers.mockResolvedValue(servers);
+    const claudeServers = [{ ...servers[0], command: "claude-github-mcp-server" }];
+    claudeListMcpServers.mockResolvedValue(claudeServers);
     const cache = await import("./managementDataCache");
 
     expect(cache.getCachedMcpServers()).toBeNull();
     await cache.loadMcpServers();
     await cache.loadMcpServers();
+    await cache.loadClaudeMcpServers();
 
     expect(cache.getCachedMcpServers()).toEqual(servers);
+    expect(cache.getCachedClaudeMcpServers()).toEqual(claudeServers);
     expect(codexListMcpServers).toHaveBeenCalledTimes(1);
   });
 
-  it("returns the cached Claude MCP list when the management page remounts", async () => {
-    const servers = [{ name: "github", command: "github-mcp-server", args: [], env: {}, enabled: null }];
-    claudeListMcpServers.mockResolvedValue(servers);
+  it("桌面端列表复用管理缓存，进页刷新单飞且不在模块初始化时请求", async () => {
     const cache = await import("./managementDataCache");
-
-    expect(cache.getCachedClaudeMcpServers()).toBeNull();
-    await cache.loadClaudeMcpServers();
-    await cache.loadClaudeMcpServers();
-
-    expect(cache.getCachedClaudeMcpServers()).toEqual(servers);
-    expect(claudeListMcpServers).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns the cached Claude profile list when the management page remounts", async () => {
-    const profiles = [{ id: "claude-1", name: "Provider", base_url: "https://api.example", has_token: true, model: null, description: null, icon: null, admin_url: null, kind: null, show_balance: false, updated_at: "0" }];
-    claudeListProfiles.mockResolvedValue(profiles);
-    const cache = await import("./managementDataCache");
-
-    expect(cache.getCachedClaudeProfiles()).toBeNull();
-    await cache.loadClaudeProfiles();
-    await cache.loadClaudeProfiles();
-
-    expect(cache.getCachedClaudeProfiles()).toEqual(profiles);
-    expect(claudeListProfiles).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns the cached backup list when the settings page remounts", async () => {
-    const backups = [{ name: "cg-backup-20260923-120000-000.db", size_bytes: 400, created_at: 0 }];
-    listDatabaseBackups.mockResolvedValue(backups);
-    const cache = await import("./managementDataCache");
-
-    expect(cache.getCachedDatabaseBackups()).toBeNull();
-    await cache.loadDatabaseBackups();
-    await cache.loadDatabaseBackups();
-
-    expect(cache.getCachedDatabaseBackups()).toEqual(backups);
-    expect(listDatabaseBackups).toHaveBeenCalledTimes(1);
+    expect(claudeDesktopListProfiles).not.toHaveBeenCalled();
+    expect(cache.getCachedClaudeDesktopProfiles()).toBeNull();
+    const profiles = [{ id: "desktop-fixture", name: "Fixture", has_key: true }];
+    claudeDesktopListProfiles.mockResolvedValueOnce(profiles);
+    const pending = cache.loadClaudeDesktopProfiles(true);
+    expect(cache.loadClaudeDesktopProfiles(true)).toBe(pending);
+    await pending;
+    expect(cache.getCachedClaudeDesktopProfiles()).toEqual(profiles);
+    expect(claudeDesktopListProfiles).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(persistedStorage.get("agmux.claude-desktop-profiles-cache-v2")!)).toEqual(profiles);
   });
 
   it("shares MCP probe and tool results only for the same configuration", async () => {

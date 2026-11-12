@@ -2,7 +2,7 @@
 export default {
   commonTemplate: {
     title: "Common template",
-    description: "Editing or extracting only updates the preview. Save writes the common template. Endpoint, credentials, model mappings and app-controlled fields are excluded; filling uses the template's common values and replaces arrays in full. Save the profile to apply",
+    description: "The template stores only common fields; endpoint, credentials, model mappings and app-controlled fields are excluded. Filling overwrites the profile's common fields in full",
     extract: "Extract current common fields",
     fill: "Fill",
     edit: "Edit",
@@ -35,7 +35,7 @@ export default {
   requestModelLabel: "Request",
   displayNamePlaceholder: "Optional /model label",
   displayNameUnavailable: "Not shown in /model",
-  displayNameNotApplicable: "—",
+  displayNameCurrentPurpose: "Default model for the main session",
   oneMillionLabel: "1M",
   oneMillionColumn: "1M context",
   oneMillionTitle: "Append [1m] to the model ID to enable a 1M-token context window; the underlying model must support it",

@@ -6,6 +6,12 @@ import { POPOVER_EXIT_MS, tooltipOriginX, tooltipOriginY, tooltipPosition } from
 const styleSource = readFileSync(new URL("../style.css", import.meta.url), "utf8");
 
 describe("tooltipPosition", () => {
+  it("prefers the top when requested and flips below if needed", () => {
+    const panel = { width: 240, height: 72 };
+    const viewport = { width: 800, height: 600 };
+    expect(tooltipPosition({ left: 20, top: 120, bottom: 144 }, panel, viewport, "top").top).toBe(40);
+    expect(tooltipPosition({ left: 20, top: 20, bottom: 44 }, panel, viewport, "top").top).toBe(52);
+  });
   it("stays inside the viewport and flips above a bottom-edge trigger", () => {
     expect(tooltipPosition({ left: 760, top: 550, bottom: 574 }, { width: 320, height: 120 }, { width: 800, height: 600 })).toEqual({ left: 472, top: 422 });
     expect(tooltipPosition({ left: 20, top: 20, bottom: 44 }, { width: 320, height: 120 }, { width: 800, height: 600 })).toEqual({ left: 20, top: 52 });

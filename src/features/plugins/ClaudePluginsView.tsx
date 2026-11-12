@@ -14,6 +14,8 @@ import { TrashIcon } from "../../components/TrashIcon";
 import ClaudePluginMarketplaceView from "./ClaudePluginMarketplaceView";
 import { CLAUDE_OFFICIAL_MARKETPLACE, claudeInstalledIdSet, claudePluginParts } from "./claudePluginMeta";
 import PluginFilterChips, { type PluginFilter } from "./components/PluginFilterChips";
+import { PluginCatalogPagination, usePluginCatalogPage } from "./components/PluginCatalogPagination";
+import { PluginCardSkeletons } from "./components/PluginCardSkeletons";
 import { PluginCard } from "./components/PluginCard";
 import { matchesQuery } from "./pluginMeta";
 import type { PluginHeaderState } from "./PluginsView";
@@ -35,18 +37,15 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
   const [inventory, setInventory] = useState<ClaudePluginInventory>(() => getCachedClaudePlugins() ?? { installed: [], available: [] });
   const [loaded, setLoaded] = useState(() => getCachedClaudePlugins() !== null);
   const [loadError, setLoadError] = useState("");
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  // 只有不可乐观的操作用它驱动卡片内 spinner；开关是乐观更新，不能显示转圈
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [pluginAction, setPluginAction] = useState<{ key: string; kind: "install" | "toggle" | "upgrade" | "uninstall" } | null>(null);
+  const busyKey = pluginAction?.key ?? null;
   const [showSources, setShowSources] = useState(false);
   // 升级图标只在「检查更新」确认有新版本后出现：id → 目标版本（悬停提示用）
   const [updatable, setUpdatable] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [checking, setChecking] = useState(false);
-  const [filter, setFilter] = useState<PluginFilter>("installed");
+  const [filter, setFilter] = useState<PluginFilter>("all");
   const [catalogRefreshed, setCatalogRefreshed] = useState(false);
   const catalogLoading = filter !== "installed" && !catalogRefreshed && !loadError;
-  // 可安装目录可达数千条（anthropic 目录 3800+），必须分批进 DOM，否则侧栏开合每帧重排整页直接掉帧
-  const [visibleCount, setVisibleCount] = useState(40);
   const refresh = async (force = false, includeAvailable = filter !== "installed") => {
     try {
       setInventory(await loadClaudePlugins(force, includeAvailable));
@@ -56,26 +55,29 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     catch (error) { setLoadError(String(error)); }
     finally { setLoaded(true); }
   };
-  useEffect(() => { void refresh(); void refresh(true); }, []);
+  useEffect(() => { void refresh(false, false); void refresh(true, false); }, []);
   useEffect(() => {
     if (loaded && filter !== "installed" && !catalogRefreshed) void refresh(true, true);
   }, [loaded, filter, catalogRefreshed]);
   useEffect(() => { if (popEpoch) setShowSources(false); }, [popEpoch]);
-  useEffect(() => { setVisibleCount(40); }, [query]);
 
   const visibleInstalled = useMemo(
     () => inventory.installed.filter((plugin) => matchesQuery({ name: claudePluginParts(plugin.id).name }, query)),
     [inventory.installed, query],
   );
-  const installedIds = claudeInstalledIdSet(inventory.installed);
-  const available = inventory.available.filter((plugin) => !installedIds.has(plugin.pluginId)
-    && matchesQuery({ name: `${plugin.name} ${plugin.description ?? ""} ${plugin.marketplaceName}` }, query))
-    .sort((left, right) => Number(left.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE)
-      - Number(right.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE));
+  const available = useMemo(() => {
+    const installedIds = claudeInstalledIdSet(inventory.installed);
+    return inventory.available.filter((plugin) => !installedIds.has(plugin.pluginId)
+      && matchesQuery({ name: `${plugin.name} ${plugin.description ?? ""} ${plugin.marketplaceName}` }, query))
+      .sort((left, right) => Number(left.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE)
+        - Number(right.marketplaceName === CLAUDE_OFFICIAL_MARKETPLACE));
+  }, [inventory.installed, inventory.available, query]);
+
+  const catalogPage = usePluginCatalogPage(available.length, query);
 
   const install = async (plugin: ClaudeAvailablePlugin) => {
     if (busyKey) return;
-    setBusyKey(plugin.pluginId);
+    setPluginAction({ key: plugin.pluginId, kind: "install" });
     try {
       await api.claudeInstallPlugin(plugin.pluginId);
       feedback.success(t("claudePlugin.toast.installed", { name: plugin.name }));
@@ -83,14 +85,14 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     } catch (error) {
       feedback.error(String(error));
     } finally {
-      setBusyKey(null);
+      setPluginAction(null);
     }
   };
 
   const toggleEnabled = async (entry: ClaudePluginEntry, next: boolean) => {
     const key = `${entry.id}|${entry.scope}|${entry.projectPath ?? ""}`;
     if (busyKey) return;
-    setBusyKey(key);
+    setPluginAction({ key, kind: "toggle" });
     // 乐观翻转：先写状态与缓存，失败回滚（与 Skills 页开关同一模式）
     const previous = inventory;
     const optimistic = {
@@ -108,7 +110,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
       setClaudePluginsCache(previous);
       feedback.error(String(error));
     } finally {
-      setBusyKey(null);
+      setPluginAction(null);
     }
   };
 
@@ -130,8 +132,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
   const upgrade = async (entry: ClaudePluginEntry) => {
     if (busyKey || checking) return;
     const key = `${entry.id}|${entry.scope}|${entry.projectPath ?? ""}`;
-    setBusyKey(key);
-    setPendingKey(key);
+    setPluginAction({ key, kind: "upgrade" });
     try {
       const result = await api.claudeUpdatePlugin(entry.id, entry.scope, entry.projectPath);
       setUpdatable((items) => new Map(items).set(entry.id, result.newVersion || entry.version || ""));
@@ -149,8 +150,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     } catch (error) {
       feedback.error(String(error));
     } finally {
-      setBusyKey(null);
-      setPendingKey(null);
+      setPluginAction(null);
     }
   };
 
@@ -164,8 +164,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     });
     if (!confirmed || busyKey) return;
     const key = `${entry.id}|${entry.scope}|${entry.projectPath ?? ""}`;
-    setBusyKey(key);
-    setPendingKey(key);
+    setPluginAction({ key, kind: "uninstall" });
     try {
       await api.claudeUninstallPlugin(entry.id, entry.scope, entry.projectPath);
       feedback.success(t("claudePlugin.toast.uninstalled", { name }));
@@ -173,8 +172,7 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
     } catch (error) {
       feedback.error(String(error));
     } finally {
-      setBusyKey(null);
-      setPendingKey(null);
+      setPluginAction(null);
     }
   };
 
@@ -190,41 +188,42 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
 
   return (
     <div className="space-y-4">
-      {loadError ? <p className="muted text-sm">{loadError}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PluginFilterChips value={filter} onChange={setFilter} />
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button" disabled={checking || busyKey !== null} onClick={() => void checkUpdates()}>
-            <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
-            {t("action.checkUpdates")}
-          </button>
-          <button type="button" className="apple-action-button" onClick={() => setShowSources(true)}>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setShowSources(true)}>
             <Store className="h-4 w-4" strokeWidth={2} />
             {t("sources.title")}
           </button>
+          <button type="button" className="apple-action-button apple-action-button--small" disabled={checking || (busyKey !== null && pluginAction?.kind !== "toggle")} aria-disabled={pluginAction?.kind === "toggle" || undefined} onClick={() => void checkUpdates()}>
+            <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} strokeWidth={2} />
+            {t("action.checkUpdates")}
+          </button>
         </div>
       </div>
-      {catalogLoading && !inventory.available.length ? (
-        <p className="muted flex items-center gap-2 text-sm" role="status">
-          <LoadingSpinner />{t("loading", { ns: "common" })}
-        </p>
+      {loadError ? <p className="muted text-sm">{loadError}</p> : null}
+      {!loaded && filter !== "available" ? (
+        <section className="plugin-section" aria-busy="true">
+          <div className="field-label plugin-section-head">{t("board.sectionInstalled")}</div>
+          <div className="plugin-board"><PluginCardSkeletons installed /></div>
+        </section>
       ) : null}
-      {!loaded ? null : (
+      {!loaded && !catalogLoading ? null : (
         <>
           {filter !== "available" && visibleInstalled.length ? (
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionInstalled")}
-                <span className="apple-chip">{visibleInstalled.length}</span>
                 <AppTooltip label={t("board.sectionInstalled")}>
                   <p>{t("claudePlugin.installedHelp")}</p>
                 </AppTooltip>
+                <span className="apple-chip">{visibleInstalled.length}</span>
               </div>
               <div className="plugin-board">
                 {visibleInstalled.map((entry) => {
                   const key = `${entry.id}|${entry.scope}|${entry.projectPath ?? ""}`;
                   const { name, marketplace } = claudePluginParts(entry.id);
-                  const busy = pendingKey === key;
+                  const busy = busyKey === key && (pluginAction?.kind === "upgrade" || pluginAction?.kind === "uninstall");
                   const updateVersion = updatable.get(entry.id);
                   return (
                     <PluginCard
@@ -271,17 +270,23 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
               </div>
             </section>
           ) : null}
-          {filter !== "installed" && available.length ? (
+          {filter !== "installed" && (catalogLoading || available.length > 0) ? (
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionAvailable")}
-                <span className="apple-chip">{available.length}</span>
                 <AppTooltip label={t("board.sectionAvailable")}>
                   <p>{t("claudePlugin.availableHelp")}</p>
                 </AppTooltip>
+                {catalogLoading ? (
+                  <span className="muted inline-flex items-center" role="status" title={t("board.loadingCatalog")}>
+                    <LoadingSpinner />
+                    <span className="sr-only">{t("board.loadingCatalog")}</span>
+                  </span>
+                ) : catalogRefreshed ? <span className="apple-chip">{available.length}</span> : null}
               </div>
-              <div className="plugin-board">
-                {available.slice(0, visibleCount).map((plugin) => (
+              <div className="plugin-board" ref={catalogPage.setGrid} tabIndex={-1} aria-busy={catalogLoading}>
+                {catalogLoading && !available.length ? <PluginCardSkeletons count={catalogPage.columns * 2} /> : null}
+                {available.slice(catalogPage.start, catalogPage.end).map((plugin) => (
                   <PluginCard
                     key={plugin.pluginId}
                     name={plugin.name}
@@ -290,17 +295,13 @@ export default function ClaudePluginsView({ popEpoch, query, onHeaderChange }: {
                     iconPath={plugin.iconPath}
                     action={
                       <button type="button" className="apple-icon-button shrink-0 text-accent hover:bg-(--accent)/10" disabled={busyKey !== null} title={t("action.install")} aria-label={t("action.install")} onClick={() => void install(plugin)}>
-                        {busyKey === plugin.pluginId ? <LoadingSpinner /> : <Download className="h-4 w-4" strokeWidth={2} />}
+                        {pluginAction?.kind === "install" && busyKey === plugin.pluginId ? <LoadingSpinner /> : <Download className="h-4 w-4" strokeWidth={2} />}
                       </button>
                     }
                   />
                 ))}
               </div>
-              {available.length > visibleCount ? (
-                <button type="button" className="apple-action-button plugin-show-more" onClick={() => setVisibleCount((count) => count + 40)}>
-                  {t("claudePlugin.showMore")}
-                </button>
-              ) : null}
+              <PluginCatalogPagination start={catalogPage.start} end={catalogPage.end} total={available.length} loading={catalogLoading} move={catalogPage.move} />
             </section>
           ) : null}
           {!catalogLoading && !loadError && !visibleInstalled.length && !available.length ? (

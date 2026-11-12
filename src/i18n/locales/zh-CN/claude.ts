@@ -2,7 +2,7 @@
 export default {
   commonTemplate: {
     title: "通用模板",
-    description: "编辑或提取只更新预览，点击保存后才写入通用模板。地址、密钥、模型映射及应用开关字段会被排除；填充以模板中的通用字段为准，数组整体替换，保存配置后生效",
+    description: "模板只保存通用字段，地址、密钥、模型映射及应用开关字段会被排除；填充会整体覆盖配置中的通用字段",
     extract: "提取当前通用字段",
     fill: "填充",
     edit: "编辑",
@@ -35,7 +35,7 @@ export default {
   requestModelLabel: "请求模型",
   displayNamePlaceholder: "可选，显示在 /model 菜单",
   displayNameUnavailable: "不显示在 /model 菜单",
-  displayNameNotApplicable: "—",
+  displayNameCurrentPurpose: "主会话使用的默认模型",
   oneMillionLabel: "1M",
   oneMillionColumn: "1M 上下文",
   oneMillionTitle: "在模型 ID 后添加 [1m]，启用百万 token 上下文；需模型本身支持",

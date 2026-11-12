@@ -192,6 +192,110 @@ export interface ProfileBalance {
   latency_ms: number | null;
 }
 
+export type ClaudeDesktopMode = "direct" | "route" | "aggregate";
+
+/** Claude Desktop 的角色与实际请求模型；路由和聚合自动生成桌面端 ID。 */
+export interface ClaudeDesktopModelSlot {
+  slot: string;
+  name: string;
+  label_override: string | null;
+  supports_1m: boolean;
+  upstream_model?: string | null;
+}
+
+export interface ClaudeDesktopProfileSummary {
+  id: string;
+  name: string;
+  base_url: string | null;
+  has_key: boolean;
+  model: string | null;
+  requires_routing: boolean;
+  kind: string | null;
+  admin_url: string | null;
+  icon: string | null;
+  show_balance: boolean;
+  updated_at: string;
+}
+
+export interface ClaudeDesktopProfileDetail {
+  id: string;
+  name: string;
+  kind: string | null;
+  base_url: string | null;
+  api_key: string | null;
+  auth_scheme: string;
+  models: ClaudeDesktopModelSlot[];
+  admin_url: string | null;
+  icon: string | null;
+  show_balance: boolean;
+  description: string | null;
+  fetched_models: string[];
+  updated_at: string;
+}
+
+export interface ClaudeDesktopAppStatus {
+  installed: boolean;
+  running: boolean;
+  display_path: string;
+  source: string;
+  deployment_mode: string | null;
+  mode: ClaudeDesktopMode;
+  members: string[];
+  selected_members: string[] | null;
+  gateway_running: boolean;
+}
+
+export interface ClaudeDesktopRouteInfo {
+  desktop_model: string;
+  upstream_model: string;
+  label: string;
+  host: string;
+}
+
+export interface ClaudeDesktopTokenUsage {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+}
+
+export interface ClaudeDesktopRequestInfo {
+  at_ms: number;
+  path: string;
+  route: ClaudeDesktopRouteInfo | null;
+  status: number | null;
+  upstream_status: number | null;
+  header_ms: number | null;
+  first_chunk_ms: number | null;
+  duration_ms: number | null;
+  outcome: "pending" | "completed" | "http_error" | "network_error" | "stream_error" | "incomplete" | "cancelled";
+  usage: ClaudeDesktopTokenUsage;
+}
+
+export interface ClaudeDesktopModelUsage {
+  route: ClaudeDesktopRouteInfo;
+  requests: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  usage_reported: number;
+  tokens: ClaudeDesktopTokenUsage;
+}
+
+export interface ClaudeDesktopDiagnostics {
+  mode: ClaudeDesktopMode;
+  active_name: string | null;
+  gateway_running: boolean;
+  gateway_url: string | null;
+  live_matches: boolean;
+  routes: ClaudeDesktopRouteInfo[];
+  activity: {
+    started_at_ms: number | null;
+    requests: ClaudeDesktopRequestInfo[];
+    models: ClaudeDesktopModelUsage[];
+  };
+}
+
 export interface DatabaseBackupInfo {
   name: string;
   size_bytes: number;
@@ -226,7 +330,7 @@ export interface AuthStatus {
 export type LanguageSetting = "system" | "zh-CN" | "en-US";
 
 /** 侧栏顶层视图；startup_view 用它做冷启动落页。 */
-export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles";
+export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles" | "claudeDesktopProfiles";
 
 export interface Settings {
   theme: "system" | "light" | "dark";
@@ -446,7 +550,7 @@ export interface PathInfo {
 }
 
 export interface SyncFailure {
-  client: "codex" | "claude";
+  client: "codex" | "claude" | "claude-desktop";
   reason: "live_unreadable" | "live_parse_error" | "write_failed" | "internal";
   profile: string | null;
   position: [number, number] | null;
@@ -458,7 +562,10 @@ export interface AppState {
   active_codex_profile_id: string | null;
   /** Claude Code 侧当前激活的供应商（claude_profiles 表）。 */
   active_claude_profile_id: string | null;
+  /** Claude Desktop（3P）侧当前激活的供应商（claude_desktop_profiles 表）。 */
+  active_claude_desktop_profile_id: string | null;
   codex: CodexAppStatus;
+  claude_desktop: ClaudeDesktopAppStatus;
   settings: Settings;
   paths: PathInfo[];
   auth_status: AuthStatus;

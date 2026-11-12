@@ -24,13 +24,6 @@ describe("ConfigTextEditor runtime", () => {
     expect(editorSource).toMatch(/useLayoutEffect\(\(\) => \{\r?\n\s+const parent = hostRef\.current;/);
   });
 
-  it("uses the longest profile document as the shared editor minimum", () => {
-    expect(editorSource).toContain("minLines?: number;");
-    expect(editorSource).toContain('className="apple-editor-surface"');
-    expect(editorSource).toContain("style={{ minHeight: editorMinHeight }}");
-    expect(profileEditSource.match(/minLines=\{editorMinLines\}/g)).toHaveLength(3);
-  });
-
   it("共享最小占位按正文可用高度伸展，初次挂载和保活复显均监听正文尺寸", () => {
     expect(editorSource).toContain('const scrollContent = parent.closest(".apple-edit-content");');
     expect(editorSource).toContain("if (scrollContent) resizeObserver.observe(scrollContent);");

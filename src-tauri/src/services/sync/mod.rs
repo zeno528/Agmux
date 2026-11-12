@@ -14,6 +14,7 @@ use crate::error::AppResult;
 pub enum ClientId {
     Codex,
     Claude,
+    ClaudeDesktop,
 }
 
 impl ClientId {
@@ -21,6 +22,7 @@ impl ClientId {
         match self {
             Self::Codex => "codex",
             Self::Claude => "claude",
+            Self::ClaudeDesktop => "claude-desktop",
         }
     }
 
@@ -31,6 +33,7 @@ impl ClientId {
         match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude Code",
+            Self::ClaudeDesktop => "Claude Desktop",
         }
     }
 }
@@ -405,6 +408,47 @@ impl ClientSync for ClaudeSyncBody {
     }
 }
 
+/// Claude Desktop 执行体：守卫对齐 sync_active_claude_desktop 的四道守卫。
+/// 产品事实：桌面端无配置热重载，写盘后需完全重启进程（restart_claude_desktop
+/// 构造 BeforeProcessStart，拉起前把外部改动收割入库）。
+struct ClaudeDesktopSyncBody;
+
+impl ClientSync for ClaudeDesktopSyncBody {
+    fn id(&self) -> ClientId {
+        ClientId::ClaudeDesktop
+    }
+
+    fn sync(
+        &self,
+        ctx: &AppContext,
+        trigger: &SyncTrigger,
+        _material: SyncMaterial<'_>,
+    ) -> AppResult<SyncOutcome> {
+        let active = ctx.database.active_claude_desktop_profile()?;
+        let Some(active) = active else {
+            return Ok(SyncOutcome::bare(SyncKind::NoActiveProfile));
+        };
+        let should_sync = match trigger {
+            SyncTrigger::BeforeLiveOverwrite { target_id, .. } => active != *target_id,
+            SyncTrigger::BeforeProfileRead { target_id, .. }
+            | SyncTrigger::BeforeProfileClone { target_id, .. } => active == *target_id,
+            _ => true,
+        };
+        if !should_sync {
+            return Ok(SyncOutcome::bare(SyncKind::TargetMismatch));
+        }
+        match ctx.sync_active_claude_desktop() {
+            Err(error) if matches!(trigger, SyncTrigger::BeforeProcessStart { .. }) => {
+                tauri_plugin_log::log::warn!(
+                    "[sync.claude-desktop] trigger=before_process_start outcome=failure failure_kind=internal error={error:?} msg=\"拉起前回写失败，不拦重启\""
+                );
+                Ok(SyncOutcome::bare(SyncKind::TargetMismatch))
+            }
+            result => result,
+        }
+    }
+}
+
 pub struct SyncRegistry {
     bodies: Vec<Box<dyn ClientSync>>,
 }
@@ -542,7 +586,11 @@ static REGISTRY: OnceLock<SyncRegistry> = OnceLock::new();
 
 pub fn registry() -> &'static SyncRegistry {
     REGISTRY.get_or_init(|| SyncRegistry {
-        bodies: vec![Box::new(CodexSyncBody), Box::new(ClaudeSyncBody)],
+        bodies: vec![
+            Box::new(CodexSyncBody),
+            Box::new(ClaudeSyncBody),
+            Box::new(ClaudeDesktopSyncBody),
+        ],
     })
 }
 
@@ -622,6 +670,7 @@ mod tests {
     fn client_log_label_uses_product_name() {
         assert_eq!(ClientId::Codex.label(), "Codex");
         assert_eq!(ClientId::Claude.label(), "Claude Code");
+        assert_eq!(ClientId::ClaudeDesktop.label(), "Claude Desktop");
     }
 
     #[test]

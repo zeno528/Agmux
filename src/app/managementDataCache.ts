@@ -1,6 +1,6 @@
 import { api } from "../api";
 import type { ProxyStatus as DetectedProxyStatus } from "../types";
-import type { ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
+import type { ClaudeAvailablePlugin, ClaudeMarketplace, ClaudePluginEntry, ClaudePluginInventory, ClaudeDesktopProfileSummary, ClaudeProfileSummary, CliStatus, CodexAppSummary, DatabaseBackupInfo, MarketplacePlugin, McpProbeResult, McpServerSpec, PluginMarketplace, PluginSummary, SkillSummary } from "../types";
 
 export type McpProbeCacheEntry = {
   fingerprint: string;
@@ -200,6 +200,10 @@ const claudeMcpServers = createManagementCache<McpServerSpec[]>(api.claudeListMc
 const claudeProfiles = createManagementCache<ClaudeProfileSummary[]>(api.claudeListProfiles, {
   key: "agmux.claude-profiles-cache-v1",
   restore: restoreNamedList<ClaudeProfileSummary>,
+});
+const claudeDesktopProfiles = createManagementCache<ClaudeDesktopProfileSummary[]>(api.claudeDesktopListProfiles, {
+  key: "agmux.claude-desktop-profiles-cache-v2",
+  restore: restoreNamedList<ClaudeDesktopProfileSummary>,
 });
 const pluginMarketplaces = createManagementCache<PluginMarketplace[]>(api.listPluginMarketplaces, {
   key: "agmux.plugin-marketplaces-cache-v1",
@@ -409,6 +413,18 @@ export function getCachedClaudeProfiles(): ClaudeProfileSummary[] | null {
 
 export function setClaudeProfilesCache(items: ClaudeProfileSummary[]): void {
   claudeProfiles.set(items);
+}
+
+export function loadClaudeDesktopProfiles(force = false): Promise<ClaudeDesktopProfileSummary[]> {
+  return claudeDesktopProfiles.load(force);
+}
+
+export function getCachedClaudeDesktopProfiles(): ClaudeDesktopProfileSummary[] | null {
+  return claudeDesktopProfiles.get();
+}
+
+export function setClaudeDesktopProfilesCache(items: ClaudeDesktopProfileSummary[]): void {
+  claudeDesktopProfiles.set(items);
 }
 
 export function loadProxyStatus(force = false): Promise<ProxyStatus> {

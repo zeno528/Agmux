@@ -1,6 +1,6 @@
 [package]
 name = "agmux"
-version = "0.38.4"
+version = "0.39.0"
 description = "A lightweight Codex model profile switcher"
 authors = ["zeno528"]
 license = "MIT"
@@ -36,7 +36,10 @@ thiserror = "2.0.21"
 tempfile = "3.27.0"
 directories = "6.0.0"
 reqwest = { version = "0.13.5", features = ["form", "json", "system-proxy"] }
-tokio = { version = "1.53.1", features = ["sync", "time", "macros", "rt"] }
+tokio = { version = "1.53.1", features = ["sync", "time", "macros", "rt", "net", "io-util"] }
+# Claude Desktop 路由网关的本地 HTTP 服务（与 reqwest 共用 http/hyper 1.x）
+axum = "0.8"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 base64 = "0.23.1"
 # 仅用 decode/resize/re-encode（超重插件图标的现场瘦身）；已在 tauri 依赖树内，零额外编译
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
