@@ -69,7 +69,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((tone: ToastTone, message: string) => {
     const id = ++nextToastId.current;
     setToasts((current) => [...current, { id, tone, message: normalizeToastMessage(message), open: true }].slice(-MAX_TOASTS));
-    window.setTimeout(() => closeToast(id), 4000);
+    window.setTimeout(() => closeToast(id), 3200);
   }, [closeToast]);
 
   const confirm = useCallback((options: ConfirmOptions) => {

@@ -1544,7 +1544,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       // 与 claude_test_profile 同理：浏览器不模拟连通成功
       throw new Error("请在桌面版验证 Claude API 端点和密钥，浏览器调试不模拟连通成功");
     case "claude_desktop_get_diagnostics":
-      throw new Error("接入诊断需要在桌面版读取实际配置与请求记录，浏览器不模拟运行状态");
+      throw new Error("接入概览需要在桌面版读取实际配置与请求记录，浏览器不模拟运行状态");
     case "claude_desktop_get_status":
       return webState().claude_desktop as T;
     case "claude_desktop_restore_official":

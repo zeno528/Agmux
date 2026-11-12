@@ -30,6 +30,20 @@ function mappingFields(value: string, onChange: (value: string) => void, display
 }
 
 describe("模型映射行操作", () => {
+  it("刷新已有模型列表时，一键设置和行内下拉仍可用", () => {
+    const tree = ProviderModelFields({
+      models: ["cached-model"], fetching: true, disabled: false, onFetch: vi.fn(), onApplyModel: vi.fn(),
+      mappingFields: [{ key: "opus", label: "Opus", value: "", onChange: vi.fn() }],
+      labels: { model: "模型", models: "模型列表", fetch: "获取", available: "", select: "选择", fetchFirst: "先获取", quickSet: "一键设置" },
+    });
+    const selects = findControls(tree, AppSelect);
+    expect(selects).toHaveLength(2);
+    expect(selects.map(({ disabled, options }) => ({ disabled, values: options?.map(({ value }) => value) }))).toEqual([
+      { disabled: false, values: ["cached-model"] },
+      { disabled: false, values: ["cached-model"] },
+    ]);
+  });
+
   it("有缓存时手输模型进入候选，替换或清空后消失且不修改缓存", () => {
     const models = ["fetched-model", "manual-model", "fetched-model"];
     let value = "";

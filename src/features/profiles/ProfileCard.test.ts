@@ -123,21 +123,22 @@ describe("ProfileCard 官网入口", () => {
   it("卡片只常驻使用与更多，菜单保留测试和删除门控", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
-    const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, connectionDisabled: false, connectionTitle: "Test",
-    })));
-    const buttons = html.match(/<button\b[^>]*>/g) ?? [];
-    expect(buttons).toHaveLength(2);
-    expect(buttons[1]).toContain('aria-haspopup="menu"');
-    // 不传 terminalProfileId 的卡片（Codex）不渲染终端入口，只有 Claude 卡传
-    expect(html).not.toContain('aria-label="terminal.open"');
+    for (const onApply of [() => undefined, undefined]) {
+      const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
+        active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, connectionDisabled: false, connectionTitle: "Test", onApply,
+      })));
+      const buttons = html.match(/<button\b[^>]*>/g) ?? [];
+      expect(buttons).toHaveLength(onApply ? 2 : 1);
+      expect(buttons[buttons.length - 1]).toContain('aria-haspopup="menu"');
+      expect(html).not.toContain('aria-label="terminal.open"');
+    }
   });
 
   it("激活供应商的草稿或模式变更后可重新使用", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: true, reapply: true, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test",
+      active: true, reapply: true, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
     })));
     const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
     expect(button).toContain('aria-label="actions.switch"');
@@ -160,11 +161,11 @@ describe("ProfileCard 官网入口", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: false, applyLabel: "Set default", busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test",
+      active: false, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
     })));
     const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
-    expect(buttons[0]).toContain('title="Set default"');
-    expect(buttons[0]).toContain('aria-label="Set default"');
+    expect(buttons[0]).toContain('title="actions.switch"');
+    expect(buttons[0]).toContain('aria-label="actions.switch"');
     expect(buttons[1]).toContain('title="actions.more"');
   });
 
@@ -173,7 +174,7 @@ describe("ProfileCard 官网入口", () => {
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     for (const [active, busy] of [[false, false], [true, false], [false, true]]) {
       const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-        active, busy, testing: false, connectionDisabled: false, connectionTitle: "Test",
+        active, busy, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
       })));
       const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
       expect(button).toContain('class="apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary');

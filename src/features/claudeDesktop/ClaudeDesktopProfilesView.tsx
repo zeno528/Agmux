@@ -72,9 +72,10 @@ function cardProfile(profile: ClaudeDesktopProfileSummary) {
   };
 }
 
-function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, activationEpoch, coldStart, balanceCache, onEdit, onApply, onDuplicate, onTest, onRemove, member, onMember, applyLabel }: {
+function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, activationEpoch, coldStart, balanceCache, onEdit, onApply, onDuplicate, onTest, onRemove, member, onMember, defaultMember, onDefaultMember }: {
   member?: boolean;
-  applyLabel?: string;
+  defaultMember?: boolean;
+  onDefaultMember?: () => void;
   onMember?: () => void;
   profile: ClaudeDesktopProfileSummary;
   active: boolean;
@@ -82,7 +83,7 @@ function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, act
   activationEpoch: number;
   coldStart: boolean;
   balanceCache: Record<string, ProfileBalanceInfo>;
-  onApply: () => void;
+  onApply?: () => void;
   busy: boolean;
   testing: boolean;
   onEdit: () => void;
@@ -112,10 +113,19 @@ function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, act
     missingKey: tClaude("checkProviderFields"),
   });
   return (
-    <SortableCard id={profile.id} active={active} onClick={onEdit} title={tProfiles("card.clickToEdit")} handleTitle={tProfiles("card.dragToReorder")}>
-      <ProfileCardContent profile={cardProfile(profile)} balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} />
-      <ProfileCardActions active={active} reapply={reapply} applyLabel={applyLabel} busy={busy} testing={testing}
-        modelControl={onMember ? <div className="flex items-center gap-2"><span className="setting-description">{tDesktop("modes.include")}</span><AppSwitch checked={Boolean(member)} disabled={busy} onCheckedChange={onMember} label={`${tDesktop("modes.include")} ${profile.name}`} /></div> : undefined}
+    <SortableCard id={profile.id} active={active && Boolean(onApply)} onClick={onEdit} title={tProfiles("card.clickToEdit")} handleTitle={tProfiles("card.dragToReorder")}>
+      <ProfileCardContent profile={cardProfile(profile)} hideModel titleBadge={defaultMember ? tDesktop("modes.defaultProvider") : undefined} balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} />
+      <ProfileCardActions active={active} reapply={reapply} busy={busy} testing={testing}
+        modelControl={onMember ? (
+          <span className="inline-flex" title={tDesktop("modes.include")}>
+            <AppSwitch checked={Boolean(member)} disabled={busy} onCheckedChange={onMember} label={`${tDesktop("modes.include")} ${profile.name}`} />
+          </span>
+        ) : undefined}
+        firstMenuAction={onDefaultMember ? {
+          label: tDesktop(defaultMember ? "modes.defaultProvider" : "modes.setDefault"),
+          selected: defaultMember,
+          onSelect: onDefaultMember,
+        } : undefined}
         connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
     </SortableCard>
   );
@@ -143,8 +153,10 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
   const { t: tClaude } = useTranslation("claude");
   const [mode, setMode] = useState<ClaudeDesktopMode>(status.mode);
   const [members, setMembers] = useState<string[]>(() => selectedAggregateMembers(status, activeId));
+  const [defaultId, setDefaultId] = useState(activeId);
   const [editedActiveId, setEditedActiveId] = useState<string | null>(null);
   useEffect(() => { setMode(status.mode); }, [status.mode]);
+  useEffect(() => { setDefaultId(activeId); }, [activeId]);
   useEffect(() => { setMembers(selectedAggregateMembers(status, activeId)); }, [activeId, status.members.join("\0"), status.selected_members?.join("\0")]);
   const cached = getCachedClaudeDesktopProfiles();
   const [items, setItems] = useState<ClaudeDesktopProfileSummary[]>(cached ?? []);
@@ -260,7 +272,7 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
-  if (diagnosticsOpen) return <ClaudeDesktopDiagnostics onBack={() => setDiagnosticsOpen(false)} />;
+  if (diagnosticsOpen) return <ClaudeDesktopDiagnostics activeProfile={items.find((profile) => profile.id === activeId)} onBack={() => setDiagnosticsOpen(false)} />;
 
   if (creatingProfile || editingProfile) {
     return (
@@ -303,15 +315,22 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
 
-  const toggleMember = async (id: string) => {
+  const toggleMember = async (id: string, asDefault = false) => {
     if (busy || restarting) return;
+    const included = members.includes(id);
+    if (asDefault && included) {
+      setDefaultId(id);
+      return;
+    }
     const previous = members;
-    const next = members.includes(id) ? members.filter((member) => member !== id) : [...members, id];
+    const next = included ? members.filter((member) => member !== id) : [...members, id];
     setBusy(true);
     setMembers(next);
     try {
       await api.claudeDesktopSetMembers(next.filter((member) => items.some((item) => item.id === member)));
       await onChanged();
+      if (asDefault) setDefaultId(id);
+      else if (included && defaultId === id) setDefaultId(null);
     } catch (error) {
       setMembers(previous);
       feedback.error(String(error));
@@ -373,6 +392,13 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
 
   const appliedMembers = [...new Set([...(activeId ? [activeId] : []), ...status.members])];
   const membershipChanged = members.length !== appliedMembers.length || members.some((id) => !appliedMembers.includes(id));
+  const aggregate = mode === "aggregate";
+  const selectedDefault = items.find((profile) => profile.id === defaultId && members.includes(profile.id));
+  const appliedProfile = items.find((profile) => profile.id === activeId);
+  const currentConfiguration = activeId
+    ? [t(`modes.${status.mode}`), appliedProfile?.name].filter(Boolean).join(" · ")
+    : t("modes.noConfiguration");
+  const aggregateChanged = status.mode !== "aggregate" || defaultId !== activeId || membershipChanged || Boolean(editedActiveId);
   const modes = ["direct", "route", "aggregate"] as const;
   const icons = { direct: Plug, route: Route, aggregate: Layers2 };
   const working = busy || restarting;
@@ -384,6 +410,10 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
         <div className="provider-page-brand">
           <img src="/claude.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>{t("list.title")}</span>
+          <span className="apple-chip" role="status" title={`${t("modes.currentConfiguration")} · ${currentConfiguration}`}>
+            <span className="sr-only">{t("modes.currentConfiguration")}: </span>
+            <span className="max-w-40 truncate">{currentConfiguration}</span>
+          </span>
           <span className={`apple-chip ${status.installed ? (status.running ? "chip-success" : "") : "chip-warn"}`} title={status.installed ? `${t("status.path")}: ${status.display_path}` : undefined}>
             {t(status.installed ? status.running ? "status.running" : "status.notRunning" : "status.notInstalled")}
           </span>
@@ -399,7 +429,16 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
       <div className="settings-tab-bar flex items-center gap-1">
         <AppTabBar selected={mode} onSelect={setMode} label={t("modes.label")} items={modes.map((id) => {
           const Icon = icons[id];
-          return { id, label: t(`modes.${id}`), icon: <Icon size={16} strokeWidth={2} aria-hidden="true" />, count: activeId && status.mode === id ? <span className="apple-chip">{t("modes.active")}</span> : undefined };
+          return {
+            id,
+            label: t(`modes.${id}`),
+            icon: <Icon size={16} strokeWidth={2} aria-hidden="true" />,
+            count: activeId && status.mode === id ? (
+              <span role="img" aria-label={t("modes.appliedMode")} title={t("modes.appliedMode")} className="codex-status--running shrink-0">
+                <span className="codex-status__signal" aria-hidden="true"><span className="codex-status__signal-dot" /></span>
+              </span>
+            ) : undefined,
+          };
         })} />
         <AppTooltip label={t("modes.label")}>
           <div className="field-subtitle">{t("modes.label")}</div>
@@ -419,16 +458,29 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
             <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
               <div className="profile-list relative space-y-[var(--gap-page)]">
                 {items.map((profile) => <ClaudeDesktopProfileCard key={profile.id} profile={profile}
-                  active={profile.id === activeId} reapply={mode !== status.mode || profile.id === editedActiveId || (mode === "aggregate" && membershipChanged) || (mode !== "direct" && !status.gateway_running)}
+                  active={profile.id === activeId} reapply={mode !== status.mode || profile.id === editedActiveId || (mode !== "direct" && !status.gateway_running)}
                   busy={working} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache}
-                  member={members.includes(profile.id)} onMember={mode === "aggregate" ? () => void toggleMember(profile.id) : undefined}
-                  onEdit={() => void openEdit(profile)} applyLabel={mode === "aggregate" ? t(profile.id === activeId && status.mode === "aggregate" ? "modes.applyChanges" : "modes.setDefault") : undefined} onApply={() => void applyDesktopProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />)}
+                  member={members.includes(profile.id)} onMember={aggregate ? () => void toggleMember(profile.id) : undefined}
+                  defaultMember={aggregate && selectedDefault?.id === profile.id} onDefaultMember={aggregate ? () => void toggleMember(profile.id, true) : undefined}
+                  onEdit={() => void openEdit(profile)} onApply={aggregate ? undefined : () => void applyDesktopProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />)}
               </div>
             </SortableContext>
             {createPortal(<DragOverlay dropAnimation={null}>{dragPreview ? <CardDragPreview card={dragPreview} /> : null}</DragOverlay>, document.body)}
           </DndContext>
         )}
       </div>
+      {aggregate && items.length ? (
+        <div className="apple-edit-toolbar apple-edit-toolbar--footer items-center">
+          <div className="muted mr-auto flex flex-wrap gap-x-2 text-sm" role="status">
+            <span>{t("modes.memberCount", { count: items.filter((profile) => members.includes(profile.id)).length })}</span>
+            <span>{!selectedDefault ? t("modes.chooseDefault") : aggregateChanged ? t("modes.pending") : null}</span>
+          </div>
+          <button type="button" className="apple-action-button app-button--primary shrink-0" disabled={working || !selectedDefault || (!aggregateChanged && status.gateway_running)}
+            onClick={() => { if (selectedDefault) void applyDesktopProfile(selectedDefault); }}>
+            {t("modes.applyAggregate")}
+          </button>
+        </div>
+      ) : null}
       <ProfileNameDialog mode={modal} name={profileName} busy={working} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
     </section>
   );

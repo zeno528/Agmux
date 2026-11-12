@@ -1,4 +1,4 @@
-import { Check, Copy, Gauge, Globe, MoreHorizontal, Wifi } from "lucide-react";
+import { Check, Circle, CircleCheck, Copy, Gauge, Globe, MoreHorizontal, Wifi } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -19,6 +19,7 @@ interface ProfileCardContentProps {
   balanceError: string;
   balanceRefreshing: boolean;
   hideModel?: boolean;
+  titleBadge?: string;
   onRefreshBalance?: (manual?: boolean) => void;
   onOpenAdmin?: () => void;
   onRename?: () => void;
@@ -30,6 +31,7 @@ export function ProfileCardContent({
   balanceError,
   balanceRefreshing,
   hideModel = false,
+  titleBadge,
   onRefreshBalance,
   onOpenAdmin,
   onRename,
@@ -65,6 +67,7 @@ export function ProfileCardContent({
         <div className="flex min-h-7 items-center gap-2">
           <h3 className="title-md cursor-pointer truncate leading-normal transition-colors hover:text-accent" title={t("card.clickToRename")} onClick={(event) => { event.stopPropagation(); onRename?.(); }}>{profile.name}</h3>
           {isSubscriptionProfile ? <PlanBadge plan={profile.plan_type} /> : null}
+          {titleBadge ? <span className="plan-badge">{titleBadge}</span> : null}
         </div>
         {!hideModel || (supportsBalance && profile.show_balance) ? <div className="profile-card-meta muted mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
           {!hideModel ? <><span className="min-w-0 truncate">{profile.model ?? t("card.notSet")}</span>{profile.reasoning_effort ? <><span aria-hidden="true">·</span><span>{profile.reasoning_effort}</span></> : null}</> : null}
@@ -95,8 +98,8 @@ interface ProfileCardActionsProps {
   allowInactiveDeleteWhileBusy?: boolean;
   /** 当前项的草稿或客户端模式变更后，允许重新应用，删除仍受激活状态保护。 */
   reapply?: boolean;
-  applyLabel?: string;
   modelControl?: ReactNode;
+  firstMenuAction?: { label: string; selected?: boolean; onSelect: () => void };
   /** 测试连通按钮是否禁用（调用方按各自领域判定：缺地址/缺密钥）。 */
   connectionDisabled: boolean;
   connectionTitle: string;
@@ -108,18 +111,24 @@ interface ProfileCardActionsProps {
   onRemove?: () => void;
 }
 
-export function ProfileCardActions({ active, reapply = false, applyLabel, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
+export function ProfileCardActions({ active, reapply = false, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, firstMenuAction, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
   const applied = active && !reapply;
   const { t } = useTranslation("profiles");
-  const switchLabel = applyLabel ?? t("actions.switch");
+  const switchLabel = t("actions.switch");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(menuOpen, menuTriggerRef.current, menuRef, "end");
   useMenuDismiss(menuOpen, menuTriggerRef, menuRef, setMenuOpen);
   const busyForDelete = busy && !allowInactiveDeleteWhileBusy;
+  const FirstMenuIcon = firstMenuAction?.selected ? CircleCheck : Circle;
   const menu = menuOpen ? createPortal(
     <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("actions.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
+      {firstMenuAction ? (
+        <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || firstMenuAction.selected} onClick={() => { setMenuOpen(false); firstMenuAction.onSelect(); }}>
+          <span className="flex items-center gap-2"><FirstMenuIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{firstMenuAction.label}</span>
+        </button>
+      ) : null}
       <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={connectionDisabled || testing} title={connectionTitle} onClick={() => { setMenuOpen(false); onTest?.(); }}>
         <span className="flex items-center gap-2">{testing ? <LoadingSpinner size="sm" /> : <Wifi className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}{t("connection.test")}</span>
       </button>
@@ -136,10 +145,10 @@ export function ProfileCardActions({ active, reapply = false, applyLabel, busy, 
     <div className="profile-card-actions flex shrink-0 items-center gap-2" title="" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.preventDefault()}>
       {modelControl}
       <div className="profile-card-action-buttons flex shrink-0 items-center gap-2">
-        <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary ${applied ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={busy || applied} aria-pressed={applied} aria-label={applied ? t("actions.inUse") : switchLabel} title={applied ? t("actions.inUse") : switchLabel} onClick={onApply}>
+        {onApply ? <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary ${applied ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={busy || applied} aria-pressed={applied} aria-label={applied ? t("actions.inUse") : switchLabel} title={applied ? t("actions.inUse") : switchLabel} onClick={onApply}>
           <span className={applied ? "invisible" : ""} aria-hidden="true">{switchLabel}</span>
           {applied ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
-        </button>
+        </button> : null}
         {terminalProfileId ? <ProfileTerminalMenu profileId={terminalProfileId} active={active} /> : null}
         <button ref={menuTriggerRef} type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("actions.more")} title={t("actions.more")} aria-busy={testing} onClick={() => setMenuOpen((open) => !open)}>{testing ? <LoadingSpinner size="md" /> : <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />}</button>
         {menu}

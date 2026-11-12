@@ -104,7 +104,7 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
     });
   };
 
-  const mappingFields = SLOTS.map((key) => ({
+  const mappingFields = (["fable", "opus", "sonnet", "haiku"] as const).map((key) => ({
     key,
     label: t(`edit.slot${key === "sonnet" ? "Sonnet" : key === "opus" ? "Opus" : key === "haiku" ? "Haiku" : "Fable"}`),
     value: slots[key].name,

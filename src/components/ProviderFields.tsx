@@ -163,7 +163,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
                 onChange={onApplyModel}
                 placeholder={labels.quickSet}
                 icon={Wand2}
-                disabled={disabled || fetching || models.length === 0}
+                disabled={disabled || models.length === 0}
                 menuAlign="end"
                 compact
                 searchable
@@ -172,7 +172,9 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
           ) : null}
           <div className="shrink-0">
             <button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-7 whitespace-nowrap" disabled={fetching || disabled} onClick={onFetch}>
-              {fetching ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden="true" />}
+              <span className="grid size-3.5 shrink-0 place-items-center">
+                {fetching ? <LoadingSpinner /> : <Download className="size-3.5" strokeWidth={2} aria-hidden="true" />}
+              </span>
               {labels.fetch}
             </button>
           </div>
@@ -213,7 +215,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
                 options={modelOptions}
                 onChange={field.onChange}
                 placeholder={models.length ? labels.select : labels.fetchFirst}
-                disabled={disabled || fetching || !models.length}
+                disabled={disabled || !models.length}
                 iconOnly
                 searchable
               />
