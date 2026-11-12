@@ -11,11 +11,11 @@ import type { AppState, MarketplacePlugin, PluginSummary } from "../../types";
 import CodexPluginsView from "./CodexPluginsView";
 
 const ui = vi.hoisted(() => ({ filter: "installed", errors: [] as string[] }));
-// 当前渲染树中只有筛选器以 "installed" 初始化状态。
+// 当前渲染树中只有筛选器以 "all" 初始化状态。
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return { ...actual, useState: (initial: unknown) => actual.useState(
-    initial === "installed" ? ui.filter : initial === "" && ui.errors.length ? ui.errors.shift() : initial,
+    initial === "all" ? ui.filter : initial === "" && ui.errors.length ? ui.errors.shift() : initial,
   ) };
 });
 beforeEach(() => { ui.filter = "installed"; ui.errors = []; });
@@ -53,7 +53,7 @@ it("Codex 首次读取可安装目录时显示加载反馈", async () => {
   try {
     const html = renderToStaticMarkup(<CodexPluginsView state={state} activationEpoch={0} popEpoch={0} query="" onHeaderChange={() => undefined} />);
     expect(html).toContain('role="status"');
-    expect(html).toContain("正在加载…");
+    expect(html).toContain("正在读取完整目录…");
     expect(html).not.toContain("没有匹配的插件");
   } finally { vi.mocked(getCachedPluginCatalog).mockReturnValue([]); }
 });
@@ -76,8 +76,8 @@ it("插件与应用分别计数，运行时不冒充已安装或可安装插件�
     expect(html).toContain('aria-pressed="true">已安装');
     expect(html).not.toContain("animate-spin");
     const text = html.replace(/<[^>]*>/g, "");
-    expect(text).toContain("插件1");
-    expect(text).toContain("应用1");
+    expect(text).toContain("已安装1");
+    expect(text).toMatch(/应用\s*1/);
     expect(text).toContain("v1.2.3");
     expect(html).not.toContain("Runtime");
     return null;
@@ -155,7 +155,7 @@ it("远程目录分批展示、按显示名搜索全部条目，并使用远程�
   }
   try {
     renderToStaticMarkup(<Capture />);
-    expect(cards).toHaveLength(41); // 已安装 1 项，加首批可安装 40 项。
+    expect(cards).toHaveLength(25); // 已安装 1 项，加首批可安装 24 项。
     query = "Library 84";
     renderToStaticMarkup(<Capture />);
     expect(cards.map((card) => card.props.name)).toEqual(["Library 84"]);

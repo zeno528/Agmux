@@ -2,7 +2,6 @@
 export default {
   title: "Plugins",
   inventory: {
-    label: "Codex content type",
     apps: "Apps",
     loadingApps: "Loading installed Codex apps…",
     noApps: "No matching installed apps",
@@ -88,6 +87,10 @@ export default {
   },
   // Board hierarchy: engine dimension → full-width search → filter chips → section grids (shared by Codex / Claude)
   board: {
+    loadingCatalog: "Loading the full catalog…",
+    pageRange: "Showing {{first}}–{{last}} of {{total}}",
+    previousPage: "Previous",
+    nextPage: "Next",
     codexInstalledHelp: "Toggles update user settings; project or managed settings may override them. Existing sessions may need a restart. Toggle plugins labeled “Managed by Codex” in the Codex desktop app",
     codexAvailableHelp: "From your current Codex account and added marketplaces. Complete authorization in the Codex desktop app after installation when required",
     filterAll: "All",
@@ -111,7 +114,6 @@ export default {
     installedHelp: "User-level toggles are shared across provider profiles. Project and local toggles affect only their project; project settings can override user settings",
     availableHelp: "From added marketplaces, installed to the user scope by default. Project settings can control whether they are enabled",
     noMarkets: "No plugin marketplaces added yet",
-    showMore: "Show more",
     scopeUser: "User",
     scopeProject: "Project",
     scopeLocal: "Local",

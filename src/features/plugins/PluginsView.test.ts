@@ -16,10 +16,10 @@ import ClaudePluginMarketplaceView from "./ClaudePluginMarketplaceView";
 import type { AppState, ClaudePluginInventory } from "../../types";
 
 const ui = vi.hoisted(() => ({ filter: "installed" }));
-// 当前渲染树中只有筛选器以 "installed" 初始化状态。
+// 当前渲染树中只有筛选器以 "all" 初始化状态。
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
-  return { ...actual, useState: (initial: unknown) => actual.useState(initial === "installed" ? ui.filter : initial) };
+  return { ...actual, useState: (initial: unknown) => actual.useState(initial === "all" ? ui.filter : initial) };
 });
 beforeEach(() => { ui.filter = "installed"; });
 
@@ -58,7 +58,9 @@ describe("插件搜索", () => {
       createElement(ClaudePluginsView, { popEpoch: 0, query: "", onHeaderChange: () => undefined }),
     ));
     expect(html).toContain('role="status"');
-    expect(html).toContain("正在加载…");
+    expect(html).toContain("正在读取完整目录…");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("plugin-card-head");
     expect(html).not.toContain("还没有添加插件市场");
   });
 
@@ -97,9 +99,11 @@ describe("插件搜索", () => {
     const render = (query: string) => renderToStaticMarkup(createElement(FeedbackProvider, null,
       createElement(ClaudePluginsView, { ...props, query }),
     ));
-    expect(render("")).toContain(">plugin-39</span>");
-    expect(render("")).not.toContain(">plugin-40</span>");
-    expect(render("")).toContain("显示更多");
+    const cached = render("");
+    expect(cached).toContain(">plugin-23</span>");
+    expect(cached).not.toContain(">plugin-24</span>");
+    expect(cached).toContain("正在读取完整目录");
+    expect(cached.match(/class="plugin-card(?: |")/g)).toHaveLength(24);
     expect(render("plugin-84")).toContain(">plugin-84</span>");
   });
 

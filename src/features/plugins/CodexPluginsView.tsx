@@ -1,4 +1,4 @@
-import { ArrowUp, Blocks, Download, RefreshCw, Store } from "lucide-react";
+import { AppWindow, ArrowUp, Blocks, Download, RefreshCw, Store } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
@@ -18,13 +18,14 @@ import {
 import { AppDialog } from "../../components/AppDialog";
 import { AppTooltip } from "../../components/AppTooltip";
 import { AppSwitch } from "../../components/AppSwitch";
-import { AppTabBar } from "../../components/AppTabBar";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ManagementPageTitle } from "../../components/ManagementPageTitle";
 import { TrashIcon } from "../../components/TrashIcon";
 import PluginDetailView from "./PluginDetailView";
 import PluginFilterChips, { type PluginFilter } from "./components/PluginFilterChips";
+import { PluginCatalogPagination, usePluginCatalogPage } from "./components/PluginCatalogPagination";
+import { PluginCardSkeletons } from "./components/PluginCardSkeletons";
 import { PluginCard } from "./components/PluginCard";
 import { PluginStatusDot } from "./components/PluginStatusDot";
 import PluginMarketplaceSources, { PluginMarketplaceRow } from "./components/PluginMarketplaceSources";
@@ -70,15 +71,15 @@ export default function CodexPluginsView({
   const [catalogLoaded, setCatalogLoaded] = useState(() => getCachedPluginCatalog() !== null);
   const [catalogError, setCatalogError] = useState("");
   const [catalogRefreshed, setCatalogRefreshed] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(40);
   const [updates, setUpdates] = useState<PluginUpdate[]>([]);
   const [checking, setChecking] = useState(false);
   const [upgradingAll, setUpgradingAll] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<PluginSummary | null>(null);
   const [showSources, setShowSources] = useState(false);
-  const [filter, setFilter] = useState<PluginFilter>("installed");
+  const [filter, setFilter] = useState<PluginFilter>("all");
   const showAvailable = filter === "all" || filter === "available";
-  const [installing, setInstalling] = useState("");
+  const [pluginAction, setPluginAction] = useState<{ id: string; kind: "install" | "remove" | "toggle" } | null>(null);
+  const installing = pluginAction?.id ?? "";
   const [removingMarket, setRemovingMarket] = useState("");
   const [refreshingMarket, setRefreshingMarket] = useState("");
   const thirdPartyProfile =
@@ -121,8 +122,8 @@ export default function CodexPluginsView({
     void refresh(true);
   }, [activationEpoch]);
   useEffect(() => {
-    if (showAvailable && !catalogRefreshed) void refreshCatalog().catch(() => undefined);
-  }, [showAvailable, catalogRefreshed]);
+    if (loaded && showAvailable && !catalogRefreshed) void refreshCatalog().catch(() => undefined);
+  }, [loaded, showAvailable, catalogRefreshed]);
   useEffect(() => {
     let cancelled = false;
     void loadCodexApps(true).then((items) => {
@@ -137,8 +138,6 @@ export default function CodexPluginsView({
   useEffect(() => {
     void refreshMarketplaces(true);
   }, []);
-
-  useEffect(() => { setVisibleCount(40); }, [query]);
 
   // 侧栏重复点击本视图 = 弹回一级；只清子页与弹层状态，不刷新（安装/卸载流程自带刷新）。
   useEffect(() => {
@@ -181,6 +180,9 @@ export default function CodexPluginsView({
       .sort(compareMarketplacePlugins);
   }, [catalog, installedIds, query]);
 
+  const catalogPage = usePluginCatalogPage(available.length, query);
+  const catalogLoading = showAvailable && !catalogRefreshed && !catalogError;
+
   const visibleUpdates = useMemo(
     () => updates.filter((update) => visibleInstalled.some((plugin) => plugin.name === update.name)),
     [updates, visibleInstalled],
@@ -188,7 +190,7 @@ export default function CodexPluginsView({
 
   const install = async (plugin: AvailablePlugin) => {
     if (installing || checking || upgradingAll) return;
-    setInstalling(plugin.plugin_id);
+    setPluginAction({ id: plugin.plugin_id, kind: "install" });
     try {
       const items = await api.installMarketplacePlugin(plugin.marketplaceName, plugin.name);
       setCachedPlugins(items);
@@ -204,7 +206,7 @@ export default function CodexPluginsView({
     } catch (reason) {
       feedback.error(String(reason));
     } finally {
-      setInstalling("");
+      setPluginAction(null);
     }
   };
 
@@ -220,7 +222,7 @@ export default function CodexPluginsView({
       destructive: true,
     });
     if (!confirmed) return;
-    setInstalling(`${plugin.name}@${plugin.marketplace}`);
+    setPluginAction({ id: `${plugin.name}@${plugin.marketplace}`, kind: "remove" });
     try {
       const items = await api.uninstallPlugin(plugin.name, plugin.marketplace);
       setCachedPlugins(items);
@@ -231,7 +233,7 @@ export default function CodexPluginsView({
       feedback.error(String(error));
       await refresh(true);
     } finally {
-      setInstalling("");
+      setPluginAction(null);
     }
   };
 
@@ -301,7 +303,7 @@ export default function CodexPluginsView({
   const toggleEnabled = async (plugin: PluginSummary, enabled: boolean) => {
     if (installing || checking || upgradingAll || !plugin.can_toggle || !plugin.marketplace) return;
     const pluginId = `${plugin.name}@${plugin.marketplace}`;
-    setInstalling(pluginId);
+    setPluginAction({ id: pluginId, kind: "toggle" });
     try {
       const items = await api.setPluginEnabled(pluginId, enabled);
       setCachedPlugins(items);
@@ -310,7 +312,7 @@ export default function CodexPluginsView({
       feedback.error(String(error));
       await refresh(true);
     } finally {
-      setInstalling("");
+      setPluginAction(null);
     }
   };
 
@@ -346,7 +348,7 @@ export default function CodexPluginsView({
 
   const showUpdates = filter === "all" || filter === "updates";
   const showInstalled = filter === "all" || filter === "installed";
-  const boardEmpty = loaded && catalogLoaded && !catalogError && !visibleInstalled.length && !available.length && !visibleUpdates.length;
+  const boardEmpty = loaded && catalogLoaded && !catalogLoading && !catalogError && !visibleInstalled.length && !available.length && !visibleUpdates.length;
 
   const renderSourceRow = (marketplace: PluginMarketplace) => (
     <PluginMarketplaceRow
@@ -375,20 +377,25 @@ export default function CodexPluginsView({
     </PluginMarketplaceRow>
   );
 
-  const sections = (
-    <AppTabBar<"plugins" | "apps"> selected={section} onSelect={setSection} label={t("inventory.label")} items={[
-      { id: "plugins", label: t("title"), count: <span className="muted meta-xs">{!loaded ? <LoadingSpinner /> : loadError ? "—" : orderedPlugins.length}</span> },
-      { id: "apps", label: t("inventory.apps"), count: <span className="muted meta-xs">{!appsLoaded ? <LoadingSpinner /> : appsError ? "—" : apps.length}</span> },
-    ]} />
-  );
+  const appsCount = !appsLoaded ? <LoadingSpinner /> : appsError ? "—" : apps.length;
 
   if (section === "apps") {
     const needle = query.trim().toLowerCase();
     const visible = apps.filter((app) => `${app.name} ${app.description ?? ""}`.toLowerCase().includes(needle));
     return <div className="space-y-4">
-      {sections}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="field-label flex items-center gap-2">{t("inventory.apps")} <span className="apple-chip">{appsCount}</span></h2>
+        <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setSection("plugins")}>
+          {t("nav.backToPlugins")}
+        </button>
+      </div>
       {appsError ? <p className="muted text-sm">{appsError}</p> : null}
-      {!appsLoaded ? <EmptyStateCard loading icon={<Blocks size={18} />}><p>{t("inventory.loadingApps")}</p></EmptyStateCard> : (
+      {!appsLoaded ? (
+        <div className="plugin-board" aria-busy="true">
+          <span className="sr-only" role="status">{t("inventory.loadingApps")}</span>
+          <PluginCardSkeletons />
+        </div>
+      ) : (
         <div className="plugin-board">
           {visible.map((app) => <PluginCard key={app.id} name={app.name} description={app.description}
             iconPath={resolveAppIcon(app, plugins)}
@@ -405,7 +412,23 @@ export default function CodexPluginsView({
 
   return (
     <div className="space-y-4">
-      {sections}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PluginFilterChips value={filter} onChange={setFilter} updateCount={visibleUpdates.length} />
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setSection("apps")}>
+            <AppWindow className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+            {t("inventory.apps")} <span className="muted meta-xs">{appsCount}</span>
+          </button>
+          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setShowSources(true)}>
+            <Store className="h-4 w-4" strokeWidth={2} />
+            {t("sources.title")}
+          </button>
+          <button type="button" className="apple-action-button apple-action-button--small" disabled={checking || upgradingAll || (Boolean(installing) && pluginAction?.kind !== "toggle")} aria-disabled={pluginAction?.kind === "toggle" || undefined} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
+            <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
+            {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
+          </button>
+        </div>
+      </div>
       {loadError ? <p className="muted text-sm">{loadError}</p> : null}
       {catalogError && catalogError !== loadError ? <p className="muted text-sm">{catalogError}</p> : null}
       {thirdPartyProfile ? (
@@ -415,25 +438,13 @@ export default function CodexPluginsView({
           </div>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PluginFilterChips value={filter} onChange={setFilter} updateCount={visibleUpdates.length} />
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="apple-action-button apple-action-button--small" disabled={checking || upgradingAll || Boolean(installing)} onClick={() => void (updates.length ? upgradeAll() : checkUpdates())}>
-            <RefreshCw className={`h-4 w-4 ${checking || upgradingAll ? "animate-spin" : ""}`} strokeWidth={2} />
-            {updates.length ? t("action.upgradeAll") : t("action.checkUpdates")}
-          </button>
-          <button type="button" className="apple-action-button apple-action-button--small" onClick={() => setShowSources(true)}>
-            <Store className="h-4 w-4" strokeWidth={2} />
-            {t("sources.title")}
-          </button>
-        </div>
-      </div>
-      {showAvailable && !catalogLoaded && !catalogError ? (
-        <p className="muted flex items-center gap-2 text-sm" role="status">
-          <LoadingSpinner />{t("loading", { ns: "common" })}
-        </p>
+      {!loaded && showInstalled ? (
+        <section className="plugin-section" aria-busy="true">
+          <div className="field-label plugin-section-head">{t("board.sectionInstalled")}</div>
+          <div className="plugin-board"><PluginCardSkeletons installed /></div>
+        </section>
       ) : null}
-      {!loaded ? null : (
+      {!loaded && !catalogLoading ? null : (
         <>
           {showUpdates && visibleUpdates.length ? (
             <section className="plugin-section">
@@ -506,7 +517,7 @@ export default function CodexPluginsView({
                         aria-label={t("list.uninstallAria", { name: plugin.name })}
                         onClick={() => void remove(plugin)}
                       >
-                        {installing === `${plugin.name}@${plugin.marketplace}` ? <LoadingSpinner /> : <TrashIcon />}
+                        {pluginAction?.kind === "remove" && installing === `${plugin.name}@${plugin.marketplace}` ? <LoadingSpinner /> : <TrashIcon />}
                       </button>
                     ) : null}
                     meta={<>
@@ -518,17 +529,23 @@ export default function CodexPluginsView({
               </div>
             </section>
           ) : null}
-          {showAvailable && available.length ? (
+          {showAvailable && (catalogLoading || available.length > 0) ? (
             <section className="plugin-section">
               <div className="field-label plugin-section-head">
                 {t("board.sectionAvailable")}
-                <span className="apple-chip">{available.length}</span>
                 <AppTooltip label={t("board.sectionAvailable")}>
                   <p>{t("board.codexAvailableHelp")}</p>
                 </AppTooltip>
+                {catalogLoading ? (
+                  <span className="muted inline-flex items-center" role="status" title={t("board.loadingCatalog")}>
+                    <LoadingSpinner />
+                    <span className="sr-only">{t("board.loadingCatalog")}</span>
+                  </span>
+                ) : catalogRefreshed ? <span className="apple-chip">{available.length}</span> : null}
               </div>
-              <div className="plugin-board">
-                {available.slice(0, visibleCount).map((plugin) => (
+              <div className="plugin-board" ref={catalogPage.setGrid} tabIndex={-1} aria-busy={catalogLoading}>
+                {catalogLoading && !available.length ? <PluginCardSkeletons count={catalogPage.columns * 2} /> : null}
+                {available.slice(catalogPage.start, catalogPage.end).map((plugin) => (
                   <PluginCard
                     key={plugin.plugin_id}
                     name={plugin.display_name ?? plugin.name}
@@ -537,15 +554,13 @@ export default function CodexPluginsView({
                     iconPath={plugin.icon_path}
                     action={
                       <button type="button" className="apple-icon-button shrink-0 text-accent hover:bg-(--accent)/10" disabled={Boolean(installing) || checking || upgradingAll} title={t("action.install")} aria-label={t("action.install")} onClick={() => void install(plugin)}>
-                        {installing === plugin.plugin_id ? <LoadingSpinner /> : <Download className="h-4 w-4" strokeWidth={2} />}
+                        {pluginAction?.kind === "install" && installing === plugin.plugin_id ? <LoadingSpinner /> : <Download className="h-4 w-4" strokeWidth={2} />}
                       </button>
                     }
                   />
                 ))}
               </div>
-              {available.length > visibleCount ? <button type="button" className="apple-action-button plugin-show-more" onClick={() => setVisibleCount((count) => count + 40)}>
-                {t("claudePlugin.showMore")}
-              </button> : null}
+              <PluginCatalogPagination start={catalogPage.start} end={catalogPage.end} total={available.length} loading={catalogLoading} move={catalogPage.move} />
             </section>
           ) : null}
           {boardEmpty ? (
@@ -558,7 +573,7 @@ export default function CodexPluginsView({
             <>
               {filter === "updates" && !visibleUpdates.length ? <p className="muted text-sm">{t("market.upToDate")}</p> : null}
               {filter === "installed" && !visibleInstalled.length ? <p className="muted text-sm">{t("list.empty")}</p> : null}
-              {filter === "available" && catalogLoaded && !catalogError && !available.length ? <p className="muted text-sm">{t("list.noMatch")}</p> : null}
+              {filter === "available" && catalogLoaded && !catalogLoading && !catalogError && !available.length ? <p className="muted text-sm">{t("list.noMatch")}</p> : null}
             </>
           ) : null}
         </>

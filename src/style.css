@@ -60,6 +60,7 @@
   --scrollbar-thumb-hover: color-mix(in srgb, var(--text-secondary) 40%, transparent);
   /* 全局间距参数：页头/标题到首个内容区块，以及相邻卡片/分区之间 */
   --gap-page: 0.825rem;
+  --toolbar-scroll-fade: 0.5625rem;
   --gap-section: 1rem;
   /* 卡片内边距基准（上下与未拆分的卡片使用） */
   --gap-card: 1.25rem;
@@ -73,7 +74,7 @@
   --dialog-pad-bottom: 1.5rem;
   /* 全局控件与窗口几何：页面、编辑页和侧边栏只从这里取尺寸 */
   --font-size-base: 0.875rem;
-  --sidebar-width-expanded: 9.5rem;
+  --sidebar-width-expanded: 11rem;
   --sidebar-width-collapsed: 3.125rem; /* 75px 物理像素 ÷ 1.5 = 50px CSS 像素 */
   --sidebar-nav-height: 2.25rem;
   --sidebar-nav-radius: 0.625rem;
@@ -483,12 +484,11 @@ button.plan-badge:hover:not(:disabled) {
   transition: transform var(--motion-segment-slide), width var(--motion-segment-slide);
 }
 
-/* 分割线画在标签栏内部，避开滚动正文边界的亚像素覆盖。 */
 .settings-tab-bar {
+  position: relative;
   flex-shrink: 0;
   z-index: 1;
   background: var(--main-surface-bg);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--panel-divider) 72%, transparent);
 }
 
 /* 最小元信息（卡片时间戳、备份记录摘要）：第五级字号，不属于正文层级。
@@ -1423,19 +1423,6 @@ body.drag-active * {
   padding-right: var(--edit-footer-padding-right);
 }
 
-.apple-edit-toolbar--footer::before {
-  content: "";
-  position: absolute;
-  inset: auto 0 100%;
-  height: 1.5rem;
-  pointer-events: none;
-  background: linear-gradient(transparent, var(--main-surface-bg));
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  -webkit-mask-image: linear-gradient(transparent, black);
-  mask-image: linear-gradient(transparent, black);
-}
-
 .apple-edit-toolbar--footer .apple-action-button {
   font-weight: 600;
 }
@@ -1470,6 +1457,30 @@ body.drag-active * {
   overscroll-behavior: contain;
 }
 
+/* 渐隐与滚动裁切共用同一边界，长度只占正文原有的留白。 */
+.settings-tab-bar + .apple-edit-content {
+  --edit-scroll-fade-top: var(--toolbar-scroll-fade);
+}
+
+.apple-edit-content:has(~ .apple-edit-toolbar--footer) {
+  --edit-scroll-fade-bottom: var(--toolbar-scroll-fade);
+}
+
+.settings-tab-bar + .apple-edit-content,
+.apple-edit-content:has(~ .apple-edit-toolbar--footer) {
+  --edit-scroll-mask: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(0 0 0 / 0.76) calc(var(--edit-scroll-fade-top, 0px) * 0.45),
+    rgb(0 0 0 / 0.95) calc(var(--edit-scroll-fade-top, 0px) * 0.75),
+    black var(--edit-scroll-fade-top, 0px),
+    black calc(100% - var(--edit-scroll-fade-bottom, 0px)),
+    transparent
+  );
+  -webkit-mask-image: var(--edit-scroll-mask);
+  mask-image: var(--edit-scroll-mask);
+}
+
 /* 留白归吸顶栏，滚动开始时操作栏即保持原位。 */
 .apple-edit-content:has(.apple-editor-toolbar) {
   padding-top: 0;
@@ -1477,7 +1488,7 @@ body.drag-active * {
 
 /* 代码编辑页底部仅保留少量留白，让横向条贴近保存栏。 */
 .apple-edit-page > .apple-edit-content:has(.apple-editor-shell) {
-  padding-bottom: calc(var(--gap-section) * 0.125);
+  padding-bottom: var(--toolbar-scroll-fade);
 }
 
 /* 滚动容器的直接子项永不压缩：overflow:hidden 的卡片 flex 自动最小高度为 0，
@@ -1537,7 +1548,6 @@ body.drag-active * {
 .desktop-diagnostics__metrics div > span { color: var(--text-secondary); font-size: 12px; }
 .desktop-diagnostics__metrics div > span.chip-warn { color: var(--warning); }
 .desktop-diagnostics__tab-row { justify-content: space-between; }
-.desktop-diagnostics__tab-row .settings-tab-bar { box-shadow: none; }
 .desktop-diagnostics__table-scroll { width: 100%; overflow-x: auto; }
 .desktop-diagnostics__table { width: 100%; min-width: 32rem; border-collapse: collapse; text-align: left; font-size: 13px; }
 .desktop-diagnostics__table th { padding: 0.75rem 0.75rem 0.75rem 0; color: var(--text-secondary); font-size: 12px; font-weight: 400; white-space: nowrap; }
@@ -1870,7 +1880,11 @@ body.drag-active * {
   transition: transform var(--motion-segment-slide), background-color 210ms ease;
 }
 
-:root.dark .app-segmented-control::before { background: var(--secondary-button-hover-bg); }
+:root.dark .app-segmented-control { background: var(--panel-bg); }
+
+:root.dark .app-segmented-control::before {
+  background: color-mix(in srgb, var(--secondary-button-bg) 78%, var(--text-primary));
+}
 
 .app-segmented-control > button {
   position: relative;
@@ -2059,12 +2073,6 @@ body.drag-active * {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr));
   gap: var(--gap-section);
-}
-
-/* 可安装分区底部的「显示更多」：Claude/Codex 插件页共用，底部居中与统一上距。 */
-.plugin-show-more {
-  display: flex;
-  margin: 0.75rem auto 0;
 }
 
 .plugin-card {
@@ -2320,7 +2328,8 @@ pre.mcp-diff-line--add {
 .apple-editor-toolbar .editor-attach-bar {
   margin-top: 0.5rem;
   border-radius: var(--radius-control-sm) var(--radius-control-sm) 0 0;
-  box-shadow: var(--card-edge-shadow);
+  border-top: 0.5px solid var(--panel-border);
+  border-inline: 0.5px solid var(--panel-border);
 }
 
 .apple-editor-toolbar + .editor-attach-group {
@@ -2683,6 +2692,20 @@ button:focus-visible {
   justify-content: flex-end;
   gap: var(--gap-actions);
   margin-top: 0;
+}
+
+/* 带底部按钮的弹窗只给独立滚动区渐隐，按钮与静态正文保持完整。 */
+.app-dialog-content--hero .app-dialog-body:has(+ .app-dialog-actions),
+.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto,
+.claude-template-dialog .app-dialog-body:has(+ .app-dialog-actions) .cm-scroller {
+  --dialog-scroll-mask: linear-gradient(black calc(100% - var(--toolbar-scroll-fade)), transparent);
+  -webkit-mask-image: var(--dialog-scroll-mask);
+  mask-image: var(--dialog-scroll-mask);
+}
+
+.app-dialog-body:has(+ .app-dialog-actions) .skill-markdown-preview.overflow-auto,
+.claude-template-dialog .app-dialog-body:has(+ .app-dialog-actions) .cm-content {
+  padding-bottom: var(--toolbar-scroll-fade);
 }
 
 .app-dialog-close {

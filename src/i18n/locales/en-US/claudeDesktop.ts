@@ -106,7 +106,7 @@ export default {
     path: "Location",
   },
   list: {
-    title: "Claude Desktop",
+    title: "Claude Desktop", // Official name in every locale.
     emptyHint: "Pick the DeepSeek template, or capture an existing third-party configuration.",
   },
   edit: {

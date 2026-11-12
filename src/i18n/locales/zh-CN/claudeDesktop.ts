@@ -106,7 +106,7 @@ export default {
     path: "位置",
   },
   list: {
-    title: "Claude 桌面端",
+    title: "Claude Desktop",
     emptyHint: "添加供应商，或从当前配置新建。",
   },
   edit: {

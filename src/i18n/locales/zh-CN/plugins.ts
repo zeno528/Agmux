@@ -2,7 +2,6 @@
 export default {
   title: "插件",
   inventory: {
-    label: "Codex 内容类型",
     apps: "应用",
     loadingApps: "正在读取 Codex 已安装应用…",
     noApps: "没有匹配的已安装应用",
@@ -88,6 +87,10 @@ export default {
   },
   // 看板层级：客户端维度 → 通栏搜索 → 一级过滤 chips → 分区网格（Codex / Claude 两端共用）
   board: {
+    loadingCatalog: "正在读取完整目录…",
+    pageRange: "显示 {{first}}–{{last}}，共 {{total}} 项",
+    previousPage: "上一页",
+    nextPage: "下一页",
     codexInstalledHelp: "开关修改用户级设置，项目或管理员设置可覆盖；已有会话可能需重启。标注“由 Codex 管理”的插件，请在 Codex 桌面端启停",
     codexAvailableHelp: "来自当前 Codex 账号和已添加的市场。需要授权的插件，安装后请在 Codex 桌面端完成授权",
     filterAll: "全部",
@@ -111,7 +114,6 @@ export default {
     installedHelp: "用户级开关由所有供应商共用；项目级和本地级开关仅影响对应项目，项目设置可覆盖用户级设置",
     availableHelp: "来自已添加的市场，默认安装到用户级；项目设置可单独控制是否启用",
     noMarkets: "还没有添加插件市场",
-    showMore: "显示更多",
     scopeUser: "用户级",
     scopeProject: "项目级",
     scopeLocal: "本地",

@@ -27,7 +27,7 @@ export default {
     settings: "Settings",
     groupCodex: "Codex",
     groupClaude: "Claude Code",
-    groupClaudeDesktop: "Claude Desktop",
+    groupClaudeDesktop: "Claude Desktop", // Official name in every locale.
   },
   sidebar: {
     expand: "Expand sidebar",
