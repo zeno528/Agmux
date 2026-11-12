@@ -1,4 +1,4 @@
-import { Download, Eye, EyeOff, Pencil, Trash2, Wifi } from "lucide-react";
+import { Download, Eye, EyeOff, Pencil, Trash2, Wand2, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { AppSelect } from "./AppSelect";
 import { AppTooltip } from "./AppTooltip";
@@ -156,12 +156,13 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {onApplyModel && labels.quickSet ? (
-            <div className="w-28 shrink-0">
+            <div className="w-32 shrink-0">
               <AppSelect
                 value={null}
                 options={models.map((item) => ({ label: item, value: item }))}
                 onChange={onApplyModel}
                 placeholder={labels.quickSet}
+                icon={Wand2}
                 disabled={disabled || fetching || models.length === 0}
                 menuAlign="end"
                 compact
@@ -169,9 +170,9 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
               />
             </div>
           ) : null}
-          <div className="w-28 shrink-0">
-            <button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-7 w-full justify-center" disabled={fetching || disabled} onClick={onFetch}>
-              {fetching ? <LoadingSpinner /> : <Download className="h-3 w-3" strokeWidth={2} aria-hidden="true" />}
+          <div className="shrink-0">
+            <button type="button" className="apple-inline-btn apple-inline-btn--quiet !h-7 whitespace-nowrap" disabled={fetching || disabled} onClick={onFetch}>
+              {fetching ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden="true" />}
               {labels.fetch}
             </button>
           </div>

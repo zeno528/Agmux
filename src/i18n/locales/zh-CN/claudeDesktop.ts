@@ -110,8 +110,6 @@ export default {
     emptyHint: "添加供应商，或从当前配置新建。",
   },
   edit: {
-    createTitle: "添加桌面端供应商",
-    editTitle: "编辑桌面端供应商",
     baseUrl: "API 地址",
     modelSlots: "模型映射",
     modelSlotHint:

@@ -110,8 +110,6 @@ export default {
     emptyHint: "Pick the DeepSeek template, or capture an existing third-party configuration.",
   },
   edit: {
-    createTitle: "Add desktop provider",
-    editTitle: "Edit desktop provider",
     baseUrl: "API endpoint",
     modelSlots: "Model mapping (desktop tier roles)",
     modelSlotHint:

@@ -1,4 +1,5 @@
 import { Check, ChevronDown, MoreHorizontal, Search, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -16,6 +17,8 @@ interface AppSelectProps<T extends string | number> {
   options: SelectOption<T>[];
   onChange: (value: T) => void;
   placeholder?: string;
+  /** 触发器文字前的静态图标；不用 app-select__icon（那个类带展开旋转语义）。 */
+  icon?: LucideIcon;
   disabled?: boolean;
   renderLabel?: (option: SelectOption<T>) => ReactNode;
   iconOnly?: boolean;
@@ -37,6 +40,7 @@ export function AppSelect<T extends string | number>({
   options,
   onChange,
   placeholder,
+  icon: LeadingIcon,
   disabled,
   renderLabel,
   iconOnly = false,
@@ -183,6 +187,7 @@ export function AppSelect<T extends string | number>({
           }
         }}
       >
+        {LeadingIcon ? <LeadingIcon className="shrink-0" size={compact ? 14 : 16} strokeWidth={2} aria-hidden="true" /> : null}
         {iconOnly ? <span className="sr-only">{selected ? renderLabel?.(selected) ?? selected.label : placeholder ?? t("select.placeholder")}</span> : <span className="app-select__label">{selected ? renderLabel?.(selected) ?? selected.label : placeholder ?? t("select.placeholder")}</span>}
         <TriggerGlyph className="app-select__icon" size={compact ? 14 : 16} strokeWidth={2} aria-hidden="true" />
       </button>

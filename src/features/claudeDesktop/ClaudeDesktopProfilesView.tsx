@@ -26,25 +26,23 @@ import { applyProfileWithConfirmation } from "../profiles/applyProfile";
 import { useProfileBalance } from "../profiles/useProfileBalance";
 import { claudeBalanceQueryKinds } from "../../presets";
 
-function DesktopActionsMenu({ status, busy, restarting, onCapture, onRestart, onRestore, onDiagnostics }: {
+function DesktopActionsMenu({ status, busy, restarting, onRestart, onRestore, onDiagnostics }: {
   status: ClaudeDesktopAppStatus;
   busy: boolean;
   restarting: boolean;
-  onCapture: () => void;
   onDiagnostics: () => void;
   onRestart: () => void;
   onRestore: () => void;
 }) {
   const { t } = useTranslation("claudeDesktop");
-  const { t: tProfiles } = useTranslation("profiles");
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const position = useFixedMenuPosition(open, trigger.current, menu, "end");
   useMenuDismiss(open, trigger, menu, setOpen);
+  // 「从当前配置新建」只在空状态出现（唯一适用时机：接入前已有手工配置），不进常驻菜单。
   const actions = [
     { label: t("diagnostics.title"), icon: Activity, disabled: false, run: onDiagnostics },
-    { label: tProfiles("toolbar.capture"), icon: Camera, disabled: status.deployment_mode !== "3p", run: onCapture },
     { label: t("status.restartButton"), icon: RotateCw, disabled: !status.installed || restarting, run: onRestart },
     { label: t("status.restoreOfficial"), icon: Undo2, disabled: status.deployment_mode !== "3p", run: onRestore },
   ];
@@ -392,7 +390,7 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
           <SyncFailureIndicator failure={syncFailure} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <DesktopActionsMenu status={status} busy={busy} restarting={restarting} onCapture={openCapture} onDiagnostics={() => setDiagnosticsOpen(true)} onRestart={() => void restartDesktop()} onRestore={() => void restoreOfficial()} />
+          <DesktopActionsMenu status={status} busy={busy} restarting={restarting} onDiagnostics={() => setDiagnosticsOpen(true)} onRestart={() => void restartDesktop()} onRestore={() => void restoreOfficial()} />
           <button type="button" className="apple-action-button app-button--primary disabled:!opacity-100" disabled={working} onClick={() => setCreatingProfile(true)}>
             <Plus size={16} strokeWidth={2} aria-hidden="true" />{tProfiles("toolbar.addProvider")}
           </button>
