@@ -26,7 +26,7 @@ describe("remembered aggregate selection", () => {
   });
 });
 
-describe("aggregate footer", () => {
+describe("aggregate banner", () => {
   // mock 掉 createPortal 后 document.body 仍会作为参数求值，给个桩
   (globalThis as { document?: unknown }).document = { body: { nodeType: 1 } };
   const summary = (id: string, name: string): ClaudeDesktopProfileSummary => ({
@@ -43,7 +43,7 @@ describe("aggregate footer", () => {
       balanceCache: {}, popEpoch: 0, syncFailure: undefined,
     }),
   ));
-  const applyButton = (html: string) => html.match(/<button[^>]*>[\s\S]*?应用聚合[\s\S]*?<\/button>/)?.[0] ?? "";
+  const applyButton = (html: string) => html.match(/<button[^>]*aria-pressed="(?:true|false)"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
 
   it("已应用时按钮禁用只显示计数，待应用或缺默认时给出对应提示", () => {
     setupI18n("zh-CN");
@@ -55,6 +55,9 @@ describe("aggregate footer", () => {
     expect(applied).toContain("已选 2 家");
     expect(applied).not.toContain("有更改未应用");
     expect(applyButton(applied)).toContain('disabled=""');
+    expect(applied.indexOf("apple-group flex items-center justify-between gap-4 px-5 py-3.5")).toBeLessThan(applied.indexOf('data-profile-id="p1"'));
+    expect(applied).toContain("brand-gradient-surface");
+    expect(applyButton(applied)).toContain('aria-pressed="true"');
 
     // 成员选择比已应用的多一家：提示待应用，按钮可点
     const pending = render("p1", status({ members: ["p1"], selected_members: ["p1", "p2"] }));

@@ -1,4 +1,4 @@
-import { Activity, Camera, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
+import { Activity, Camera, Check, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -399,6 +399,7 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     ? [t(`modes.${status.mode}`), appliedProfile?.name].filter(Boolean).join(" · ")
     : t("modes.noConfiguration");
   const aggregateChanged = status.mode !== "aggregate" || defaultId !== activeId || membershipChanged || Boolean(editedActiveId);
+  const aggregateApplied = !aggregateChanged && status.gateway_running;
   const modes = ["direct", "route", "aggregate"] as const;
   const icons = { direct: Plug, route: Route, aggregate: Layers2 };
   const working = busy || restarting;
@@ -455,32 +456,43 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
           </EmptyStateCard>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}>
-            <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-              <div className="profile-list relative space-y-[var(--gap-page)]">
+            <div className="profile-list relative space-y-[var(--gap-page)]">
+              {aggregate ? (
+                <div className={`apple-group flex items-center justify-between gap-4 px-5 py-3.5${aggregateApplied ? " is-active brand-gradient-surface" : ""}`} role="status">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Layers2 className="h-5 w-5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
+                    <div className="min-w-0">
+                      <div className="field-label">{t("modes.aggregate")}</div>
+                      <div className="muted flex flex-wrap gap-x-2 text-sm">
+                        <span>{t("modes.memberCount", { count: items.filter((profile) => members.includes(profile.id)).length })}</span>
+                        {!selectedDefault ? <span>{t("modes.chooseDefault")}</span> : aggregateChanged ? <span>{t("modes.pending")}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="profile-card-actions flex shrink-0 items-center gap-2" title="">
+                    <div className="profile-card-action-buttons flex shrink-0 items-center gap-2">
+                      <button type="button" className={`apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary shrink-0 ${aggregateApplied ? "disabled:opacity-100" : "disabled:!opacity-100"}`} disabled={working || !selectedDefault || aggregateApplied}
+                        aria-pressed={aggregateApplied} aria-label={aggregateApplied ? tProfiles("actions.inUse") : t("modes.applyAggregate")} title={aggregateApplied ? tProfiles("actions.inUse") : t("modes.applyAggregate")} onClick={() => { if (selectedDefault) void applyDesktopProfile(selectedDefault); }}>
+                        <span className={aggregateApplied ? "invisible" : ""} aria-hidden="true">{aggregateApplied ? tProfiles("actions.switch") : t("modes.applyAggregate")}</span>
+                        {aggregateApplied ? <Check className="absolute inset-0 m-auto" size={18} strokeWidth={2.5} aria-hidden="true" /> : null}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                 {items.map((profile) => <ClaudeDesktopProfileCard key={profile.id} profile={profile}
                   active={profile.id === activeId} reapply={mode !== status.mode || profile.id === editedActiveId || (mode !== "direct" && !status.gateway_running)}
                   busy={working} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache}
                   member={members.includes(profile.id)} onMember={aggregate ? () => void toggleMember(profile.id) : undefined}
                   defaultMember={aggregate && selectedDefault?.id === profile.id} onDefaultMember={aggregate ? () => void toggleMember(profile.id, true) : undefined}
                   onEdit={() => void openEdit(profile)} onApply={aggregate ? undefined : () => void applyDesktopProfile(profile)} onDuplicate={() => void duplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void deleteProfile(profile)} />)}
-              </div>
-            </SortableContext>
+              </SortableContext>
+            </div>
             {createPortal(<DragOverlay dropAnimation={null}>{dragPreview ? <CardDragPreview card={dragPreview} /> : null}</DragOverlay>, document.body)}
           </DndContext>
         )}
       </div>
-      {aggregate && items.length ? (
-        <div className="apple-edit-toolbar apple-edit-toolbar--footer items-center">
-          <div className="muted mr-auto flex flex-wrap gap-x-2 text-sm" role="status">
-            <span>{t("modes.memberCount", { count: items.filter((profile) => members.includes(profile.id)).length })}</span>
-            <span>{!selectedDefault ? t("modes.chooseDefault") : aggregateChanged ? t("modes.pending") : null}</span>
-          </div>
-          <button type="button" className="apple-action-button app-button--primary shrink-0" disabled={working || !selectedDefault || (!aggregateChanged && status.gateway_running)}
-            onClick={() => { if (selectedDefault) void applyDesktopProfile(selectedDefault); }}>
-            {t("modes.applyAggregate")}
-          </button>
-        </div>
-      ) : null}
       <ProfileNameDialog mode={modal} name={profileName} busy={working} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
     </section>
   );
