@@ -353,6 +353,29 @@ pub struct ClaudePluginUpdate {
     pub version: String,
 }
 
+/// CLI 内置的官方插件市场：目录快照（plugin-catalog-cache.json）只收录它的插件。
+const OFFICIAL_MARKETPLACE: &str = "claude-plugins-official";
+
+/// `claude plugin details` 首行是「名字 版本」，取末段版本号。
+/// 末段不像版本号（没有数字）就当市场里没有版本信息，不误报。
+fn parse_details_version(text: &str) -> Option<String> {
+    let first = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+    let version = first.rsplit_once(char::is_whitespace)?.1.trim();
+    let looks_like_version = !version.is_empty()
+        && version
+            .chars()
+            .all(|char| char.is_ascii_alphanumeric() || matches!(char, '.' | '-' | '_' | '+'))
+        && version.chars().any(|char| char.is_ascii_digit());
+    looks_like_version.then(|| version.to_string())
+}
+
+/// 第三方市场里插件的当前版本：官方目录快照不收录这些插件，问 CLI 自己
+/// （`claude plugin details` 给的就是 CLI 升级时的目标版本）。
+fn claude_marketplace_version(home: &Path, plugin_id: &str) -> Option<String> {
+    let output = run_claude_plugin(home, &["details", plugin_id], None).ok()?;
+    parse_details_version(&output)
+}
+
 /// 更新判定（对齐 CLI `plugin update` 的 dry 语义：`version` 相等即最新），
 /// 返回目标版本，无更新返回 None：
 /// - 目录有版本 → 与已装版本比较，落后则给出目录版本；
@@ -376,7 +399,7 @@ fn plugin_update_version(
         .rsplit_once('@')
         .map(|(_, market)| market)
         .unwrap_or_default();
-    if marketplace != "claude-plugins-official" {
+    if marketplace != OFFICIAL_MARKETPLACE {
         return None;
     }
     let sha = std::fs::read_to_string(official_marketplace.join(".gcs-sha")).ok()?;
@@ -407,15 +430,12 @@ impl AppContext {
                 return Ok(Vec::new());
             }
             let output = run_claude_plugin(&home, &["marketplace", "list", "--json"], None)?;
-            for marketplace in parse_claude_marketplaces(&output)?
-                .into_iter()
-                .filter(|market| {
-                    installed.iter().any(|entry| {
-                        entry.id.rsplit_once('@').map(|(_, name)| name)
-                            == Some(market.name.as_str())
-                    })
+            let marketplaces = parse_claude_marketplaces(&output)?;
+            for marketplace in marketplaces.iter().filter(|market| {
+                installed.iter().any(|entry| {
+                    entry.id.rsplit_once('@').map(|(_, name)| name) == Some(market.name.as_str())
                 })
-            {
+            }) {
                 validate_claude_marketplace_name(&marketplace.name)?;
                 let output = run_claude_plugin(
                     &home,
@@ -430,20 +450,35 @@ impl AppContext {
             let catalog = serde_json::from_str::<PluginCatalogCache>(&text)
                 .map_err(|error| app_err!("Claude Code 插件目录解析失败: {error}"))?
                 .catalog;
-            let mut updates: Vec<ClaudePluginUpdate> = installed
-                .iter()
-                .filter_map(|entry| {
+            let mut updates: Vec<ClaudePluginUpdate> = Vec::new();
+            for entry in &installed {
+                let marketplace = entry
+                    .id
+                    .rsplit_once('@')
+                    .map(|(_, market)| market)
+                    .unwrap_or_default();
+                let version = if marketplace == OFFICIAL_MARKETPLACE {
                     plugin_update_version(
                         entry,
                         &catalog,
-                        &home.join(".claude/plugins/marketplaces/claude-plugins-official"),
+                        &home
+                            .join(".claude/plugins/marketplaces")
+                            .join(OFFICIAL_MARKETPLACE),
                     )
-                    .map(|version| ClaudePluginUpdate {
+                } else if marketplaces.iter().any(|market| market.name == marketplace) {
+                    // 第三方市场：目录快照里没有这些插件，问 CLI 市场里的当前版本
+                    claude_marketplace_version(&home, &entry.id)
+                        .filter(|latest| Some(latest.as_str()) != entry.version.as_deref())
+                } else {
+                    None
+                };
+                if let Some(version) = version {
+                    updates.push(ClaudePluginUpdate {
                         id: entry.id.clone(),
                         version,
-                    })
-                })
-                .collect();
+                    });
+                }
+            }
             updates.sort_by(|left, right| left.id.cmp(&right.id));
             updates.dedup_by(|left, right| left.id == right.id);
             Ok(updates)
@@ -830,6 +865,30 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// 第三方市场的当前版本来自 CLI 的 `plugin details` 首行「名字 版本」；
+    /// 认不出的文本（找不到插件的报错行等）不当版本，避免误报升级。
+    #[test]
+    fn details_version_parses_cli_headline() {
+        assert_eq!(
+            parse_details_version("ponytail 5.3.3\n  Description: ...\n").as_deref(),
+            Some("5.3.3")
+        );
+        assert_eq!(
+            parse_details_version("demo 1fad13414a44\n").as_deref(),
+            Some("1fad13414a44")
+        );
+        // 找不到插件时的报错行：末段不是版本号 → 没有版本
+        assert_eq!(
+            parse_details_version(
+                "Plugin \"x@y\" not found. Run `claude plugin list` to see installed plugins, \
+                 or pass --plugin-dir <path> to load one from disk.\n"
+            ),
+            None
+        );
+        assert_eq!(parse_details_version(""), None);
+        assert_eq!(parse_details_version("ponytail\n"), None);
     }
 
     /// CLI 的 enabled 是 cwd 合并值（同插件所有行同值）；逐行真源在各 scope 的
