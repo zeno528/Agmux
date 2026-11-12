@@ -546,7 +546,7 @@ const ConfigTextEditor = forwardRef<ConfigTextEditorHandle, ConfigTextEditorProp
   }, [value]);
 
   return (
-    <div className="apple-editor-shell" style={{ minHeight: editorMinHeight }}>
+    <div className="apple-editor-shell" data-readonly={readOnly ? "" : undefined} style={{ minHeight: editorMinHeight }}>
       <div className="apple-editor-surface">
         <div ref={hostRef} />
       </div>

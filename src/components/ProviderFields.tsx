@@ -7,7 +7,7 @@ import { ProfileIconTile } from "./ProfileIconTile";
 
 const displayModelLabel = (value: string) => value.replace(/\[1m\]\s*$/i, "");
 
-export function ProviderIdentityFields({ idPrefix, name, description, icon, iconName, onIcon, onName, onDescription, labels }: {
+export function ProviderIdentityFields({ idPrefix, name, description, icon, iconName, onIcon, onName, onDescription, nameHelp, labels }: {
   idPrefix: string;
   name: string;
   description: string;
@@ -16,6 +16,7 @@ export function ProviderIdentityFields({ idPrefix, name, description, icon, icon
   onIcon: () => void;
   onName: (value: string) => void;
   onDescription: (value: string) => void;
+  nameHelp?: ReactNode;
   labels: {
     changeIcon: string;
     changeIconLabel: string;
@@ -27,10 +28,10 @@ export function ProviderIdentityFields({ idPrefix, name, description, icon, icon
 }) {
   return (
     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-      <div className="flex min-w-0 items-center gap-4">
+      <div className="flex min-w-0 items-start gap-4">
         <button
           type="button"
-          className="relative grid h-[61px] w-[61px] shrink-0 place-items-center rounded-[16px] transition-opacity hover:opacity-80"
+          className="relative grid h-[61px] w-[61px] shrink-0 self-center place-items-center rounded-[16px] transition-opacity hover:opacity-80"
           title={labels.changeIcon}
           aria-label={labels.changeIconLabel}
           onClick={onIcon}
@@ -41,7 +42,7 @@ export function ProviderIdentityFields({ idPrefix, name, description, icon, icon
           </span>
         </button>
         <div className="min-w-0 flex-1">
-          <label className="field-label mb-1.5 block" htmlFor={`${idPrefix}-name`}>{labels.name}</label>
+          <div className="field-label mb-1.5"><span className="relative"><label htmlFor={`${idPrefix}-name`}>{labels.name}</label>{nameHelp ? <span className="absolute left-full top-1/2 ml-1 -translate-y-1/2">{nameHelp}</span> : null}</span></div>
           <input id={`${idPrefix}-name`} className="app-input" maxLength={50} placeholder={labels.namePlaceholder} value={name} onChange={(event) => onName(event.target.value)} />
         </div>
       </div>
@@ -198,7 +199,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
                 <span className="inline-flex min-h-8 w-full min-w-0 items-center rounded-lg bg-(--tile-bg) px-3 text-sm font-medium text-(--text-secondary)" title={field.label}>{field.label}</span>
               </div>
               <input
-                className="app-input app-input--compact min-w-0 disabled:bg-(--tile-bg) disabled:text-(--text-secondary)"
+                className="app-input app-input--compact min-w-0"
                 aria-label={`${field.label} ${labels.displayName ?? ""}`}
                 placeholder={field.displayPlaceholder ?? ""}
                 value={field.displayValue ?? ""}

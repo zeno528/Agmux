@@ -35,7 +35,7 @@ export default {
   requestModelLabel: "Request",
   displayNamePlaceholder: "Optional /model label",
   displayNameUnavailable: "Not shown in /model",
-  displayNameNotApplicable: "—",
+  displayNameCurrentPurpose: "Default model for the main session",
   oneMillionLabel: "1M",
   oneMillionColumn: "1M context",
   oneMillionTitle: "Append [1m] to the model ID to enable a 1M-token context window; the underlying model must support it",

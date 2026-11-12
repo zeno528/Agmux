@@ -35,7 +35,7 @@ export default {
   requestModelLabel: "请求模型",
   displayNamePlaceholder: "可选，显示在 /model 菜单",
   displayNameUnavailable: "不显示在 /model 菜单",
-  displayNameNotApplicable: "—",
+  displayNameCurrentPurpose: "主会话使用的默认模型",
   oneMillionLabel: "1M",
   oneMillionColumn: "1M 上下文",
   oneMillionTitle: "在模型 ID 后添加 [1m]，启用百万 token 上下文；需模型本身支持",

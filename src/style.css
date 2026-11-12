@@ -51,6 +51,7 @@
   --chip-bg: #e9e9e6;
   --profile-chip-bg: rgb(0 0 0 / 0.04);
   --input-bg: var(--main-surface-bg);
+  --input-uneditable-bg: color-mix(in srgb, var(--input-bg) 92%, var(--text-primary));
   --profile-meta-text: rgba(60, 60, 67, 0.68);
   /* 通用浅灰底色随主题适配；Logo 容器固定浅色，单色图标保持深色。 */
   --tile-bg: color-mix(in srgb, var(--text-secondary) 12%, transparent);
@@ -2298,6 +2299,10 @@ pre.mcp-diff-line--add {
   isolation: isolate;
 }
 
+.apple-editor-shell[data-readonly] {
+  --editor-bg: var(--input-uneditable-bg);
+}
+
 /* 文件标签与附属操作条作为整体吸顶，纵向滚动仍归编辑页正文。 */
 .apple-editor-toolbar {
   position: sticky;
@@ -2362,7 +2367,7 @@ pre.mcp-diff-line--add {
   overflow: hidden;
   border-radius: var(--radius-control-sm);
   /* 代码主内容区跟主视图底色一致（浅色白、深色 #1e1e1e），工具栏底色另算 */
-  background: var(--main-surface-bg);
+  background: var(--editor-bg, var(--main-surface-bg));
 }
 
 /* 编辑器附属条（editor chrome）：文件级操作条嵌进代码托盘顶部，与 apple-editor-surface
@@ -3506,6 +3511,9 @@ button:focus-visible {
 /* 两端共用的压缩数值输入：固定宽度，数值与默认占位文字使用正常文字色；[type] 优先于 .app-input。 */
 .compact-token-input[type="number"] {
   width: 4.5rem;
+}
+
+.compact-token-input[type="number"]:enabled:not([readonly]) {
   color: var(--text-primary);
 }
 
@@ -3514,7 +3522,7 @@ button:focus-visible {
 }
 
 /* 启用但未聚焦时复用紧凑按钮的淡描边；聚焦时沿用 .app-input 的蓝色描边。 */
-.compact-token-input[type="number"].compact-token-input--on:not(:focus) {
+.compact-token-input[type="number"].compact-token-input--on:enabled:not(:focus) {
   border-color: var(--panel-ring);
 }
 
@@ -3612,6 +3620,19 @@ button:focus-visible {
   /* 常驻与聚焦光环（:focus 的 0 0 0 3px）等大的透明外阴影：聚焦/失焦切换时阴影绘制区域不变，
      规避 WebView2 150% 缩放下失焦重绘圆整漏掉光环最外一行 AA 像素、留下描边残留的问题。 */
   box-shadow: 0 0 0 3px transparent;
+}
+
+.app-input:disabled,
+.app-input[readonly],
+.app-input--readonly {
+  background: var(--input-uneditable-bg);
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.app-input:disabled::placeholder {
+  color: inherit;
+  opacity: 1;
 }
 
 /* 药丸形输入变体：搜索框等筛选入口用，高度对齐标题栏胶囊、预留左侧图标位，其余沿用 .app-input */
@@ -3811,7 +3832,7 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
    右边线统一为无，靠留白分隔（深色 oneDark 本就无线）。
    !important 压过运行时注入的主题背景与浅色默认边线 */
 .cm-editor .cm-gutters {
-  background-color: var(--main-surface-bg) !important;
+  background-color: var(--editor-bg, var(--main-surface-bg)) !important;
   border-right: 0 !important;
 }
 .cm-activeLine,

@@ -5,6 +5,7 @@ import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { AppSelect } from "../../components/AppSelect";
 import { AppSwitch } from "../../components/AppSwitch";
+import { AppTooltip } from "../../components/AppTooltip";
 import ConfigTextEditor, { type ConfigTextEditorHandle } from "../../components/ConfigTextEditor";
 import EndpointField from "../../components/EndpointField";
 import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "../../components/ProviderSetup";
@@ -181,7 +182,7 @@ function ClaudeProfileEditor({
       value: modelMappings[key],
       hint: purpose ? `${key} — ${purpose}` : key,
       displayValue: displayKey ? modelDisplayNames[displayKey] : undefined,
-      displayPlaceholder: displayKey ? t("displayNamePlaceholder") : key === "CLAUDE_CODE_SUBAGENT_MODEL" ? t("displayNameUnavailable") : t("displayNameNotApplicable"),
+      displayPlaceholder: displayKey ? t("displayNamePlaceholder") : key === "CLAUDE_CODE_SUBAGENT_MODEL" ? t("displayNameUnavailable") : t("displayNameCurrentPurpose"),
       displayDisabled: !displayKey,
       onDisplayChange: displayKey ? (value: string) => setModelDisplayNames((current) => ({ ...current, [displayKey]: value })) : undefined,
       oneMillion: hasOneMillionModelSuffix(modelMappings[key]),
@@ -386,13 +387,14 @@ function ClaudeProfileEditor({
               idPrefix={create ? `claude-profile-${initialPreset!.kind}-${initialPreset!.plan?.replace(/ /g, "-")}` : "claude-profile"} name={name} description={description}
               icon={selectedIcon ?? claudePresetByKind(kind)?.icon ?? null}
               onIcon={() => setPickingIcon(true)} onName={setName} onDescription={setDescription}
+              nameHelp={accountLogin ? <AppTooltip label={t("accountLoginHelp")}><p className="setting-description">{t("accountLoginHelp")}</p></AppTooltip> : undefined}
               labels={{
                 changeIcon: tProfiles("edit.changeIcon"), changeIconLabel: tProfiles("edit.changeIconLabel"),
                 name: tProfiles("edit.nameLabel"), namePlaceholder: tProfiles("edit.namePlaceholder"),
                 description: tProfiles("edit.descriptionLabel"), descriptionPlaceholder: tProfiles("edit.descriptionPlaceholder"),
               }}
             />
-            {accountLogin ? <p className="setting-description mt-4 rounded-lg border-l-2 border-(--accent) bg-(--selection-bg) px-3 py-2">{t("accountLoginHelp")}</p> : <>
+            {!accountLogin ? <>
             <label className="field-label mb-1.5 mt-4 block">{t("protocolLabel")}</label>
             <div className="app-input flex min-w-0 items-center gap-2">
               <Webhook className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
@@ -420,7 +422,7 @@ function ClaudeProfileEditor({
               testTitle={!authToken.trim() || !baseUrl.trim() ? tProfiles("edit.checkProviderFields") : undefined}
               testing={testing} onTest={() => void testConnection()}
             />
-            </>}
+            </> : null}
             <div className="mt-4">
               <div className="mb-1.5 flex items-center gap-2">
                 <span className="field-label">{tProfiles("edit.adminUrlLabel")}</span>

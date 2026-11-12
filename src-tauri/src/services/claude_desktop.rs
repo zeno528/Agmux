@@ -26,7 +26,7 @@ use crate::models::{
     ClaudeDesktopProfileDetail, ClaudeDesktopProfileInput, ClaudeDesktopProfileSummary,
     ClaudeDesktopRouting,
 };
-use crate::paths::{home_dir, now_ms};
+use crate::paths::now_ms;
 
 const CONFIG_FILE_NAME: &str = "claude_desktop_config.json";
 const LIBRARY_DIR_NAME: &str = "configLibrary";
@@ -1432,7 +1432,7 @@ fn claude_desktop_install() -> Option<(PathBuf, &'static str)> {
         let names = ["Claude.app"];
         let roots = [
             PathBuf::from("/Applications"),
-            home_dir().join("Applications"),
+            crate::paths::home_dir().join("Applications"),
         ];
         roots
             .iter()

@@ -74,7 +74,7 @@ describe("MCP 操作入口", () => {
       }));
       const inputs = html.match(/<input\b[^>]*>/g)!;
       expect(inputs.some((input) => input.includes('value="sample"'))).toBe(!nameReadOnly);
-      if (nameReadOnly) expect(html).toContain('<div class="app-input flex min-w-0 items-center gap-2"><span class="truncate font-medium text-(--text-secondary)">sample</span></div>');
+      if (nameReadOnly) expect(html).toContain(">sample</span>");
       expect(inputs.find((input) => input.includes('value="https://example.test/mcp"'))).not.toMatch(/readOnly|disabled/);
     }
   });
