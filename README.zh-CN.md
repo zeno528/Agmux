@@ -27,6 +27,14 @@
 
 Agmux 面向使用 OpenAI Codex 或 Claude Code 的开发者，围绕电脑上这两个客户端的本地环境工作。它将供应商配置、ChatGPT OAuth 账号、MCP 服务器、插件和 Skills 的管理放进一个桌面应用，减少在多个配置文件和工具之间来回操作。
 
+## 界面截图
+
+| Codex | Claude Code |
+| --- | --- |
+| ![Codex](docs/screenshots/codex.jpg) | ![Claude Code](docs/screenshots/claude-code.jpg) |
+| Claude Desktop | 插件 |
+| ![Claude Desktop](docs/screenshots/claude-desktop.jpg) | ![插件](docs/screenshots/plugins.jpg) |
+
 ## Agmux 如何融入工作流
 
 ```text

@@ -27,6 +27,14 @@
 
 Agmux is built for developers who use OpenAI Codex or Claude Code and works with those clients' local environments on your computer. It brings provider profiles, ChatGPT OAuth accounts, MCP servers, plugins, and Skills into one desktop app, reducing the need to move between configuration files and separate tools.
 
+## Screenshots
+
+| Codex | Claude Code |
+| --- | --- |
+| ![Codex](docs/screenshots/codex.jpg) | ![Claude Code](docs/screenshots/claude-code.jpg) |
+| Claude Desktop | Plugins |
+| ![Claude Desktop](docs/screenshots/claude-desktop.jpg) | ![Plugins](docs/screenshots/plugins.jpg) |
+
 ## How Agmux fits into your workflow
 
 ```text
