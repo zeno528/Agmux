@@ -1,4 +1,5 @@
-import { Activity, Camera, Check, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
+import { useMenuExit } from "../../components/useMenuExit";
+import { Activity, Check, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -18,7 +19,6 @@ import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
 import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
 import { ProfileCardActions, ProfileCardContent, connectionGate } from "../profiles/ProfileCard";
-import ProfileNameDialog from "../profiles/ProfileNameDialog";
 import ClaudeDesktopProfileEdit from "./ClaudeDesktopProfileEdit";
 import ClaudeDesktopDiagnostics from "./ClaudeDesktopDiagnostics";
 import type { ClaudeDesktopAppStatus, ClaudeDesktopMode, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary, ProfileBalanceInfo, SyncFailure } from "../../types";
@@ -38,19 +38,28 @@ function DesktopActionsMenu({ status, busy, restarting, onRestart, onRestore, on
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const diagnosticsPending = useRef(false);
   const position = useFixedMenuPosition(open, trigger.current, menu, "end");
   useMenuDismiss(open, trigger, menu, setOpen);
-  // 「从当前配置新建」只在空状态出现（唯一适用时机：接入前已有手工配置），不进常驻菜单。
+  useMenuExit(open, menu);
   const actions = [
-    { label: t("diagnostics.title"), icon: Activity, disabled: false, run: onDiagnostics },
+    { label: t("diagnostics.title"), icon: Activity, disabled: false, run: () => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) onDiagnostics();
+      else diagnosticsPending.current = true;
+    } },
     { label: t("status.restartButton"), icon: RotateCw, disabled: !status.installed || restarting, run: onRestart },
     { label: t("status.restoreOfficial"), icon: Undo2, disabled: status.deployment_mode !== "3p", run: onRestore },
   ];
   return <>
-    <button ref={trigger} type="button" className="apple-action-button" aria-haspopup="menu" aria-expanded={open} disabled={busy || restarting} onClick={() => setOpen((value) => !value)}>
+    <button ref={trigger} type="button" className="apple-action-button" aria-haspopup="menu" aria-expanded={open} disabled={busy || restarting} onClick={() => { diagnosticsPending.current = false; setOpen((value) => !value); }}>
       {t("status.more")}<ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
     </button>
-    {open ? createPortal(<div ref={menu} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("status.more")} style={position}>
+    {(open || position) ? createPortal(<div ref={menu} className="app-select-menu app-popover" data-open={open} data-popover-in={open ? "" : undefined} inert={!open} role="menu" aria-label={t("status.more")} style={position}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget || event.animationName !== "app-select-menu-out" || !diagnosticsPending.current) return;
+        diagnosticsPending.current = false;
+        onDiagnostics();
+      }}>
       {actions.map(({ label, icon: Icon, disabled, run }) => <button key={label} type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || disabled} onClick={() => { setOpen(false); run(); }}>
         <span className="flex items-center gap-2"><Icon size={16} strokeWidth={2} aria-hidden="true" />{label}</span>
       </button>)}
@@ -163,8 +172,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
   const [loaded, setLoaded] = useState(cached !== null);
   const [busy, setBusy] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [modal, setModal] = useState<"capture" | null>(null);
-  const [profileName, setProfileName] = useState("");
   const [editingProfile, setEditingProfile] = useState<ClaudeDesktopProfileSummary | null>(null);
   const [editDetail, setEditDetail] = useState<ClaudeDesktopProfileDetail | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
@@ -202,22 +209,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
     }
   };
   const { sensors, dragPreview, onDragStart, onDragEnd, onDragCancel } = useCardDragReorder(items, setItems, persistOrder);
-
-  const submitModal = async () => {
-    if (busy || modal !== "capture" || !profileName.trim()) return;
-    setBusy(true);
-    try {
-      await api.claudeDesktopCaptureProfile(profileName.trim());
-      feedback.success(tProfiles("feedback.captureSuccess"));
-      setModal(null);
-      await refresh();
-      onChanged();
-    } catch (error) {
-      feedback.error(String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const openEdit = async (profile: ClaudeDesktopProfileSummary) => {
     try {
@@ -403,7 +394,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
   const modes = ["direct", "route", "aggregate"] as const;
   const icons = { direct: Plug, route: Route, aggregate: Layers2 };
   const working = busy || restarting;
-  const openCapture = () => { setProfileName(""); setModal("capture"); };
 
   return (
     <section className="apple-scroll-page mx-auto w-full max-w-none">
@@ -452,7 +442,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
         {!loaded ? <EmptyStateCard icon={<Layers2 size={18} strokeWidth={2} />} loading>{null}</EmptyStateCard> : items.length === 0 ? (
           <EmptyStateCard icon={<Layers2 size={18} strokeWidth={2} />}>
             <p className="muted">{t("list.emptyHint")}</p>
-            {status.deployment_mode === "3p" ? <button type="button" className="apple-action-button" disabled={working} onClick={openCapture}><Camera size={16} strokeWidth={2} aria-hidden="true" />{tProfiles("toolbar.capture")}</button> : null}
           </EmptyStateCard>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}>
@@ -493,7 +482,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
           </DndContext>
         )}
       </div>
-      <ProfileNameDialog mode={modal} name={profileName} busy={working} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
     </section>
   );
 }

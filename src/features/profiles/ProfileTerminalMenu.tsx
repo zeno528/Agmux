@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { Folder, FolderPlus, Terminal, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -40,6 +41,7 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(open, triggerRef.current, menuRef, "end");
   useMenuDismiss(open, triggerRef, menuRef, setOpen);
+  useMenuExit(open, menuRef);
   const dirs = settings?.claude_terminal_dirs ?? [];
 
   const saveDirs = async (update: (current: string[]) => string[]) => {
@@ -94,8 +96,8 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
     setOpen(next);
   };
 
-  const menu = open ? createPortal(
-    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("terminal.menuLabel")} style={{ ...menuStyle, minWidth: "14rem" }}>
+  const menu = (open || menuStyle) ? createPortal(
+    <div ref={menuRef} className="app-select-menu app-popover" data-open={open} data-popover-in={open ? "" : undefined} inert={!open} role="menu" aria-label={t("terminal.menuLabel")} style={{ ...menuStyle, minWidth: "14rem" }}>
       <div className="flex items-center gap-1 pl-2">
         <span className="muted meta-xs font-medium">{t("terminal.projects")}</span>
         <AppTooltip label={t("terminal.launchHelp")} placement="top" compact>

@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { CircleDashed, GitCompare, Globe, MoreHorizontal, Pencil, Plus, Terminal, Wifi, Wrench } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -303,10 +304,11 @@ export function McpServerRow({ server, result, probing, detailsVisible, toolsBus
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(menuOpen, menuTriggerRef.current, menuRef, "end");
   useMenuDismiss(menuOpen, menuTriggerRef, menuRef, setMenuOpen);
+  useMenuExit(menuOpen, menuRef);
   const Icon = transportIcon(server);
   const toolsTitle = t(detailsVisible ? "list.collapseTools" : "list.toolsButton");
-  const menu = menuOpen ? createPortal(
-    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("list.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }}>
+  const menu = (menuOpen || menuStyle) ? createPortal(
+    <div ref={menuRef} className="app-select-menu app-popover" data-open={menuOpen} data-popover-in={menuOpen ? "" : undefined} inert={!menuOpen} role="menu" aria-label={t("list.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }}>
       <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { setMenuOpen(false); onEdit(server); }}>
         <span className="flex items-center gap-2"><Pencil className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("list.editTooltip")}</span>
       </button>

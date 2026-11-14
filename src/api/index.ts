@@ -200,7 +200,6 @@ export const api = {
   claudeApplyProfile: (id: string, overwrite = false) => applyProfile("claude_apply_profile", id, overwrite),
   claudeDesktopListProfiles: () => call<ClaudeDesktopProfileSummary[]>("claude_desktop_list_profiles"),
   claudeDesktopGetProfile: (id: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_get_profile", { id }),
-  claudeDesktopCaptureProfile: (name: string) => call<ClaudeDesktopProfileDetail>("claude_desktop_capture_profile", { name }),
   claudeDesktopSaveProfile: (input: { id?: string; name: string; kind?: string | null; baseUrl?: string | null; apiKey?: string | null; authScheme?: string | null; models?: ClaudeDesktopModelSlot[] | null; adminUrl?: string | null; icon?: string | null; showBalance?: boolean | null; description?: string | null; fetchedModels?: string[] | null }) =>
     call<ClaudeDesktopProfileDetail>("claude_desktop_save_profile", input),
   claudeDesktopDeleteProfile: (id: string) => call<void>("claude_desktop_delete_profile", { id }),

@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { Check, ChevronRight, Zap } from "lucide-react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -53,6 +54,9 @@ export default function ProfileModelSelector({ model, effort, levels, disabled, 
   const { t } = useTranslation("profiles");
   const feedback = useFeedback();
   const [view, setView] = useState<"effort" | "models" | null>(null);
+  const [lastView, setLastView] = useState(view);
+  if (view && view !== lastView) setLastView(view);
+  const menuView = view ?? lastView;
   const [triggerWidth, setTriggerWidth] = useState<number | null>(null);
   const [options, setOptions] = useState<ModelSelectionOptions | null>(null);
   const [draft, setDraft] = useState<ModelSelection>({ model: "", effort: "" });
@@ -60,7 +64,7 @@ export default function ProfileModelSelector({ model, effort, levels, disabled, 
   const [busy, setBusy] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const menuWidth = view === "models" ? "17rem" : "16rem";
+  const menuWidth = menuView === "models" ? "17rem" : "16rem";
   const menuStyle = useFixedMenuPosition(view !== null, triggerRef.current, menuRef, "end", menuWidth);
   useLayoutEffect(() => {
     if (!view) return;
@@ -71,7 +75,6 @@ export default function ProfileModelSelector({ model, effort, levels, disabled, 
   const open = async () => {
     if (view) { close(); return; }
     const width = triggerRef.current?.getBoundingClientRect().width ?? null;
-    setOptions(null);
     setBusy(true);
     try {
       const loaded = await onLoad();
@@ -108,6 +111,7 @@ export default function ProfileModelSelector({ model, effort, levels, disabled, 
   // useMenuDismiss 要求稳定 close；经 ref 转发最新 flush，避免监听器随草稿反复挂卸。
   const close = useCallback(() => { setView(null); void flushRef.current(); }, []);
   useMenuDismiss(view !== null, triggerRef, menuRef, close);
+  useMenuExit(view !== null, menuRef);
   const reset = async () => {
     if (!options || busy || disabled) return;
     setBusy(true);
@@ -153,11 +157,11 @@ export default function ProfileModelSelector({ model, effort, levels, disabled, 
           {displayedSelection.effort || (supportsFastMode ? "" : t("modelSelection.default"))}</span>
         {view && <span className="profile-model-trigger__prompt muted">{t("modelSelection.chooseModel")}</span>}
       </button>
-      {view && options && createPortal(
-        <div ref={menuRef} className="app-select-menu app-popover profile-model-popover" data-open="true" data-popover-in
+      {menuView && options && createPortal(
+        <div ref={menuRef} className="app-select-menu app-popover profile-model-popover" data-open={view !== null} data-popover-in={view ? "" : undefined} inert={!view}
           role="dialog" aria-label={t("modelSelection.title")} aria-busy={busy} style={{ ...menuStyle, width: menuWidth }}>
-          <div key={view} className="profile-model-content">
-          {view === "effort" ? <ReasoningEffortSlider value={effective.effort} levels={availableLevels} disabled={busy || disabled}
+          <div key={menuView} className="profile-model-content">
+          {menuView === "effort" ? <ReasoningEffortSlider value={effective.effort} levels={availableLevels} disabled={busy || disabled}
             onReset={options.defaults ? () => void reset() : undefined}
             fast={supportsFastMode && !!draft.fast}
             leading={supportsFastMode ? <button type="button" className="apple-icon-button profile-model-fast"

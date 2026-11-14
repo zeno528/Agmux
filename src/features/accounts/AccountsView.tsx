@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { CircleAlert, CreditCard, Download, Flame, LogIn, MoreHorizontal, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -126,6 +127,7 @@ function AccountCard({ source, accountId, login, plan, expiresAt, cachedBalance,
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(menuOpen, menuTriggerRef.current, menuRef, "end");
   useMenuDismiss(menuOpen, menuTriggerRef, menuRef, setMenuOpen);
+  useMenuExit(menuOpen, menuRef);
 
   const refresh = async (manual = false) => {
     if (loadingRef.current) return;
@@ -221,8 +223,8 @@ function AccountCard({ source, accountId, login, plan, expiresAt, cachedBalance,
       <button ref={menuTriggerRef} type="button" className="apple-icon-button shrink-0 text-[var(--text-secondary)] hover:text-accent" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("account.more")} title={t("account.more")} aria-busy={loading} onClick={() => setMenuOpen((open) => !open)}>
         {loading ? <LoadingSpinner size="md" /> : <MoreHorizontal size={18} strokeWidth={2} aria-hidden="true" />}
       </button>
-      {menuOpen ? createPortal(
-        <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("account.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
+      {(menuOpen || menuStyle) ? createPortal(
+        <div ref={menuRef} className="app-select-menu app-popover" data-open={menuOpen} data-popover-in={menuOpen ? "" : undefined} inert={!menuOpen} role="menu" aria-label={t("account.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
           <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={loading} onClick={() => { setMenuOpen(false); void refresh(true); }}>
             <span className="flex items-center gap-2"><RefreshCw size={16} strokeWidth={2} aria-hidden="true" />{t("account.refreshQuota")}</span>
           </button>

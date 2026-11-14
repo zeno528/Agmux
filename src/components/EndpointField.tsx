@@ -1,3 +1,4 @@
+import { useMenuExit } from "./useMenuExit";
 import { Check, ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -26,6 +27,7 @@ export default function EndpointField({ value, onChange, endpoints, onPick, plac
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(open, rootRef.current, menuRef, "match");
   useMenuDismiss(open, rootRef, menuRef, setOpen);
+  useMenuExit(open, menuRef);
   return (
     <div ref={rootRef}>
       <div className="app-input-action">
@@ -35,7 +37,7 @@ export default function EndpointField({ value, onChange, endpoints, onPick, plac
         </button>
       </div>
       {createPortal(
-        <div ref={menuRef} className="app-select-menu app-popover app-endpoint-menu" data-open={open} data-popover-in={open ? "" : undefined} data-popover-out={!open && menuStyle ? "" : undefined} inert={!open} role="listbox" aria-label={label} style={menuStyle}>
+        <div ref={menuRef} className="app-select-menu app-popover" data-open={open} data-popover-in={open ? "" : undefined} inert={!open} role="listbox" aria-label={label} style={menuStyle}>
           {endpoints.map((endpoint) => {
             const selected = endpoint.base_url === value;
             return (

@@ -1442,27 +1442,6 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
       if (!profile) throw new Error("Claude Desktop 供应商配置不存在");
       return { ...profile } as T;
     }
-    case "claude_desktop_capture_profile": {
-      const name = String(args?.name ?? "").trim();
-      if (!name) throw new Error("配置名称不能为空");
-      const captured: ClaudeDesktopProfileDetail = {
-        id: `cla-dt-web-${Date.now()}`,
-        name,
-        kind: null,
-        base_url: "https://relay.example/anthropic",
-        api_key: "demo-token",
-        auth_scheme: "bearer",
-        models: [{ slot: "sonnet", name: "claude-sonnet-5-5", label_override: null, supports_1m: false, upstream_model: null }],
-        admin_url: null,
-        icon: null,
-        show_balance: false,
-        description: null,
-        fetched_models: [],
-        updated_at: String(Date.now()),
-      };
-      webClaudeDesktopProfiles.push(captured);
-      return { ...captured } as T;
-    }
     case "claude_desktop_save_profile": {
       const timestamp = String(Date.now());
       const base = {

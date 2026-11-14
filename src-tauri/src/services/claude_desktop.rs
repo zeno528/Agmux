@@ -598,46 +598,6 @@ impl AppContext {
         Ok(detail(self.database.claude_desktop_profile(id)?))
     }
 
-    /// 捕获现有 3P 配置为新供应商：沿用现文件的 uuid（再应用不换文件名），不改变 live。
-    pub fn claude_desktop_capture(&self, name: &str) -> AppResult<ClaudeDesktopProfileDetail> {
-        let paths = self.desktop3p();
-        let meta = read_meta(&paths.meta())?.ok_or_else(|| {
-            app_err!("尚未检测到 Claude Desktop 第三方推理配置，请先在应用内启用或应用一个供应商")
-        })?;
-        let applied = meta
-            .applied_id
-            .ok_or_else(|| app_err!("_meta.json 缺少 appliedId，无法捕获"))?;
-        let profile_path = paths.profile(&applied);
-        let raw = std::fs::read_to_string(&profile_path)
-            .map_err(|error| app_err!("读取 Claude Desktop 配置失败: {error}"))?;
-        let file: ProfileFile = serde_json::from_str(&raw)
-            .map_err(|error| app_err!("Claude Desktop 配置不是有效 JSON: {error}"))?;
-        validate_desktop_api_key(file.api_key.as_deref())?;
-        let routing = self.database.claude_desktop_routing()?;
-        if !routing.token.is_empty() && file.api_key.as_deref() == Some(routing.token.as_str()) {
-            return Err(app_err!(
-                "当前配置使用 Agmux 本地网关，请编辑已保存的上游供应商，不能导入网关令牌"
-            ));
-        }
-        let input = ClaudeDesktopProfileInput {
-            name: name.to_string(),
-            base_url: file.base_url,
-            api_key: file.api_key,
-            auth_scheme: file.auth_scheme,
-            models: Some(parse_live_models(&file.inference_models)),
-            ..Default::default()
-        };
-        let created = self.claude_desktop_insert(&input, &applied)?;
-        sync::registry().harvest(
-            self,
-            &sync::SyncTrigger::AfterCapture {
-                client: sync::ClientId::ClaudeDesktop,
-            },
-            sync::SyncMaterial::default(),
-        )?;
-        Ok(detail(created))
-    }
-
     /// 保存供应商；映射模式需重新应用，避免修改运行中网关的投影。
     pub fn claude_desktop_save(
         &self,
@@ -686,16 +646,6 @@ impl AppContext {
             }
         };
         Ok(detail(stored))
-    }
-
-    fn claude_desktop_insert(
-        &self,
-        input: &ClaudeDesktopProfileInput,
-        config_uuid: &str,
-    ) -> AppResult<StoredClaudeDesktopProfile> {
-        let timestamp = now_ms().to_string();
-        self.database
-            .insert_claude_desktop_profile(input, config_uuid, &timestamp)
     }
 
     pub fn claude_desktop_set_icon(&self, id: &str, icon: Option<String>) -> AppResult<()> {
@@ -2634,7 +2584,7 @@ mod tests {
     }
 
     #[test]
-    fn opaque_credentials_cannot_be_saved_captured_duplicated_or_applied() {
+    fn opaque_credentials_cannot_be_saved_duplicated_or_applied() {
         let (_home, context) = test_context();
         let stored = applied_profile(&context);
         let path = context.desktop3p().profile(&stored.config_uuid);
@@ -2657,7 +2607,6 @@ mod tests {
         let mut live: Value = serde_json::from_slice(&before).unwrap();
         live["inferenceGatewayApiKey"] = json!("__sealed__:v1:private-ciphertext");
         std::fs::write(&path, serde_json::to_vec(&live).unwrap()).unwrap();
-        assert!(context.claude_desktop_capture("Encrypted import").is_err());
         // 旧版已经污染的库行也不能显示为可用凭证或被再次应用。
         context
             .database
@@ -2674,7 +2623,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_and_direct_sync_never_import_a_stale_gateway_token() {
+    fn direct_sync_never_imports_a_stale_gateway_token() {
         let (_home, context) = test_context();
         let stored = applied_profile(&context);
         let path = context.desktop3p().profile(&stored.config_uuid);
@@ -2695,7 +2644,6 @@ mod tests {
         let unchanged = context.database.claude_desktop_profile(&stored.id).unwrap();
         assert_eq!(unchanged.api_key, stored.api_key);
         assert_eq!(unchanged.base_url, stored.base_url);
-        assert!(context.claude_desktop_capture("Gateway import").is_err());
         assert_eq!(context.database.claude_desktop_profiles().unwrap().len(), 1);
     }
 
@@ -2798,24 +2746,6 @@ mod tests {
             .is_none());
         // 幂等
         context.claude_desktop_restore_official().unwrap();
-    }
-
-    #[test]
-    fn capture_reuses_the_applied_config_uuid() {
-        let (_home, context) = test_context();
-        let stored = applied_profile(&context);
-        let captured = context.claude_desktop_capture("Imported").unwrap();
-        assert_eq!(
-            captured.base_url.as_deref(),
-            Some("https://api.deepseek.com/anthropic")
-        );
-        assert_eq!(captured.models.len(), 2);
-        let row = context
-            .database
-            .claude_desktop_profile(&captured.id)
-            .unwrap();
-        assert_eq!(row.config_uuid, stored.config_uuid);
-        assert_eq!(row.name, "Imported");
     }
 
     #[test]

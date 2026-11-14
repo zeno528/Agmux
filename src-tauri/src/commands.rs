@@ -399,14 +399,6 @@ pub fn claude_desktop_get_profile(
     state.claude_desktop_get(&id)
 }
 
-#[tauri::command]
-pub fn claude_desktop_capture_profile(
-    name: String,
-    state: State<'_, AppContext>,
-) -> AppResult<ClaudeDesktopProfileDetail> {
-    state.claude_desktop_capture(&name)
-}
-
 // ponytail: 参数即表单字段一一对应，IPC 边界保持散参（camelCase 自动映射），service 层才收拢成 Input
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]

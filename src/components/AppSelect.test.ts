@@ -77,23 +77,22 @@ describe("AppSelect styles", () => {
     expect(menuSource).not.toContain("border: 1px solid var(--panel-border)");
   });
 
-  it("下拉与行内菜单共用全局浮层进场动画", () => {
-    // 点击触发的浮层只挂进场：关闭即收，不引入出场缩放，避免与进场观感割裂
+  it("下拉列表复用共享浮层进退场", () => {
     expect(componentSource).toContain('className={`app-select-menu app-popover');
     expect(componentSource).toContain('data-popover-in={open ? "" : undefined}');
-    expect(componentSource).not.toContain("data-popover-out");
+    expect(componentSource).toContain("useMenuExit(open, menuRef)");
+    expect(componentSource).toContain("inert={!open}");
     const popoverSource = styleSource.slice(
       styleSource.indexOf(".app-popover {"),
       styleSource.indexOf(".app-select-menu {"),
     );
     expect(popoverSource).toContain("transform-origin: var(--app-popover-origin, 0 0);");
     expect(popoverSource).toContain("animation: app-popover-in var(--motion-popover) var(--motion-popover-in) both;");
-    // 关闭走基础类原有的短淡出
     const menuSource = styleSource.slice(
       styleSource.indexOf(".app-select-menu {"),
       styleSource.indexOf(".app-select-option {"),
     );
-    expect(menuSource).toContain("transition: opacity 150ms ease-out, visibility 180ms;");
+    expect(menuSource).toContain(".app-select-menu[data-popover-out]");
   });
 
   it("搜索菜单锁宽高用 offsetWidth，不受进场缩放影响", () => {

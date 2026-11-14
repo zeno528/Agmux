@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { Check, Circle, CircleCheck, Copy, Gauge, Globe, MoreHorizontal, Wifi } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -120,10 +121,11 @@ export function ProfileCardActions({ active, reapply = false, busy, testing, all
   const menuRef = useRef<HTMLDivElement>(null);
   const menuStyle = useFixedMenuPosition(menuOpen, menuTriggerRef.current, menuRef, "end");
   useMenuDismiss(menuOpen, menuTriggerRef, menuRef, setMenuOpen);
+  useMenuExit(menuOpen, menuRef);
   const busyForDelete = busy && !allowInactiveDeleteWhileBusy;
   const FirstMenuIcon = firstMenuAction?.selected ? CircleCheck : Circle;
-  const menu = menuOpen ? createPortal(
-    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("actions.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
+  const menu = (menuOpen || menuStyle) ? createPortal(
+    <div ref={menuRef} className="app-select-menu app-popover" data-open={menuOpen} data-popover-in={menuOpen ? "" : undefined} inert={!menuOpen} role="menu" aria-label={t("actions.more")} style={{ ...menuStyle, minWidth: "10rem" }}>
       {firstMenuAction ? (
         <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || firstMenuAction.selected} onClick={() => { setMenuOpen(false); firstMenuAction.onSelect(); }}>
           <span className="flex items-center gap-2"><FirstMenuIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{firstMenuAction.label}</span>

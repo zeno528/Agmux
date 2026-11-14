@@ -114,7 +114,7 @@ export default {
   },
   list: {
     title: "Claude Desktop",
-    emptyHint: "添加供应商，或从当前配置新建。",
+    emptyHint: "添加供应商以开始配置。",
   },
   edit: {
     baseUrl: "API 地址",

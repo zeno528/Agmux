@@ -3445,8 +3445,7 @@ button:focus-visible {
 
 /* 浮层出场：反向播放。当前只供悬停提示卡（AppTooltip）使用——
    它靠 exiting 状态让节点在关闭后多活一帧，动画播完才卸载。
-   普通点击菜单（AppSelect / 行内 ⋯ 菜单）不挂这条：
-   关闭即收，用基础类的短淡出即可，不叠加缩放。 */
+   下拉列表在下方使用与自身进场匹配的缩放轴和缓动。 */
 .app-popover[data-popover-out] {
   animation: app-popover-out var(--motion-popover) var(--motion-popover-out) both;
 }
@@ -3487,10 +3486,6 @@ button:focus-visible {
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), inset var(--card-edge-shadow);
   opacity: 0;
   pointer-events: none;
-  /* 进场走 .app-popover 的 app-popover-in 关键帧（缩放 + 淡入）。
-     关闭没有出场关键帧——菜单点掉即收，节点虽常驻，但这一类浮层的出场
-     用基础类原有的短淡出即可，不额外引入缩放，避免与进场观感割裂。 */
-  transition: opacity 150ms ease-out, visibility 180ms;
   visibility: hidden;
 }
 
@@ -3498,16 +3493,13 @@ button:focus-visible {
 
 @media (prefers-reduced-motion: no-preference) {
   /* 由关键帧独占透明度，避免基础淡出过渡在开合时和关键帧争用。 */
-  .app-endpoint-menu { transition: none; }
-
-  /* 端点菜单保留原缩放轴，出场曲线为进场曲线的时间镜像。 */
-  .app-endpoint-menu[data-popover-out] {
-    animation: app-endpoint-menu-out var(--motion-popover) cubic-bezier(0.68, 0, 0.77, 0);
+  .app-select-menu[data-popover-out] {
+    animation: app-select-menu-out var(--motion-popover) cubic-bezier(0.68, 0, 0.77, 0);
   }
 
-  @keyframes app-endpoint-menu-out {
+  @keyframes app-select-menu-out {
     from { visibility: visible; opacity: 1; transform: scale(1); }
-    to { visibility: visible; opacity: 0; transform: scale(1, 0.8); }
+    to { visibility: visible; opacity: 0; transform: scale(var(--app-popover-scale-x, 0.8), 0.8); }
   }
 }
 

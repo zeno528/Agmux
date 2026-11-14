@@ -114,7 +114,7 @@ export default {
   },
   list: {
     title: "Claude Desktop", // Official name in every locale.
-    emptyHint: "Pick the DeepSeek template, or capture an existing third-party configuration.",
+    emptyHint: "Add a provider to get started.",
   },
   edit: {
     baseUrl: "API endpoint",

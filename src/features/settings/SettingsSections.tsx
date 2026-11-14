@@ -1,3 +1,4 @@
+import { useMenuExit } from "../../components/useMenuExit";
 import { AppWindowMac, Blocks, BookOpenText, Bot, ChevronRight, CircleUserRound, Clock, Database, Download, FileText, FolderOpen, History, Languages, LayoutDashboard, LoaderCircle, Moon, MoonStar, Monitor, MoreHorizontal, Palette, PanelBottomClose, Pencil, Power, RefreshCw, RotateCcw, Save, Settings as SettingsIcon, Sun, Trash2, Upload } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { createPortal } from "react-dom";
@@ -255,27 +256,30 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
   // 走 portal + fixed 定位，向下/向上自适应翻转复用 AppSelect 的共享逻辑；
   // 外点 / 滚动即收起
   const [menuTarget, setMenuTarget] = useState<{ backup: DatabaseBackupInfo; trigger: HTMLElement } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const menuStyle = useFixedMenuPosition(menuTarget !== null, menuTarget?.trigger ?? null, menuRef, "end");
+  const menuStyle = useFixedMenuPosition(menuOpen && menuTarget !== null, menuTarget?.trigger ?? null, menuRef, "end");
+  useMenuExit(menuOpen, menuRef);
   const openMenu = (backup: DatabaseBackupInfo, trigger: HTMLElement) => {
     setMenuTarget({ backup, trigger });
+    setMenuOpen(true);
   };
   useEffect(() => {
-    if (!menuTarget) return;
+    if (!menuOpen) return;
     const close = (event: Event) => {
       if (event.target instanceof Element && event.target.closest("[data-row-menu], [data-row-menu-trigger]")) return;
-      setMenuTarget(null);
+      setMenuOpen(false);
     };
     document.addEventListener("pointerdown", close);
     window.addEventListener("scroll", close, true);
     return () => { document.removeEventListener("pointerdown", close); window.removeEventListener("scroll", close, true); };
-  }, [menuTarget]);
+  }, [menuOpen]);
   const rowMenu = menuTarget ? createPortal(
-    <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in data-row-menu role="menu" aria-label={t("backup.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
-      <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { const target = menuTarget.backup; setMenuTarget(null); openRename(target); }}>
+    <div ref={menuRef} className="app-select-menu app-popover" data-open={menuOpen} data-popover-in={menuOpen ? "" : undefined} inert={!menuOpen} data-row-menu role="menu" aria-label={t("backup.moreTooltip")} style={{ ...menuStyle, minWidth: "10rem" }} onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { const target = menuTarget.backup; setMenuOpen(false); openRename(target); }}>
         <span className="flex items-center gap-2"><Pencil className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.renameAction")}</span>
       </button>
-      <button type="button" role="menuitem" className="app-select-option app-selection-state app-select-option--danger" onClick={() => { const target = menuTarget.backup; setMenuTarget(null); void deleteBackup(target); }}>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state app-select-option--danger" onClick={() => { const target = menuTarget.backup; setMenuOpen(false); void deleteBackup(target); }}>
         <span className="flex items-center gap-2"><Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.deleteAction")}</span>
       </button>
     </div>,
@@ -365,7 +369,7 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
               {backups !== null && backups.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {backups.map((backup) => {
-                    const menuOpen = menuTarget?.backup.name === backup.name;
+                    const rowMenuOpen = menuOpen && menuTarget?.backup.name === backup.name;
                     const auto = isAutoBackupName(backup.name);
                     return (
                       <div key={backup.name} className="apple-list-row">
@@ -378,7 +382,7 @@ export function SettingsAdvanced({ form, onPatch, paths, backupsEpoch, onOpenPat
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button type="button" className="apple-inline-btn apple-inline-btn--quiet" onClick={() => void restoreBackup(backup)}><RotateCcw className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{t("backup.restore")}</button>
-                          <button type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" data-row-menu-trigger aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("backup.moreTooltip")} onClick={(event) => (menuOpen ? setMenuTarget(null) : openMenu(backup, event.currentTarget))} onKeyDown={(event) => { if (event.key === "Escape") setMenuTarget(null); }}>
+                          <button type="button" className="apple-icon-button text-[var(--text-secondary)] hover:text-accent" data-row-menu-trigger aria-haspopup="menu" aria-expanded={rowMenuOpen} aria-label={t("backup.moreTooltip")} onClick={(event) => (rowMenuOpen ? setMenuOpen(false) : openMenu(backup, event.currentTarget))} onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}>
                             <MoreHorizontal className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
                           </button>
                         </div>

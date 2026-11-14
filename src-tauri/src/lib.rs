@@ -407,7 +407,6 @@ pub fn run() {
             commands::claude_fetch_models,
             commands::claude_desktop_list_profiles,
             commands::claude_desktop_get_profile,
-            commands::claude_desktop_capture_profile,
             commands::claude_desktop_save_profile,
             commands::claude_desktop_get_profile_balance,
             commands::claude_desktop_delete_profile,
