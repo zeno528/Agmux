@@ -119,6 +119,7 @@ export default {
     projects: "项目",
     launchHelp: "终端启动说明",
     projectLaunch: "选择项目后，Claude Code 会在该项目目录中启动。",
+    projectLimit: "最多保留最近使用的 {{count}} 个项目。",
     globalConfig: "本次使用 Claude Code 当前的全局配置。",
     profileConfig: "本次终端会话使用这张卡片的供应商配置。",
     new: "添加项目",

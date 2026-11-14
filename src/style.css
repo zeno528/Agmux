@@ -3416,7 +3416,7 @@ button:focus-visible {
 .app-select:hover,
 .app-select:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--accent);
 }
 
 .app-select:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -3684,9 +3684,6 @@ button:focus-visible {
   color: inherit;
   font: inherit;
   outline: none;
-  /* 常驻与聚焦光环（:focus 的 0 0 0 3px）等大的透明外阴影：聚焦/失焦切换时阴影绘制区域不变，
-     规避 WebView2 150% 缩放下失焦重绘圆整漏掉光环最外一行 AA 像素、留下描边残留的问题。 */
-  box-shadow: 0 0 0 3px transparent;
 }
 
 .app-input:disabled,
@@ -3711,7 +3708,7 @@ button:focus-visible {
 }
 
 /* 搜索框灰色描边画在内部，避免缩放后边框外侧出现浅色细线。 */
-.app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border), 0 0 0 3px transparent; }
+.app-input--pill:not(:focus) { border-color: transparent; box-shadow: inset 0 0 0 1px var(--panel-border); }
 
 /* 搜索框统一隐藏浏览器原生清空键，由 AppSearchInput 的清空按钮接管（文本胶囊 + 悬停反馈）。 */
 .app-input--pill::-webkit-search-cancel-button { display: none; }
@@ -3759,20 +3756,14 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 /* 工具栏组合控件内嵌的紧凑输入框：压掉 .app-input 的 min-height/font-size（font:inherit 会覆盖 Tailwind 字号），嵌入 h-8 整体不超高 */
 .app-input--compact { min-height: 1.5rem; font-size: 0.75rem; }
 
-.app-input:focus {
+.app-input:focus,
+.app-input-focus-frame:focus-within > .app-input {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--accent);
 }
 
 .app-input-focus-frame:focus-within {
   z-index: 1;
-  border-radius: var(--radius-control);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-.app-input-focus-frame:focus-within > .app-input {
-  border-color: var(--accent);
-  box-shadow: none;
 }
 
 .app-input-action {
@@ -3965,15 +3956,14 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   border-radius: calc(var(--switch-rail-height) / 2);
   background-color: rgb(0 0 0 / 0.14);
   cursor: inherit;
-  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), background 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), background 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root.dark .app-switch-rail { background-color: rgb(255 255 255 / 0.20); }
 /* 开启态统一用项目蓝（--accent），两套主题同色，不随 --primary-button-bg 翻转 */
 .app-switch[data-state="checked"] .app-switch-rail { background-color: var(--accent); }
 /* 焦点环走 :focus-visible：鼠标点击不留环，键盘 Tab 导航仍可见 */
-.app-switch:focus-visible .app-switch-rail { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
-:root.dark .app-switch:focus-visible .app-switch-rail { box-shadow: 0 0 8px 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.app-switch:focus-visible .app-switch-rail { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app-switch:disabled { cursor: not-allowed; }
 .app-switch:disabled .app-switch-rail { opacity: 0.5; }
 

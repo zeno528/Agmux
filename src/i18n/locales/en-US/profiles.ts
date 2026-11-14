@@ -119,6 +119,7 @@ export default {
     projects: "Projects",
     launchHelp: "About launching the terminal",
     projectLaunch: "Choose a project to start Claude Code in its folder.",
+    projectLimit: "Keeps up to {{count}} recently used projects.",
     globalConfig: "This launch uses your current global Claude Code settings.",
     profileConfig: "This terminal session uses the provider settings from this card.",
     new: "Add project",

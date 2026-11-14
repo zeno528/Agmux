@@ -96,14 +96,13 @@ export default function ProfileTerminalMenu({ profileId, active }: { profileId: 
 
   const menu = open ? createPortal(
     <div ref={menuRef} className="app-select-menu app-popover" data-open="true" data-popover-in role="menu" aria-label={t("terminal.menuLabel")} style={{ ...menuStyle, minWidth: "14rem" }}>
-      <div className="flex items-center justify-between gap-2 pl-2">
+      <div className="flex items-center gap-1 pl-2">
         <span className="muted meta-xs font-medium">{t("terminal.projects")}</span>
-        <div className="grid w-(--icon-button-size) shrink-0 place-items-center">
-          <AppTooltip label={t("terminal.launchHelp")} placement="top" compact alignRightTo={menuRef}>
-            <p className="setting-description">{t("terminal.projectLaunch")}</p>
-            <p className="setting-description">{t(active ? "terminal.globalConfig" : "terminal.profileConfig")}</p>
-          </AppTooltip>
-        </div>
+        <AppTooltip label={t("terminal.launchHelp")} placement="top" compact>
+          <p className="setting-description">{t("terminal.projectLaunch")}</p>
+          <p className="setting-description">{t("terminal.projectLimit", { count: DIR_LIMIT })}</p>
+          <p className="setting-description text-accent!">{t(active ? "terminal.globalConfig" : "terminal.profileConfig")}</p>
+        </AppTooltip>
       </div>
       {dirs.map((dir) => (
         <div key={dir} className="app-select-option app-selection-state min-w-0 gap-0.5! p-0! focus-within:bg-(--hover-bg)">
