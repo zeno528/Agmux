@@ -169,7 +169,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="app-dialog-overlay" />
           <AlertDialog.Content
-            className="app-dialog-content app-dialog-content--confirm"
+            className="app-dialog-panel app-dialog-content app-dialog-content--confirm"
             onOpenAutoFocus={(event) => {
               if (!confirmActionRef.current) return;
               event.preventDefault();

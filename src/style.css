@@ -2690,15 +2690,19 @@ button:focus-visible {
   background: rgb(0 0 0 / 0.34);
 }
 
-.app-dialog-content {
+.app-dialog-panel {
+  --dialog-motion-offset: -16px;
   position: fixed;
   left: 50%;
   top: 50%;
   z-index: 52;
-  width: min(520px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
   transform: translate(-50%, -50%);
+}
+
+.app-dialog-content {
+  width: min(520px, calc(100vw - 2rem));
   border-radius: var(--radius-card);
   background: var(--panel-bg);
   box-shadow: 0 22px 70px rgb(0 0 0 / 0.22), 0 0 0 1px var(--panel-ring);
@@ -2886,13 +2890,7 @@ button:focus-visible {
   --oauth-modal-border: rgba(255, 255, 255, 0.72);
   --oauth-modal-shadow: 0 24px 80px rgba(19, 36, 67, 0.16);
   --oauth-feature-icon: #343438;
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  z-index: 52;
   width: min(620px, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
   /* translateZ(0) 合成层提升，理由同 .app-dialog-overlay：消除 resize 期间第二层模糊的重采样抖动 */
   transform: translate(-50%, -50%) translateZ(0);
   border-radius: 30px;
@@ -3990,24 +3988,20 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .app-switch[data-state="checked"]:not(:disabled):is(:active, [data-pressed="true"]) .app-switch-thumb { left: calc(100% - var(--switch-button-width-pressed) - var(--switch-offset)); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .app-dialog-overlay[data-state="open"] { animation: app-dialog-overlay-in 200ms ease-out; }
-  .app-dialog-overlay[data-state="closed"] { animation: app-dialog-overlay-out 200ms ease-in forwards; }
-  :is(.app-dialog-content, .oauth-modal)[data-state="open"] {
+  :is(.app-dialog-panel, .app-dialog-overlay)[data-state="open"] {
     animation: app-dialog-in 200ms ease-out;
   }
-  :is(.app-dialog-content, .oauth-modal)[data-state="closed"] {
+  :is(.app-dialog-panel, .app-dialog-overlay)[data-state="closed"] {
     animation: app-dialog-out 200ms ease-in forwards;
   }
 
-  @keyframes app-dialog-overlay-in { from { opacity: 0; } }
-  @keyframes app-dialog-overlay-out { to { opacity: 0; } }
   @keyframes app-dialog-in {
-    from { opacity: 0; translate: 0 -16px; }
+    from { opacity: 0; translate: 0 var(--dialog-motion-offset, 0px); }
     to { opacity: 1; translate: 0 0; }
   }
   @keyframes app-dialog-out {
     from { opacity: 1; translate: 0 0; }
-    to { opacity: 0; translate: 0 -16px; }
+    to { opacity: 0; translate: 0 var(--dialog-motion-offset, 0px); }
   }
 
   @starting-style {

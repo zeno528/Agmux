@@ -23,7 +23,7 @@ export function AppDialog({ open, onOpenChange, title, hero, description, childr
       <Dialog.Portal>
         <Dialog.Overlay className="app-dialog-overlay" />
         <Dialog.Content
-          className={`app-dialog-content ${hero ? "app-dialog-content--hero" : ""} ${className}`}
+          className={`app-dialog-panel app-dialog-content ${hero ? "app-dialog-content--hero" : ""} ${className}`}
           onOpenAutoFocus={(event) => {
             const focusTarget = initialFocusRef?.current;
             if (!focusTarget) return;

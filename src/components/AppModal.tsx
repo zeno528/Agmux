@@ -24,7 +24,7 @@ export function AppModal({ open, onOpenChange, label, dismissible = true, classN
       <Dialog.Portal>
         <Dialog.Overlay className="app-dialog-overlay" />
         <Dialog.Content
-          className={className}
+          className={`app-dialog-panel ${className}`}
           aria-label={label}
           onInteractOutside={dismissible ? undefined : blockDismiss}
           onEscapeKeyDown={dismissible ? undefined : blockDismiss}
