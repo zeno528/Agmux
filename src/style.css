@@ -3244,7 +3244,11 @@ button:focus-visible {
   border: 0;
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel-bg) 88%, white);
-  box-shadow: 0 3px 6px -4px rgb(0 0 0 / 0.12), 0 6px 16px 0 rgb(0 0 0 / 0.08), 0 9px 28px 8px rgb(0 0 0 / 0.05);
+  box-shadow:
+    0 0 0 1px var(--panel-ring),
+    0 3px 6px -4px rgb(0 0 0 / 0.12),
+    0 6px 16px 0 rgb(0 0 0 / 0.08),
+    0 9px 28px 8px rgb(0 0 0 / 0.05);
   padding: 10px 12px;
   color: inherit;
   font-size: 14px;
