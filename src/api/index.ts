@@ -92,6 +92,7 @@ export const api = {
   // 启动里程碑：Rust 折算到进程起点，出窗后在后台恢复桌面端网关
   reportStartupMark: (stage: string, frontendElapsedMs: number, detail?: string) =>
     call<void>("report_startup_mark", { stage, frontendElapsedMs, detail }),
+  getClaudeDesktopRunning: () => call<boolean>("get_claude_desktop_running"),
   getCodexStatus: () => call<CodexAppStatus>("get_codex_status"),
   codexFetchProviderModels: (baseUrl: string, apiKey: string) =>
     call<string[]>("codex_fetch_provider_models", { baseUrl, apiKey }),

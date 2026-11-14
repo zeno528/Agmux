@@ -45,8 +45,7 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
   const [editingProfile, setEditingProfile] = useState<CodexProfileSummary | null>(null);
   const [editDetail, setEditDetail] = useState<CodexProfileDetail | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
-  const [modal, setModal] = useState<"capture" | "rename" | null>(null);
-  const [modalProfile, setModalProfile] = useState<CodexProfileSummary | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
   const duplicatingProfileRef = useRef(false);
 
@@ -72,21 +71,15 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
   };
   const { sensors, dragPreview, onDragStart, onDragEnd, onDragCancel } = useCardDragReorder(items, setItems, persistOrder);
 
-  const openCapture = () => { setModal("capture"); setModalProfile(null); setProfileName(""); };
-  const openRename = (profile: CodexProfileSummary) => { setModal("rename"); setModalProfile(profile); setProfileName(profile.name); };
+  const openCapture = () => { setCaptureOpen(true); setProfileName(""); };
 
   const submitModal = async () => {
-    if (busy || !modal) return;
+    if (busy || !captureOpen) return;
     setBusy(true);
     try {
-      if (modal === "capture") {
-        await api.codexCaptureProfile(profileName.trim());
-        feedback.success(t("feedback.captureSuccess"));
-      } else if (modalProfile) {
-        await api.renameProfile(modalProfile.id, profileName.trim());
-        feedback.success(t("feedback.providerRenamed"));
-      }
-      setModal(null);
+      await api.codexCaptureProfile(profileName.trim());
+      feedback.success(t("feedback.captureSuccess"));
+      setCaptureOpen(false);
       await onRefresh();
     } catch (error) { feedback.error(String(error)); }
     finally { setBusy(false); }
@@ -207,9 +200,9 @@ export default function CodexProfilesView({ state, authStatusReady, activationEp
         </div>
       </header>
       <div className="apple-edit-content">
-            <div>{items.length === 0 ? <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}><p className="muted">{t("empty.description")}</p><button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={openCapture}><Camera className="h-4 w-4" strokeWidth={2} />{t("toolbar.capture")}</button></EmptyStateCard> : <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}><SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}><div className="profile-list relative space-y-[var(--gap-page)]">{items.map((profile) => <CodexProfileCard key={profile.id} profile={profile} active={profile.id === state.active_codex_profile_id} busy={busy} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={state.balance_cache} onChanged={onRefresh} onApply={() => void codexApplyProfile(profile)} onRename={() => openRename(profile)} onEdit={() => void openEdit(profile)} onRemove={() => void removeProfile(profile)} onDuplicate={() => void codexDuplicateProfile(profile)} />)}</div></SortableContext>{createPortal(<DragOverlay dropAnimation={null}>{dragPreview ? <CardDragPreview card={dragPreview} /> : null}</DragOverlay>, document.body)}</DndContext>}</div>
+            <div>{items.length === 0 ? <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}><p className="muted">{t("empty.description")}</p><button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={openCapture}><Camera className="h-4 w-4" strokeWidth={2} />{t("toolbar.capture")}</button></EmptyStateCard> : <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}><SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}><div className="profile-list relative space-y-[var(--gap-page)]">{items.map((profile) => <CodexProfileCard key={profile.id} profile={profile} active={profile.id === state.active_codex_profile_id} busy={busy} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={state.balance_cache} onChanged={onRefresh} onApply={() => void codexApplyProfile(profile)} onEdit={() => void openEdit(profile)} onRemove={() => void removeProfile(profile)} onDuplicate={() => void codexDuplicateProfile(profile)} />)}</div></SortableContext>{createPortal(<DragOverlay dropAnimation={null}>{dragPreview ? <CardDragPreview card={dragPreview} /> : null}</DragOverlay>, document.body)}</DndContext>}</div>
       </div>
-      <ProfileNameDialog mode={modal} name={profileName} busy={busy} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
+      <ProfileNameDialog open={captureOpen} name={profileName} busy={busy} onName={setProfileName} onClose={() => setCaptureOpen(false)} onSubmit={() => void submitModal()} />
     </section>
   );
 }

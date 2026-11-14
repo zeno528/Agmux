@@ -4,11 +4,12 @@ import { useTranslation } from "react-i18next";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { AppSwitch } from "../../components/AppSwitch";
+import EndpointField from "../../components/EndpointField";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "../../components/ProviderFields";
 import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
 import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
-import { claudeBalanceQueryKinds, claudePresets, presetConnectionName, providerPresets, type ClientPreset } from "../../presets";
+import { claudeBalanceQueryKinds, claudePresetByKind, claudePresets, presetConnectionName, type ClientPreset } from "../../presets";
 import type { ClaudeDesktopModelSlot, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary } from "../../types";
 
 interface ClaudeDesktopProfileEditProps {
@@ -57,13 +58,13 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
   const [showKey, setShowKey] = useState(false);
   const authScheme = initialDetail?.auth_scheme ?? "bearer";
   const kind = initialDetail?.kind ?? (create && initialPreset && initialPreset.kind !== "custom" ? initialPreset.kind : null);
-  // 管理页随预设/已有配置走，本页不单独编辑
-  const adminUrl = initialDetail?.admin_url ?? initialPreset?.admin_url ?? null;
+  const preset = claudePresetByKind(kind);
+  const presetEndpoints = !create ? preset?.endpoints : undefined;
+  const [adminUrl, setAdminUrl] = useState(() => initialDetail?.admin_url ?? initialPreset?.admin_url ?? null);
   // 图标：点开选择页换（复用 ProfileIconEdit），未单独选过就跟随预设
   const [pickingIcon, setPickingIcon] = useState(false);
-  const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? null);
-  const providerIcon = providerPresets.find((item) => item.kind === kind)?.icon ?? null;
-  const icon = selectedIcon ?? providerIcon;
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(() => initialDetail?.icon ?? profile?.icon ?? initialPreset?.icon ?? null);
+  const icon = selectedIcon ?? preset?.icon ?? null;
   const [slots, setSlots] = useState(() => slotsFromModels(initialDetail?.models ?? []));
   const [fetchedModels, setFetchedModels] = useState<string[]>(() => initialDetail?.fetched_models ?? []);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -202,7 +203,18 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
               }}
             />
             <label className="field-label mb-1.5 mt-4 block">{t("edit.baseUrl")}</label>
-            <input className="app-input" placeholder={tClaude("baseUrlPlaceholder")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+            {presetEndpoints?.length ? (
+              <EndpointField
+                value={baseUrl}
+                onChange={setBaseUrl}
+                endpoints={presetEndpoints}
+                onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }}
+                placeholder={tClaude("baseUrlPlaceholder")}
+                label={t("edit.baseUrl")}
+              />
+            ) : (
+              <input className="app-input" placeholder={tClaude("baseUrlPlaceholder")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+            )}
             <ProviderSecretField
               label={tProfiles("edit.apiKeyLabel")} placeholder={tProfiles("edit.apiKeyPlaceholder")}
               value={apiKey} onChange={setApiKey} visible={showKey}

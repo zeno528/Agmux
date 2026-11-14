@@ -28,11 +28,9 @@ export default {
   },
   dialog: {
     captureTitle: "从当前配置新建供应商",
-    renameTitle: "重命名供应商",
     cancel: "取消",
     save: "保存",
     captureDescription: "把当前配置存为一张可随时切换的供应商卡片",
-    renameDescription: "输入新的供应商名称",
     namePlaceholder: "例如：DeepSeek 日常",
   },
   confirm: {
@@ -42,7 +40,6 @@ export default {
   },
   feedback: {
     captureSuccess: "捕获成功",
-    providerRenamed: "供应商已重命名",
     codexRestarted: "Codex 已重启",
     codexStarted: "Codex 已启动",
     providerDeleted: "供应商已删除",
@@ -53,7 +50,6 @@ export default {
     authOAuth: "OAuth登录",
     usageRemaining: "{{label}} 剩",
     notSet: "未设置",
-    clickToRename: "点击重命名",
     openWebsite: "打开官网",
     clickToEdit: "单击编辑",
     dragToReorder: "拖动排序",

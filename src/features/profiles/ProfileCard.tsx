@@ -23,7 +23,6 @@ interface ProfileCardContentProps {
   titleBadge?: string;
   onRefreshBalance?: (manual?: boolean) => void;
   onOpenAdmin?: () => void;
-  onRename?: () => void;
 }
 
 export function ProfileCardContent({
@@ -35,7 +34,6 @@ export function ProfileCardContent({
   titleBadge,
   onRefreshBalance,
   onOpenAdmin,
-  onRename,
 }: ProfileCardContentProps) {
   const { t } = useTranslation("profiles");
   const balanceInfo = balanceInfos[0] ?? null;
@@ -66,7 +64,7 @@ export function ProfileCardContent({
       } />
       <div className="profile-card-content__text min-w-0 flex-1">
         <div className="flex min-h-7 items-center gap-2">
-          <h3 className="title-md cursor-pointer truncate leading-normal transition-colors hover:text-accent" title={t("card.clickToRename")} onClick={(event) => { event.stopPropagation(); onRename?.(); }}>{profile.name}</h3>
+          <h3 className="title-md truncate leading-normal">{profile.name}</h3>
           {isSubscriptionProfile ? <PlanBadge plan={profile.plan_type} /> : null}
           {titleBadge ? <span className="plan-badge">{titleBadge}</span> : null}
         </div>

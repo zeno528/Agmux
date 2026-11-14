@@ -837,6 +837,8 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "report_cli_update_tick":
       // 纯日志回传，浏览器无后端日志管道，直接吞掉
       return undefined as T;
+    case "get_claude_desktop_running":
+      return webState().claude_desktop.running as T;
     case "get_codex_status":
       return webState().codex as T;
     case "codex_capture_profile": {

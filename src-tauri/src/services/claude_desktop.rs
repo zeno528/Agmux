@@ -1310,26 +1310,6 @@ impl AppContext {
 // 进程检测 / 启动 / 重启 / 状态
 // ---------------------------------------------------------------------------
 
-fn collect_claude_process_ids(filter: impl Fn(&sysinfo::Process) -> bool) -> Vec<u32> {
-    claude_process_system()
-        .processes()
-        .iter()
-        .filter(|(_, process)| filter(process))
-        .map(|(pid, _)| pid.as_u32())
-        .collect()
-}
-
-/// 只刷新进程可执行路径（不扫 CPU/内存），对齐 codex::process 的开销纪律。
-fn claude_process_system() -> sysinfo::System {
-    sysinfo::System::new_with_specifics(
-        sysinfo::RefreshKind::nothing().with_processes(
-            sysinfo::ProcessRefreshKind::nothing()
-                .with_cmd(sysinfo::UpdateKind::OnlyIfNotSet)
-                .with_exe(sysinfo::UpdateKind::OnlyIfNotSet),
-        ),
-    )
-}
-
 fn is_claude_desktop_process(process: &sysinfo::Process) -> bool {
     process.exe().is_some_and(is_claude_desktop_executable)
 }
@@ -1360,7 +1340,7 @@ fn is_claude_desktop_executable(exe: &Path) -> bool {
 /// Windows 的「已拉起」判据：只认主进程，Electron helper（--type=）不算。
 #[cfg(windows)]
 fn find_claude_main_ids() -> Vec<u32> {
-    collect_claude_process_ids(|process| {
+    codex_process::collect_process_ids(|process| {
         is_claude_desktop_process(process)
             && !process
                 .cmd()
@@ -1372,7 +1352,11 @@ fn find_claude_main_ids() -> Vec<u32> {
 
 #[cfg(not(windows))]
 fn find_claude_main_ids() -> Vec<u32> {
-    collect_claude_process_ids(is_claude_desktop_process)
+    codex_process::collect_process_ids(is_claude_desktop_process)
+}
+
+pub(crate) fn claude_desktop_is_running() -> bool {
+    !find_claude_main_ids().is_empty()
 }
 
 /// 应用安装位置（固定 + 自动识别，不支持手动覆盖，对齐 Codex）。
@@ -1417,7 +1401,7 @@ fn claude_desktop_install() -> Option<(PathBuf, &'static str)> {
 /// 每帧 get_state 刷新的应用状态（对齐 CodexAppStatus 语义）。
 pub fn claude_desktop_app_status(base: &Path) -> ClaudeDesktopAppStatus {
     let install = claude_desktop_install();
-    let running = !find_claude_main_ids().is_empty();
+    let running = claude_desktop_is_running();
     let deployment_mode = read_json_object(&resolve_desktop3p(base).p3_config, CONFIG_FILE_NAME)
         .ok()
         .and_then(|object| {
@@ -1503,7 +1487,7 @@ impl AppContext {
             },
             sync::SyncMaterial::default(),
         )?;
-        let process_ids = collect_claude_process_ids(is_claude_desktop_process);
+        let process_ids = codex_process::collect_process_ids(is_claude_desktop_process);
         let action = if process_ids.is_empty() {
             "start"
         } else {
@@ -1513,7 +1497,7 @@ impl AppContext {
         if !process_ids.is_empty() {
             // PID 复用防御：击杀前/退出判定都重新取进程表复核身份（对齐 Codex 纪律）
             let refresh_claude_processes = |ids: &[u32]| -> Vec<u32> {
-                let system = claude_process_system();
+                let system = codex_process::process_system();
                 ids.iter()
                     .copied()
                     .filter(|id| {
@@ -1529,7 +1513,7 @@ impl AppContext {
                 5_000,
                 codex_process::request_graceful_quit,
                 |ids: &[u32]| {
-                    let system = claude_process_system();
+                    let system = codex_process::process_system();
                     for id in ids {
                         if let Some(process) = system.process(sysinfo::Pid::from_u32(*id)) {
                             if is_claude_desktop_process(process) {
@@ -1562,7 +1546,7 @@ impl AppContext {
             if codex_process::wait_for_running_with(
                 10_000,
                 100,
-                || !find_claude_main_ids().is_empty(),
+                claude_desktop_is_running,
                 std::thread::sleep,
             ) {
                 Ok(())

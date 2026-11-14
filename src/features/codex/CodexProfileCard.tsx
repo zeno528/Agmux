@@ -23,7 +23,6 @@ interface ProfileCardProps {
   coldStart: boolean;
   balanceCache?: Record<string, ProfileBalanceInfo>;
   onApply: () => void;
-  onRename: () => void;
   onEdit: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
@@ -48,7 +47,6 @@ export default function CodexProfileCard({
   coldStart,
   balanceCache,
   onApply,
-  onRename,
   onEdit,
   onRemove,
   onDuplicate,
@@ -109,7 +107,6 @@ export default function CodexProfileCard({
         balanceRefreshing={balanceRefreshing}
         onRefreshBalance={refreshBalance}
         onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))}
-        onRename={onRename}
       />
       <ProfileCardActions modelControl={
         <ProfileModelSelector model={profile.model} effort={profile.reasoning_effort} levels={codexEffortLevels} disabled={busy}

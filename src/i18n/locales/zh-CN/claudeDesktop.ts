@@ -83,9 +83,7 @@ export default {
     defaultProvider: "默认供应商",
     setDefault: "设为默认",
     applyAggregate: "应用聚合",
-    currentConfiguration: "当前配置",
     appliedMode: "当前生效模式",
-    noConfiguration: "未应用供应商",
     memberCount: "已选 {{count}} 家",
     chooseDefault: "请选择默认供应商",
     pending: "有更改未应用",
@@ -100,6 +98,7 @@ export default {
   status: {
     more: "更多操作",
     applyRestartHint: "已切换，完全重启 Claude Desktop 后生效",
+    startButton: "启动 Claude Desktop",
     restartButton: "重启 Claude Desktop",
     restoreOfficial: "恢复官方模式",
     restoreTitle: "恢复 Claude Desktop 官方模式？",

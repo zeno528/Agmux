@@ -303,6 +303,7 @@ pub fn run() {
             commands::get_state,
             commands::report_startup_mark,
             commands::get_codex_status,
+            commands::get_claude_desktop_running,
             commands::codex_capture_profile,
             commands::codex_add_builtin_profile,
             commands::codex_add_custom_profile,

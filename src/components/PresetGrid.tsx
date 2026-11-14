@@ -28,17 +28,21 @@ export default function PresetGrid({ presets, selectedKind, onSelect, category, 
   const visibleEntries = entries.filter(({ name, preset }) =>
     (category === "all" || presetEntryCategory(preset) === category)
     && [name, preset.plan, preset.admin_url, ...preset.endpoints.flatMap((endpoint) => [endpoint.label, endpoint.admin_url])].join(" ").toLowerCase().includes(search));
+  const customBesideAccount = !search && category === "all"
+    && entries.filter(({ preset }) => presetEntryCategory(preset) === "accounts").length === 1;
   const groupIds: readonly (keyof typeof GROUP_LABEL_KEYS | null)[] = category === "all" ? ["accounts", "plans", "api", null] : [category];
   const groups = groupIds
     .map((group) => ({ key: group ?? "custom", entries: visibleEntries.filter(({ preset }) => presetEntryCategory(preset) === group) }))
-    .filter((group) => group.entries.length > 0);
+    .filter((group) => group.entries.length > 0 && !(customBesideAccount && group.key === "custom"));
   return (
     <div className="apple-panel-section">
       {!visibleEntries.length ? <p className="muted text-sm" role="status">{tCommon("select.noResults")}</p> : null}
       {groups.map((group, index) => <section key={group.key} className={index ? "mt-6" : undefined}>
       {category === "all" ? <h2 className="field-subtitle mb-3">{t(GROUP_LABEL_KEYS[group.key], { count: group.entries.length })}{group.key !== "custom" ? t("edit.providerFilterCount", { count: group.entries.length }) : null}</h2> : null}
       <div className="apple-tile-grid apple-tile-grid--labeled apple-tile-grid--providers">
-        {group.entries.map(({ key, name, preset }) => {
+        {(group.key === "accounts" && customBesideAccount
+          ? [...group.entries, ...visibleEntries.filter(({ preset }) => preset.kind === "custom")]
+          : group.entries).map(({ key, name, preset }) => {
           const subtitle = preset.kind === "custom" ? t("edit.customProviderSubtitle") : preset.admin_url;
           return (
             <button

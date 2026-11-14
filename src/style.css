@@ -1766,6 +1766,16 @@ body.drag-active * {
   padding-right: 0.75rem;
 }
 
+.app-process-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.app-process-status.codex-status--stopped .codex-status__signal { color: var(--text-secondary); }
+
 .codex-status__signal {
   display: grid;
   width: 1.125rem;

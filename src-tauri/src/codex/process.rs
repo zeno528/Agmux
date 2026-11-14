@@ -12,7 +12,7 @@ pub const WINDOWS_CODEX_AUMIDS: &[&str] = &[
     "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!App",
 ];
 
-fn collect_process_ids(filter: impl Fn(&sysinfo::Process) -> bool) -> Vec<u32> {
+pub(crate) fn collect_process_ids(filter: impl Fn(&sysinfo::Process) -> bool) -> Vec<u32> {
     process_system()
         .processes()
         .iter()
@@ -229,7 +229,7 @@ where
     }
 }
 
-fn process_system() -> System {
+pub(crate) fn process_system() -> System {
     System::new_with_specifics(
         // 只需要进程可执行文件路径判断 Codex 桌面进程；不刷新 CPU/内存/磁盘等无关数据，
         // 避免每 3 秒轮询和每次 get_state 全量扫描系统进程产生无谓开销

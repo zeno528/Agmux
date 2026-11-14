@@ -8,7 +8,7 @@ import { McpIcon } from "../components/McpIcon";
 import { FeedbackProvider, useFeedback } from "./Feedback";
 import { authQuotaErrorKind } from "./authQuotaCache";
 import { armCliUpdateTicker, getCachedCliUpdate, getMcpDiffBadge, loadClaudeMcpServers, loadClaudeProfiles, loadMcpServers, loadPluginMarketplaces, loadPlugins, loadSkills, mcpDiffBadgeText, setMcpDiffBadge, subscribeCliUpdate, subscribeMcpDiffBadge } from "./managementDataCache";
-import { asAppView, useActivationRefresh, useAppState, useCodexPolling, useSidebar, useThemeMode, type AppView } from "./appShellHooks";
+import { asAppView, useActivationRefresh, useAppState, useDesktopStatusPolling, useSidebar, useThemeMode, type AppView } from "./appShellHooks";
 import CodexProfilesView from "../features/codex/CodexProfilesView";
 import McpView from "../features/mcp/McpView";
 import PluginsView from "../features/plugins/PluginsView";
@@ -272,7 +272,7 @@ export default function AppShell() {
   const { t } = useTranslation();
   // 侧栏角标复用 MCP 页的差异计数文案，避免同一件事在两处各写一份
   const { t: tMcp } = useTranslation("mcp");
-  const { state, stateRef, loadError, authStatusReady, refresh, refreshAuthStatus, updateAuthStatus, updateCodex, updateSettings, previewTheme } = useAppState();
+  const { state, stateRef, loadError, authStatusReady, refresh, refreshAuthStatus, updateAuthStatus, updateCodex, updateClaudeDesktopRunning, updateSettings, previewTheme } = useAppState();
   useThemeMode(state?.settings.theme);
   // 设置保存后即时切换语言；托盘沿用已加载的状态，不增加原生冷启动读取。
   useEffect(() => {
@@ -281,7 +281,7 @@ export default function AppShell() {
       void api.setTrayMenu(language, state.codex_profiles.map(({ id, name }) => ({ id, name })), state.active_codex_profile_id, state.active_claude_profile_id, state.active_claude_desktop_profile_id).catch(() => undefined);
     }
   }, [state?.settings.language, state?.codex_profiles, state?.active_codex_profile_id, state?.active_claude_profile_id, state?.active_claude_desktop_profile_id]);
-  const { start: startPolling, stop: stopPolling } = useCodexPolling(stateRef, updateCodex);
+  const { start: startPolling, stop: stopPolling } = useDesktopStatusPolling(stateRef, updateCodex, updateClaudeDesktopRunning);
   const { activationEpoch, activate, deactivate } = useActivationRefresh();
   // 页面进场动画：只监听页内内容切换，一级切页不补播（见 usePageEnterAnimation）。
   const mainRef = useRef<HTMLElement>(null);

@@ -30,7 +30,7 @@ it("官方卡片共用账号缓存，刷新只更新账号而不另存配置模�
     ]);
     const persist = vi.spyOn(api, "codexSetProfileFetchedModels").mockResolvedValue();
     renderToStaticMarkup(createElement(CodexProfileCard, { profile, active: false, busy: false,
-      activationEpoch: 0, coldStart: false, onApply: () => {}, onRename: () => {}, onEdit: () => {},
+      activationEpoch: 0, coldStart: false, onApply: () => {}, onEdit: () => {},
       onRemove: () => {}, onDuplicate: () => {}, onChanged: async () => {} }));
     for (const refresh of [false, true]) {
       expect(await loader.current!(refresh)).toMatchObject({ models: ["account-model"], defaults: { "account-model": "low" } });
@@ -53,7 +53,7 @@ it("官方卡片打开和恢复默认都使用自定义目录，无需访问远�
     const fetch = vi.spyOn(api, "codexFetchChatgptModels").mockRejectedValue(new Error("offline"));
     const persist = vi.spyOn(api, "codexSetProfileFetchedModels").mockResolvedValue();
     renderToStaticMarkup(createElement(CodexProfileCard, { profile, active: false, busy: false,
-      activationEpoch: 0, coldStart: false, onApply: () => {}, onRename: () => {}, onEdit: () => {},
+      activationEpoch: 0, coldStart: false, onApply: () => {}, onEdit: () => {},
       onRemove: () => {}, onDuplicate: () => {}, onChanged: async () => {} }));
     for (const refresh of [false, true]) {
       expect(await loader.current!(refresh)).toMatchObject({ models: ["local"], efforts: { local: ["low"] }, defaults: { local: "low" } });

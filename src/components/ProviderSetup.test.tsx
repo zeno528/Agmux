@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18next from "i18next";
+import { Save } from "lucide-react";
 import { setupI18n } from "../i18n";
 import { claudePresets, codexPresets, presetConnections, presetConnectionName, presetEntries, type ClientPreset, type PresetConnection } from "../presets";
 import { AppSegmentedControl } from "./AppSegmentedControl";
@@ -11,12 +12,14 @@ import { AppSearchInput } from "./AppSearchInput";
 import { ProviderCreate, ProviderEditorViewSwitch, ProviderPresetControls } from "./ProviderSetup";
 import { api } from "../api";
 import { webInvoke } from "../api/web-mock";
-import type { AppState, CodexProfileDetail, ClaudeProfileDetail, ClaudeProfileSummary } from "../types";
+import type { AppState, CodexProfileDetail, ClaudeDesktopProfileDetail, ClaudeProfileDetail, ClaudeProfileSummary } from "../types";
 import ClaudeProfileEdit from "../features/claude/ClaudeProfileEdit";
+import ClaudeDesktopProfileEdit from "../features/claudeDesktop/ClaudeDesktopProfileEdit";
 import ClaudeCommonTemplateEdit from "../features/claude/ClaudeCommonTemplateEdit";
 import CodexProfileEdit from "../features/codex/CodexProfileEdit";
 import ConfigTextEditor from "./ConfigTextEditor";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "./ProviderFields";
+import EndpointField from "./EndpointField";
 
 // 不启动浏览器：只替换 React 状态存储，调用真实的选择回调并检查两步流程的元素树。
 const hooks = vi.hoisted(() => ({
@@ -57,6 +60,47 @@ beforeEach(() => {
 });
 
 describe("供应商创建的两步流程", () => {
+  it("Claude Desktop 编辑已有供应商时切换预设端点只更新草稿", () => {
+    const preset = claudePresets.find(({ kind }) => kind === "minimax")!;
+    const [domestic, global] = preset.endpoints!;
+    const detail: ClaudeDesktopProfileDetail = {
+      id: "desktop-minimax", name: "MiniMax", kind: preset.kind, base_url: domestic.base_url,
+      admin_url: domestic.admin_url ?? null, api_key: null, auth_scheme: "bearer", models: [], icon: null,
+      show_balance: false, description: null, fetched_models: [], updated_at: "",
+    };
+    const save = vi.spyOn(api, "claudeDesktopSaveProfile").mockResolvedValue(detail);
+    try {
+      const profile = { ...detail, has_key: false, model: null, requires_routing: false };
+      const editor = ClaudeDesktopProfileEdit({ profile, initialDetail: detail, onBack: vi.fn() });
+      const render = () => {
+        hooks.cursor = 0;
+        return (editor.type as (props: Props) => ReactNode)(editor.props);
+      };
+      const tree = render();
+      const field = elements(tree).find((node) => node.type === EndpointField)!;
+      (field.props.onChange as (value: string) => void)(global.base_url);
+      (field.props.onPick as (endpoint: typeof global) => void)(global);
+      const updated = elements(render());
+      expect(updated.find((node) => node.type === EndpointField)?.props.value).toBe(global.base_url);
+      expect(save).not.toHaveBeenCalled();
+      click(updated.find((node) => node.type === "button" && elements(node.props.children).some((child) => child.type === Save))!);
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: detail.id, baseUrl: global.base_url, adminUrl: global.admin_url }));
+    } finally {
+      save.mockRestore();
+    }
+  });
+
+  it("Claude Desktop 自定义供应商在名称为空时就显示模板图标", () => {
+    const preset = claudePresets.find(({ kind }) => kind === "custom")!;
+    const flow = ClaudeDesktopProfileEdit({ profile: null, create: true, onBack: vi.fn() });
+    const editor = (flow.props.children as (preset: ClientPreset, onChange: () => void) => ReactElement<Props>)(preset, vi.fn());
+    const tree = (editor.type as (props: Props) => ReactNode)(editor.props);
+    expect(elements(tree).find((node) => node.type === ProviderIdentityFields)?.props).toMatchObject({
+      name: "",
+      icon: "custom",
+    });
+  });
+
   it("标题栏视图切换沿用分段控件，键盘 Enter 不触发背景保存", () => {
     const onChange = vi.fn();
     const tree = ProviderEditorViewSwitch({ config: false, disabled: false, onChange });
@@ -282,6 +326,11 @@ describe("供应商创建的两步流程", () => {
       };
     };
     const { tabs } = render();
+    const allGroups = elements(PresetGrid({ presets, category: "all", selectedKind: "", onSelect: vi.fn() }))
+      .filter((node) => node.type === "section");
+    expect(elements(allGroups[0]).filter((node) => node.props.className === "setting-title block truncate font-medium!")
+      .map((node) => node.props.children)).toEqual(["Claude Account", "自定义"]);
+    expect(allGroups).toHaveLength(3);
     expect(tabs.items.map(({ id, count }) => [id, count])).toEqual([
       ["all", "（4）"], ["accounts", "（1）"], ["plans", "（1）"], ["api", "（1）"],
     ]);

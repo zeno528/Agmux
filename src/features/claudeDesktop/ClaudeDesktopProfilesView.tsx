@@ -1,5 +1,5 @@
 import { useMenuExit } from "../../components/useMenuExit";
-import { Activity, Check, ChevronDown, Layers2, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
+import { Activity, Check, ChevronDown, Layers2, Play, Plus, Plug, Route, RotateCw, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -47,7 +47,7 @@ function DesktopActionsMenu({ status, busy, restarting, onRestart, onRestore, on
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) onDiagnostics();
       else diagnosticsPending.current = true;
     } },
-    { label: t("status.restartButton"), icon: RotateCw, disabled: !status.installed || restarting, run: onRestart },
+    { label: t(status.running ? "status.restartButton" : "status.startButton"), icon: status.running ? RotateCw : Play, disabled: !status.installed || restarting, run: onRestart },
     { label: t("status.restoreOfficial"), icon: Undo2, disabled: status.deployment_mode !== "3p", run: onRestore },
   ];
   return <>
@@ -385,10 +385,6 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
   const membershipChanged = members.length !== appliedMembers.length || members.some((id) => !appliedMembers.includes(id));
   const aggregate = mode === "aggregate";
   const selectedDefault = items.find((profile) => profile.id === defaultId && members.includes(profile.id));
-  const appliedProfile = items.find((profile) => profile.id === activeId);
-  const currentConfiguration = activeId
-    ? [t(`modes.${status.mode}`), appliedProfile?.name].filter(Boolean).join(" · ")
-    : t("modes.noConfiguration");
   const aggregateChanged = status.mode !== "aggregate" || defaultId !== activeId || membershipChanged || Boolean(editedActiveId);
   const aggregateApplied = !aggregateChanged && status.gateway_running;
   const modes = ["direct", "route", "aggregate"] as const;
@@ -401,12 +397,9 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
         <div className="provider-page-brand">
           <img src="/claude.svg" alt="" className="provider-page-brand__logo" draggable="false" />
           <span>{t("list.title")}</span>
-          <span className="apple-chip" role="status" title={`${t("modes.currentConfiguration")} · ${currentConfiguration}`}>
-            <span className="sr-only">{t("modes.currentConfiguration")}: </span>
-            <span className="max-w-40 truncate">{currentConfiguration}</span>
-          </span>
-          <span className={`apple-chip ${status.installed ? (status.running ? "chip-success" : "") : "chip-warn"}`} title={status.installed ? `${t("status.path")}: ${status.display_path}` : undefined}>
-            {t(status.installed ? status.running ? "status.running" : "status.notRunning" : "status.notInstalled")}
+          <span className={`app-process-status codex-status--${status.running ? "running" : "stopped"}`} role="status" aria-live="polite" aria-atomic="true" title={status.installed ? `${t("status.path")}: ${status.display_path}` : undefined}>
+            <span className="codex-status__signal" aria-hidden="true"><span className="codex-status__signal-dot" /></span>
+            <span>{t(status.running ? "status.running" : status.installed ? "status.notRunning" : "status.notInstalled")}</span>
           </span>
           <SyncFailureIndicator failure={syncFailure} />
         </div>

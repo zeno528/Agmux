@@ -518,6 +518,11 @@ pub fn claude_desktop_restore_official(state: State<'_, AppContext>) -> AppResul
     state.claude_desktop_restore_official()
 }
 
+#[tauri::command]
+pub fn get_claude_desktop_running() -> bool {
+    crate::services::claude_desktop_is_running()
+}
+
 /// 与 restart_codex 同理：退出等待 + 启动轮询会阻塞数秒，放专用 blocking 线程。
 #[tauri::command]
 pub async fn claude_desktop_restart(state: State<'_, AppContext>) -> AppResult<()> {

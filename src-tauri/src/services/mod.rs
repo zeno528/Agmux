@@ -21,6 +21,7 @@ use crate::paths::{now_ms, now_secs, AppPaths};
 mod claude;
 mod claude_cli;
 mod claude_desktop;
+pub(crate) use claude_desktop::claude_desktop_is_running;
 mod claude_desktop_gateway;
 mod claude_terminal;
 mod cli;

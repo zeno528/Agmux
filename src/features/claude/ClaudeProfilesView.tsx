@@ -38,7 +38,7 @@ function cardProfile(profile: ClaudeProfileSummary) {
   };
 }
 
-function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, coldStart, balanceCache, onRename, onEdit, onApply, onDuplicate, onTest, onRemove, onChanged }: {
+function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, coldStart, balanceCache, onEdit, onApply, onDuplicate, onTest, onRemove, onChanged }: {
   profile: ClaudeProfileSummary;
   active: boolean;
   busy: boolean;
@@ -46,7 +46,6 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
   activationEpoch: number;
   coldStart: boolean;
   balanceCache: Record<string, ProfileBalanceInfo>;
-  onRename: () => void;
   onEdit: () => void;
   onApply: () => void;
   onDuplicate: () => void;
@@ -76,7 +75,7 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
   });
   return (
     <SortableCard id={profile.id} active={active} onClick={onEdit} title={t("card.clickToEdit")} handleTitle={t("card.dragToReorder")}>
-      <ProfileCardContent profile={cardProfile(profile)} hideModel balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} onRename={onRename} />
+      <ProfileCardContent profile={cardProfile(profile)} hideModel balanceInfos={balance.balanceInfos} balanceError={balance.balanceError} balanceRefreshing={balance.balanceRefreshing} onRefreshBalance={balance.refreshBalance} onOpenAdmin={() => void api.openUrl(profile.admin_url!).catch((error) => feedback.error(String(error)))} />
       <ProfileCardActions modelControl={
         <ProfileModelSelector model={profile.model} effort={profile.reasoning_effort} levels={claudeEffortLevels} disabled={busy}
           formatModelLabel={(value) => setOneMillionModelSuffix(value, false)}
@@ -118,8 +117,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
   const [items, setItems] = useState<ClaudeProfileSummary[]>(cached ?? []);
   const [loaded, setLoaded] = useState(cached !== null);
   const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<"capture" | "rename" | null>(null);
-  const [modalProfile, setModalProfile] = useState<ClaudeProfileSummary | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [editingProfile, setEditingProfile] = useState<ClaudeProfileSummary | null>(null);
   const [editDetail, setEditDetail] = useState<ClaudeProfileDetail | null>(null);
@@ -162,20 +160,14 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
     if (!busy) setCreatingProfile(true);
   };
 
-  const openRename = (profile: ClaudeProfileSummary) => { setModal("rename"); setModalProfile(profile); setProfileName(profile.name); };
 
   const submitModal = async () => {
-    if (busy || !modal || !profileName.trim()) return;
+    if (busy || !captureOpen || !profileName.trim()) return;
     setBusy(true);
     try {
-      if (modal === "capture") {
-        await api.claudeCaptureProfile(profileName.trim());
-        feedback.success(tProfiles("feedback.captureSuccess"));
-      } else if (modalProfile) {
-        await api.renameProfile(modalProfile.id, profileName.trim(), "claude");
-        feedback.success(tProfiles("feedback.providerRenamed"));
-      }
-      setModal(null);
+      await api.claudeCaptureProfile(profileName.trim());
+      feedback.success(tProfiles("feedback.captureSuccess"));
+      setCaptureOpen(false);
       await refresh();
       onChanged();
     } catch (error) {
@@ -308,7 +300,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
         {!loaded ? null : items.length === 0 ? (
           <EmptyStateCard icon={<Layers2 className="h-5 w-5" strokeWidth={2} />}>
             <p className="muted">{tProfiles("empty.description")}</p>
-            <button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={() => { setProfileName(""); setModalProfile(null); setModal("capture"); }}>
+            <button type="button" className="apple-action-button app-button--primary" disabled={busy} onClick={() => { setProfileName(""); setCaptureOpen(true); }}>
               <Camera className="h-4 w-4" strokeWidth={2} />
               {tProfiles("toolbar.capture")}
             </button>
@@ -319,7 +311,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
               <div className="profile-list relative space-y-[var(--gap-page)]">
                 {items.map((profile) => {
                   return (
-                    <ClaudeProfileCard key={profile.id} profile={profile} active={profile.id === activeId} busy={busy} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache} onChanged={async () => { await refresh(); onChanged(); }} onRename={() => openRename(profile)} onEdit={() => void openEdit(profile)} onApply={() => void claudeApplyProfile(profile)} onDuplicate={() => void claudeDuplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void claudeDeleteProfile(profile)} />
+                    <ClaudeProfileCard key={profile.id} profile={profile} active={profile.id === activeId} busy={busy} testing={testingId === profile.id} activationEpoch={activationEpoch} coldStart={coldStart} balanceCache={balanceCache} onChanged={async () => { await refresh(); onChanged(); }} onEdit={() => void openEdit(profile)} onApply={() => void claudeApplyProfile(profile)} onDuplicate={() => void claudeDuplicateProfile(profile)} onTest={() => void testProfile(profile)} onRemove={() => void claudeDeleteProfile(profile)} />
                   );
                 })}
               </div>
@@ -333,7 +325,7 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
           </DndContext>
         )}
       </div>
-      <ProfileNameDialog mode={modal} name={profileName} busy={busy} onName={setProfileName} onClose={() => setModal(null)} onSubmit={() => void submitModal()} />
+      <ProfileNameDialog open={captureOpen} name={profileName} busy={busy} onName={setProfileName} onClose={() => setCaptureOpen(false)} onSubmit={() => void submitModal()} />
     </section>
   );
 }

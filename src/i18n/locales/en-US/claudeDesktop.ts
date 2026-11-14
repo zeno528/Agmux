@@ -83,9 +83,7 @@ export default {
     defaultProvider: "Default",
     setDefault: "Set default",
     applyAggregate: "Apply aggregation",
-    currentConfiguration: "Current configuration",
     appliedMode: "Applied mode",
-    noConfiguration: "No provider applied",
     memberCount: "Selected: {{count}}",
     chooseDefault: "Choose a default provider",
     pending: "Unapplied changes",
@@ -100,6 +98,7 @@ export default {
   status: {
     more: "More actions",
     applyRestartHint: "Switched. Fully restart Claude Desktop to take effect",
+    startButton: "Start Claude Desktop",
     restartButton: "Restart Claude Desktop",
     restoreOfficial: "Restore official mode",
     restoreTitle: "Restore Claude Desktop official mode?",

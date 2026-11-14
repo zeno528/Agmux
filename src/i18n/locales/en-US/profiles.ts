@@ -28,11 +28,9 @@ export default {
   },
   dialog: {
     captureTitle: "Create provider from current config",
-    renameTitle: "Rename provider",
     cancel: "Cancel",
     save: "Save",
     captureDescription: "Save the current config as a provider card you can switch to anytime",
-    renameDescription: "Enter a new provider name",
     namePlaceholder: "e.g. DeepSeek Daily",
   },
   confirm: {
@@ -42,7 +40,6 @@ export default {
   },
   feedback: {
     captureSuccess: "Captured",
-    providerRenamed: "Provider renamed",
     codexRestarted: "Codex restarted",
     codexStarted: "Codex started",
     providerDeleted: "Provider deleted",
@@ -53,7 +50,6 @@ export default {
     authOAuth: "OAuth sign-in",
     usageRemaining: "{{label}} left ",
     notSet: "Not set",
-    clickToRename: "Click to rename",
     openWebsite: "Open website",
     clickToEdit: "Click to edit",
     dragToReorder: "Drag to reorder",

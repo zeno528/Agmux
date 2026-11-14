@@ -68,6 +68,14 @@ export function useAppState() {
     setState(next);
   }, []);
 
+  const updateClaudeDesktopRunning = useCallback((running: boolean) => {
+    const previous = stateRef.current;
+    if (!previous || previous.claude_desktop.running === running) return;
+    const next = { ...previous, claude_desktop: { ...previous.claude_desktop, running } };
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
   const updateSettings = useCallback((settings: Settings) => {
     const previous = stateRef.current;
     if (!previous) return;
@@ -84,7 +92,7 @@ export function useAppState() {
     setState(next);
   }, []);
 
-  return { state, stateRef, loadError, authStatusReady, refresh, refreshAuthStatus, updateAuthStatus, updateCodex, updateSettings, previewTheme };
+  return { state, stateRef, loadError, authStatusReady, refresh, refreshAuthStatus, updateAuthStatus, updateCodex, updateClaudeDesktopRunning, updateSettings, previewTheme };
 }
 
 export function useThemeMode(theme: Settings["theme"] | undefined) {
@@ -111,29 +119,31 @@ export function useThemeMode(theme: Settings["theme"] | undefined) {
 
 }
 
-export function useCodexPolling(
+export function useDesktopStatusPolling(
   stateRef: MutableRefObject<AppState | null>,
   updateCodex: (codex: CodexAppStatus) => void,
+  updateClaudeDesktopRunning: (running: boolean) => void,
 ) {
-  const codexPollTimer = useRef<number | undefined>(undefined);
-  const codexPolling = useRef(false);
+  const pollTimer = useRef<number | undefined>(undefined);
+  const polling = useRef(false);
 
-  const pollCodexStatus = useCallback(async () => {
-    if (codexPolling.current || !stateRef.current) return;
-    codexPolling.current = true;
+  const pollStatus = useCallback(async () => {
+    if (polling.current || !stateRef.current) return;
+    polling.current = true;
     try {
-      updateCodex(await api.getCodexStatus());
-    } catch {
-      // 轮询失败保留上次状态。
+      await Promise.allSettled([
+        api.getCodexStatus().then(updateCodex),
+        api.getClaudeDesktopRunning().then(updateClaudeDesktopRunning),
+      ]);
     } finally {
-      codexPolling.current = false;
+      polling.current = false;
     }
-  }, [stateRef, updateCodex]);
+  }, [stateRef, updateCodex, updateClaudeDesktopRunning]);
 
   const stop = useCallback(() => {
-    if (codexPollTimer.current !== undefined) {
-      window.clearInterval(codexPollTimer.current);
-      codexPollTimer.current = undefined;
+    if (pollTimer.current !== undefined) {
+      window.clearInterval(pollTimer.current);
+      pollTimer.current = undefined;
     }
   }, []);
 
@@ -142,10 +152,10 @@ export function useCodexPolling(
       stop();
       return;
     }
-    if (codexPollTimer.current === undefined) {
-      codexPollTimer.current = window.setInterval(() => void pollCodexStatus(), 3000);
+    if (pollTimer.current === undefined) {
+      pollTimer.current = window.setInterval(() => void pollStatus(), 3000);
     }
-  }, [pollCodexStatus, stateRef, stop]);
+  }, [pollStatus, stateRef, stop]);
 
   return { start, stop };
 }
