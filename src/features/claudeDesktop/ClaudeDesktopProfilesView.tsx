@@ -43,11 +43,11 @@ function DesktopActionsMenu({ status, busy, restarting, onRestart, onRestore, on
   useMenuDismiss(open, trigger, menu, setOpen);
   useMenuExit(open, menu);
   const actions = [
+    { label: t(status.running ? "status.restartButton" : "status.startButton"), icon: status.running ? RotateCw : Play, disabled: !status.installed || restarting, run: onRestart },
     { label: t("diagnostics.title"), icon: Activity, disabled: false, run: () => {
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) onDiagnostics();
       else diagnosticsPending.current = true;
     } },
-    { label: t(status.running ? "status.restartButton" : "status.startButton"), icon: status.running ? RotateCw : Play, disabled: !status.installed || restarting, run: onRestart },
     { label: t("status.restoreOfficial"), icon: Undo2, disabled: status.deployment_mode !== "3p", run: onRestore },
   ];
   return <>
