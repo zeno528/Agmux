@@ -27,7 +27,7 @@ export default function EndpointField({ value, onChange, endpoints, onPick, plac
   const menuStyle = useFixedMenuPosition(open, rootRef.current, menuRef, "match");
   useMenuDismiss(open, rootRef, menuRef, setOpen);
   return (
-    <div ref={rootRef}>
+    <div ref={rootRef} className="app-endpoint-field" data-open={open}>
       <div className="app-input-action">
         <input className="app-input app-input--action" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
         <button type="button" className="app-input-action__button" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((prev) => !prev)}>

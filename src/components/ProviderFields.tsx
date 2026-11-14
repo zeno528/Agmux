@@ -73,7 +73,7 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
   onTest: () => void;
   help?: ReactNode;
 }) {
-  return <>
+  return <div className="provider-secret-field">
     <div className="mb-1.5 mt-4 flex items-center gap-2">
       <span className="field-label">{label}</span>
       {help}
@@ -94,7 +94,7 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
         {visible ? <EyeOff className="h-4 w-4" strokeWidth={2} aria-hidden="true" /> : <Eye className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
       </button>
     </div>
-  </>;
+  </div>;
 }
 
 export function ProviderModelFields({ models: fetchedModels, fetching, disabled, onFetch, onApplyModel, mappingFields, labels }: {

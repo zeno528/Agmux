@@ -34,7 +34,7 @@ interface ToastState {
 }
 
 interface ConfirmationState extends ConfirmOptions {
-  resolve: (confirmed: boolean) => void;
+  resolve: ((confirmed: boolean) => void) | null;
 }
 
 const toastIcons = { success: Check, error: X, warning: TriangleAlert, info: Info } as const;
@@ -78,8 +78,9 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   const closeConfirmation = useCallback((confirmed: boolean) => {
     setConfirmation((current) => {
-      current?.resolve(confirmed);
-      return null;
+      if (!current?.resolve) return current;
+      current.resolve(confirmed);
+      return { ...current, resolve: null };
     });
   }, []);
 
@@ -150,7 +151,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </Toast.Provider>
 
       <AlertDialog.Root
-        open={confirmation !== null}
+        open={Boolean(confirmation?.resolve)}
         onOpenChange={(open) => {
           if (!open) closeConfirmation(false);
         }}
@@ -167,6 +168,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               (document.activeElement as HTMLElement | null)?.blur();
+              setConfirmation((current) => current?.resolve ? current : null);
             }}
           >
             <AlertDialog.Title className="app-dialog-title flex items-center gap-1.5">
