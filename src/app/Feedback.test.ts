@@ -1,9 +1,24 @@
 // @ts-expect-error 测试运行于 Node，但应用的浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { normalizeToastMessage } from "./Feedback";
+import { beginToastExit, normalizeToastMessage } from "./Feedback";
 
 const source = readFileSync(new URL("./Feedback.tsx", import.meta.url), "utf8");
+
+it("保留离场卡的原层级，只有最后一张仍打开的通知走完整退场", () => {
+  const toasts = [
+    { id: 1, tone: "info", message: "first" },
+    { id: 2, tone: "info", message: "second" },
+  ] as const;
+  const closingTop = beginToastExit([...toasts], 2);
+  expect(closingTop[1]?.exit).toEqual({ index: 0, last: false });
+  const closingLast = beginToastExit(closingTop, 1);
+  expect(closingLast.map((toast) => toast.exit)).toEqual([
+    { index: 0, last: true },
+    { index: 0, last: false },
+  ]);
+  expect(beginToastExit(closingLast, 2)).toBe(closingLast);
+});
 
 describe("normalizeToastMessage", () => {
   it("removes duplicated connection-failure prefixes", () => {

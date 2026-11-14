@@ -30,7 +30,7 @@ interface ToastState {
   id: number;
   tone: ToastTone;
   message: string;
-  open: boolean;
+  exit?: { index: number; last: boolean };
 }
 
 interface ConfirmationState extends ConfirmOptions {
@@ -39,6 +39,15 @@ interface ConfirmationState extends ConfirmOptions {
 
 const toastIcons = { success: Check, error: X, warning: TriangleAlert, info: Info } as const;
 const MAX_TOASTS = 3;
+const TOAST_REMOVE_MS = 220;
+
+export function beginToastExit(toasts: ToastState[], id: number): ToastState[] {
+  const active = toasts.filter((toast) => !toast.exit);
+  const index = active.findIndex((toast) => toast.id === id);
+  if (index === -1) return toasts;
+  const exit = { index: active.length - 1 - index, last: active.length === 1 };
+  return toasts.map((toast) => toast.id === id ? { ...toast, exit } : toast);
+}
 
 export function normalizeToastMessage(message: string) {
   // 下面两条匹配的是 Rust 侧原文，不是待展示文案：翻译会破坏去重逻辑。
@@ -62,13 +71,13 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeToast = useCallback((id: number) => {
-    setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, open: false } : toast));
-    window.setTimeout(() => removeToast(id), 220);
+    setToasts((current) => beginToastExit(current, id));
+    window.setTimeout(() => removeToast(id), TOAST_REMOVE_MS);
   }, [removeToast]);
 
   const showToast = useCallback((tone: ToastTone, message: string) => {
     const id = ++nextToastId.current;
-    setToasts((current) => [...current, { id, tone, message: normalizeToastMessage(message), open: true }].slice(-MAX_TOASTS));
+    setToasts((current) => [...current, { id, tone, message: normalizeToastMessage(message) }].slice(-MAX_TOASTS));
     window.setTimeout(() => closeToast(id), 3200);
   }, [closeToast]);
 
@@ -97,31 +106,32 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     confirm,
   }), [showToast, confirm]);
 
+  const activeToastCount = toasts.filter((toast) => !toast.exit).length;
+  let activeToastIndex = 0;
+
   return (
     <FeedbackContext.Provider value={value}>
       <Toast.Provider swipeDirection="right">
         {children}
-        {[...toasts].reverse().map((toast, index) => {
+        {[...toasts].reverse().map((toast, stackIndex) => {
+          const index = toast.exit?.index ?? activeToastIndex++;
           const ToastIcon = toastIcons[toast.tone];
           const collapsedScale = Math.max(0.84, 1 - index * 0.04);
-          const collapsedOpacity = Math.max(0.58, 1 - index * 0.08);
           const collapsedOffset = index * 10;
           const expandedOffset = index * 52;
           const toastStyle = {
             "--toast-offset": `${collapsedOffset}px`,
             "--toast-scale": collapsedScale,
-            "--toast-opacity": collapsedOpacity,
             "--toast-expanded-offset": `${expandedOffset}px`,
-            "--toast-resting-offset": `${toastExpanded ? expandedOffset : collapsedOffset}px`,
-            "--toast-resting-scale": toastExpanded ? 1 : collapsedScale,
             "--toast-transition-delay": `${Math.min(index * 18, 72)}ms`,
-            zIndex: toasts.length - index,
+            zIndex: toasts.length - stackIndex,
           } as CSSProperties;
           return (
             <Toast.Root
               key={toast.id}
               forceMount
-              open={toast.open}
+              open={!toast.exit}
+              data-last-exit={toast.exit?.last}
               duration={Infinity}
               onOpenChange={(open) => {
                 if (!open) closeToast(toast.id);
@@ -139,7 +149,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         })}
         <Toast.Viewport
           className="app-toast-viewport"
-          style={{ "--toast-stack-height": `${toasts.length ? (toasts.length - 1) * 52 + 48 : 0}px` } as CSSProperties}
+          style={{ "--toast-stack-height": `${activeToastCount ? (activeToastCount - 1) * 52 + 48 : 0}px` } as CSSProperties}
           data-expanded={toastExpanded}
           onPointerEnter={() => setToastExpanded(true)}
           onPointerLeave={() => setToastExpanded(false)}
