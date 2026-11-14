@@ -203,7 +203,7 @@ describe("端点区域下拉", () => {
     expect(source).toContain("endpoints={presetEndpoints}");
     expect(endpointFieldSource).toContain("useFixedMenuPosition(open, rootRef.current, menuRef");
     expect(endpointFieldSource).toContain("useMenuDismiss(open, rootRef, menuRef, setOpen");
-    expect(endpointFieldSource).toContain('className="app-select-menu app-popover"');
+    expect(endpointFieldSource).toContain('className="app-select-menu app-popover app-endpoint-menu"');
     expect(endpointFieldSource).toContain("presetRegionName(endpoint.region)");
     expect(endpointFieldSource).not.toContain("options.unshift");
     expect(endpointFieldSource).not.toContain("renderEndpointOption");

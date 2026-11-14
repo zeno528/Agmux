@@ -27,7 +27,7 @@ export default function EndpointField({ value, onChange, endpoints, onPick, plac
   const menuStyle = useFixedMenuPosition(open, rootRef.current, menuRef, "match");
   useMenuDismiss(open, rootRef, menuRef, setOpen);
   return (
-    <div ref={rootRef} className="app-endpoint-field" data-open={open}>
+    <div ref={rootRef}>
       <div className="app-input-action">
         <input className="app-input app-input--action" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
         <button type="button" className="app-input-action__button" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((prev) => !prev)}>
@@ -35,7 +35,7 @@ export default function EndpointField({ value, onChange, endpoints, onPick, plac
         </button>
       </div>
       {createPortal(
-        <div ref={menuRef} className="app-select-menu app-popover" data-open={open} data-popover-in={open ? "" : undefined} role="listbox" aria-label={label} style={menuStyle}>
+        <div ref={menuRef} className="app-select-menu app-popover app-endpoint-menu" data-open={open} data-popover-in={open ? "" : undefined} data-popover-out={!open && menuStyle ? "" : undefined} inert={!open} role="listbox" aria-label={label} style={menuStyle}>
           {endpoints.map((endpoint) => {
             const selected = endpoint.base_url === value;
             return (

@@ -3445,7 +3445,7 @@ button:focus-visible {
 
 /* 浮层出场：反向播放。当前只供悬停提示卡（AppTooltip）使用——
    它靠 exiting 状态让节点在关闭后多活一帧，动画播完才卸载。
-   点击触发的浮层（AppSelect / EndpointField / 行内 ⋯ 菜单）不挂这条：
+   普通点击菜单（AppSelect / 行内 ⋯ 菜单）不挂这条：
    关闭即收，用基础类的短淡出即可，不叠加缩放。 */
 .app-popover[data-popover-out] {
   animation: app-popover-out var(--motion-popover) var(--motion-popover-out) both;
@@ -3495,6 +3495,21 @@ button:focus-visible {
 }
 
 .app-select-menu[data-open="true"] { opacity: 1; pointer-events: auto; visibility: visible; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 由关键帧独占透明度，避免基础淡出过渡在开合时和关键帧争用。 */
+  .app-endpoint-menu { transition: none; }
+
+  /* 端点菜单保留原缩放轴，出场曲线为进场曲线的时间镜像。 */
+  .app-endpoint-menu[data-popover-out] {
+    animation: app-endpoint-menu-out var(--motion-popover) cubic-bezier(0.68, 0, 0.77, 0);
+  }
+
+  @keyframes app-endpoint-menu-out {
+    from { visibility: visible; opacity: 1; transform: scale(1); }
+    to { visibility: visible; opacity: 0; transform: scale(1, 0.8); }
+  }
+}
 
 /* 搜索在下拉框顶部，只有下方选项列表滚动。 */
 .app-select-menu--searchable { display: flex; flex-direction: column; overflow: hidden; }
@@ -3770,16 +3785,6 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
 }
 
 .app-input--action { padding-right: 2.75rem; }
-
-/* 端点菜单淡入淡出期间遮住紧随其后的密钥字形，保留输入框和菜单各自的绘制。 */
-.app-endpoint-field + .provider-secret-field .app-input {
-  transition: -webkit-text-fill-color 0s 150ms;
-}
-
-.app-endpoint-field[data-open="true"] + .provider-secret-field .app-input {
-  -webkit-text-fill-color: transparent;
-  transition: none;
-}
 
 .app-input-action__button {
   position: absolute;

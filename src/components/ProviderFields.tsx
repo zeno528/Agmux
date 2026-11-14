@@ -73,7 +73,7 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
   onTest: () => void;
   help?: ReactNode;
 }) {
-  return <div className="provider-secret-field">
+  return <div>
     <div className="mb-1.5 mt-4 flex items-center gap-2">
       <span className="field-label">{label}</span>
       {help}
