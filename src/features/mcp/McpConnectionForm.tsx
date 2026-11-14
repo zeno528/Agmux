@@ -118,7 +118,7 @@ export default function McpConnectionForm({
           {transport === "stdio" ? <>
             <PairEditor label={t("edit.env")} addLabel={t("edit.addVariable")} pairs={envPairs} onChange={setEnvPairs} keyPlaceholder={t("edit.envKeyPlaceholder")} valuePlaceholder={t("edit.valuePlaceholder")} />
           </> : <>
-            <PairEditor label={t("edit.headerFixed")} addLabel={t("edit.addHeader")} pairs={headerPairs} onChange={setHeaderPairs} keyPlaceholder={t("edit.headerKeyPlaceholder")} valuePlaceholder={t("edit.valuePlaceholder")} />
+            <PairEditor label={t("edit.headerFixed")} addLabel={t("edit.addHeader")} pairs={headerPairs} onChange={setHeaderPairs} keyPlaceholder={t("edit.headerKeyPlaceholder")} valuePlaceholder={t("edit.headerValuePlaceholder")} />
             {httpAdvancedFields}
           </>}
           {timeoutFields}
