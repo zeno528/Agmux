@@ -1,6 +1,6 @@
 [package]
 name = "agmux"
-version = "0.39.0"
+version = "0.40.0"
 description = "A lightweight Codex model profile switcher"
 authors = ["zeno528"]
 license = "MIT"
