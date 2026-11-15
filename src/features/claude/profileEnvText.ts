@@ -151,10 +151,12 @@ export function readAdvancedSettings(text: string) {
   const permissions = settings?.permissions;
   const deny = permissions && typeof permissions === "object" && !Array.isArray(permissions)
     ? (permissions as Record<string, unknown>).deny : undefined;
+  const autoCompactDisabled = settings?.autoCompactEnabled === false || readEnvValue(text, "DISABLE_AUTO_COMPACT") === "1";
+  const autoCompactWindow = readEnvValue(text, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+    || (typeof settings?.autoCompactWindow === "number" ? String(settings.autoCompactWindow) : "");
   return {
-    autoCompactDisabled: settings?.autoCompactEnabled === false || readEnvValue(text, "DISABLE_AUTO_COMPACT") === "1",
-    autoCompactWindow: readEnvValue(text, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
-      || (typeof settings?.autoCompactWindow === "number" ? String(settings.autoCompactWindow) : ""),
+    autoCompactDisabled,
+    autoCompactWindow,
     effortLevel: effortLevel === "auto" ? "" : effortLevel,
     autoMemoryEnabled: disableAutoMemory === "0" || (disableAutoMemory !== "1" && settings?.autoMemoryEnabled !== false),
     bashEditDiffEnabled: bashEditDiff === "1" || (bashEditDiff !== "0" && settings?.bashEditDiffEnabled === true),

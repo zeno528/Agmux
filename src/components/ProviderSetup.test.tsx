@@ -65,12 +65,12 @@ describe("供应商创建的两步流程", () => {
     const [domestic, global] = preset.endpoints!;
     const detail: ClaudeDesktopProfileDetail = {
       id: "desktop-minimax", name: "MiniMax", kind: preset.kind, base_url: domestic.base_url,
-      admin_url: domestic.admin_url ?? null, api_key: null, auth_scheme: "bearer", models: [], icon: null,
+      admin_url: domestic.admin_url ?? null, api_key: "fixture-key", auth_scheme: "bearer", models: [], icon: null,
       show_balance: false, description: null, fetched_models: [], updated_at: "",
     };
     const save = vi.spyOn(api, "claudeDesktopSaveProfile").mockResolvedValue(detail);
     try {
-      const profile = { ...detail, has_key: false, model: null, requires_routing: false };
+      const profile = { ...detail, has_key: true, model: null, requires_routing: false };
       const editor = ClaudeDesktopProfileEdit({ profile, initialDetail: detail, onBack: vi.fn() });
       const render = () => {
         hooks.cursor = 0;
@@ -151,7 +151,7 @@ describe("供应商创建的两步流程", () => {
       (field(tree, ProviderEditorViewSwitch).onChange as (config: boolean) => void)(true);
       tree = render();
       expect(configPanel(tree).props.inert).toBe(false);
-      const source = client === "codex" ? 'model = "edited-model"\n' : '{"env":{"EXTRA":"edited"}}';
+      const source = client === "codex" ? 'model = "edited-model"\n' : '{"env":{"EXTRA":"edited","ANTHROPIC_AUTH_TOKEN":"draft-key-fixture"}}';
       (field(tree, ConfigTextEditor).onChange as (value: string) => void)(source);
       (field(tree, ProviderEditorViewSwitch).onChange as (config: boolean) => void)(false);
       tree = render();

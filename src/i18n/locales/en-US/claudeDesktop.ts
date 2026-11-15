@@ -116,7 +116,6 @@ export default {
     emptyHint: "Add a provider to get started.",
   },
   edit: {
-    baseUrl: "API endpoint",
     modelSlots: "Model mapping (desktop tier roles)",
     modelSlotHint:
       "Enter the request model; display names are optional. Connect directly to the official DeepSeek endpoint; aliases are handled automatically. Use routing or aggregation where compatible.",

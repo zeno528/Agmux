@@ -13,6 +13,7 @@ interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   destructive?: boolean;
+  warning?: boolean;
 }
 
 interface FeedbackContextValue {
@@ -34,6 +35,7 @@ interface ToastState {
 }
 
 interface ConfirmationState extends ConfirmOptions {
+  id: number;
   resolve: ((confirmed: boolean) => void) | null;
 }
 
@@ -64,6 +66,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const confirmActionRef = useRef<HTMLButtonElement>(null);
+  const nextConfirmationId = useRef(0);
   const nextToastId = useRef(0);
 
   const removeToast = useCallback((id: number) => {
@@ -82,7 +85,9 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, [closeToast]);
 
   const confirm = useCallback((options: ConfirmOptions) => {
-    return new Promise<boolean>((resolve) => setConfirmation({ ...options, resolve }));
+    // 连续确认可能合并到同一次渲染，新请求必须重新挂载才能播放进场。
+    const id = ++nextConfirmationId.current;
+    return new Promise<boolean>((resolve) => setConfirmation({ ...options, id, resolve }));
   }, []);
 
   const closeConfirmation = useCallback((confirmed: boolean) => {
@@ -161,6 +166,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </Toast.Provider>
 
       <AlertDialog.Root
+        key={confirmation?.id}
         open={Boolean(confirmation?.resolve)}
         onOpenChange={(open) => {
           if (!open) closeConfirmation(false);
@@ -171,18 +177,19 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
           <AlertDialog.Content
             className="app-dialog-panel app-dialog-content app-dialog-content--confirm"
             onOpenAutoFocus={(event) => {
-              if (!confirmActionRef.current) return;
+              if (confirmation?.warning || !confirmActionRef.current) return;
               event.preventDefault();
               confirmActionRef.current.focus({ preventScroll: true });
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              (document.activeElement as HTMLElement | null)?.blur();
-              setConfirmation((current) => current?.resolve ? current : null);
+              if (!confirmActionRef.current) (document.activeElement as HTMLElement | null)?.blur();
+              setConfirmation((current) => current?.id === confirmation?.id && !current?.resolve ? null : current);
             }}
           >
             <AlertDialog.Title className="app-dialog-title flex items-center gap-1.5">
               {confirmation?.destructive ? <Trash2 className="relative top-px shrink-0 text-[var(--danger)]" size={18} strokeWidth={2} aria-hidden="true" /> : null}
+              {confirmation?.warning && !confirmation.destructive ? <TriangleAlert className="shrink-0 text-(--warning)" size={18} strokeWidth={2} aria-hidden="true" /> : null}
               {confirmation?.title}
             </AlertDialog.Title>
             <AlertDialog.Description className="app-dialog-description">

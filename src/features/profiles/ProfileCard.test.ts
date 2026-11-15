@@ -1,14 +1,12 @@
 // @ts-expect-error 测试运行于 Node，但应用的浏览器 tsconfig 不加载 Node 类型。
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { createInstance, type TFunction } from "i18next";
+import { createInstance } from "i18next";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nextProvider } from "react-i18next";
 import { authQuotaErrorKind } from "../../app/authQuotaCache";
-import type { CodexProfileSummary } from "../../types";
-import { connectionGate, ProfileCardActions, ProfileCardContent } from "./ProfileCard";
-import { profileConnectionGate } from "../codex/CodexProfileCard";
+import { ProfileCardActions, ProfileCardContent } from "./ProfileCard";
 import zhProfiles from "../../i18n/locales/zh-CN/profiles";
 import enProfiles from "../../i18n/locales/en-US/profiles";
 
@@ -110,22 +108,12 @@ describe("ProfileCard 官网入口", () => {
     expect(source).not.toContain('<span className="apple-chip">{profile.reasoning_effort}</span>');
   });
 
-  it("仅在端点或 API Key 缺失时禁用连通测试，缺什么报什么", () => {
-    // 门控抽到共享 connectionGate（Codex 卡片、拖拽预览与 Claude 卡片共用同一判定）
-    const titles = { ready: "ready", missingEndpoint: "no-endpoint", missingKey: "no-key" };
-    expect(connectionGate(true, true, titles)).toEqual({ disabled: false, title: "ready" });
-    expect(connectionGate(false, true, titles)).toEqual({ disabled: true, title: "no-endpoint" });
-    expect(connectionGate(true, false, titles)).toEqual({ disabled: true, title: "no-key" });
-    expect(connectionGate(false, false, titles)).toEqual({ disabled: true, title: "no-endpoint" });
-    expect(source).not.toContain("missingApiCredentialsWarning");
-  });
-
   it("卡片只常驻使用与更多，菜单保留测试和删除门控", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     for (const onApply of [() => undefined, undefined]) {
       const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-        active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, connectionDisabled: false, connectionTitle: "Test", onApply,
+        active: false, busy: true, testing: false, allowInactiveDeleteWhileBusy: true, onApply,
       })));
       const buttons = html.match(/<button\b[^>]*>/g) ?? [];
       expect(buttons).toHaveLength(onApply ? 2 : 1);
@@ -138,7 +126,7 @@ describe("ProfileCard 官网入口", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: true, reapply: true, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
+      active: true, reapply: true, busy: false, testing: false, onApply: () => undefined,
     })));
     const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
     expect(button).toContain('aria-label="actions.switch"');
@@ -146,22 +134,11 @@ describe("ProfileCard 官网入口", () => {
     expect(button).not.toContain('disabled=""');
   });
 
-  it("订阅与普通供应商共用同一套连通性悬停文案", () => {
-    // 订阅不再单独定义一份「测试订阅认证连通性」，避免同一动作两套文案；
-    // 无 provider 的官方订阅永不禁用，第三方供应商才走缺什么报什么
-    const t = ((key: string) => key) as unknown as TFunction<"profiles">;
-    expect(profileConnectionGate({ provider: null } as CodexProfileSummary, t)).toEqual({ disabled: false, title: "connection.test" });
-    expect(profileConnectionGate({ provider: "gw", has_base_url: true, has_key: true } as CodexProfileSummary, t)).toEqual({ disabled: false, title: "connection.test" });
-    expect(profileConnectionGate({ provider: "gw", has_base_url: false, has_key: true } as CodexProfileSummary, t)).toEqual({ disabled: true, title: "connection.missingApiEndpointWarning" });
-    expect(profileConnectionGate({ provider: "gw", has_base_url: true, has_key: false } as CodexProfileSummary, t)).toEqual({ disabled: true, title: "connection.missingApiKeyWarning" });
-    expect(source).not.toContain("connection.testSubscription");
-  });
-
   it("卡片操作按钮的悬停和无障碍文案跟随当前操作，不继承卡片的编辑提示", () => {
     const i18n = createInstance();
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-      active: false, busy: false, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
+      active: false, busy: false, testing: false, onApply: () => undefined,
     })));
     const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
     expect(buttons[0]).toContain('title="actions.switch"');
@@ -174,7 +151,7 @@ describe("ProfileCard 官网入口", () => {
     void i18n.init({ lng: "en", resources: { en: { profiles: {} } }, initAsync: false });
     for (const [active, busy] of [[false, false], [true, false], [false, true]]) {
       const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(ProfileCardActions, {
-        active, busy, testing: false, connectionDisabled: false, connectionTitle: "Test", onApply: () => undefined,
+        active, busy, testing: false, onApply: () => undefined,
       })));
       const button = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
       expect(button).toContain('class="apple-action-button relative !h-[var(--icon-button-size)] !rounded-[var(--radius-control)] app-button--primary');
@@ -203,7 +180,7 @@ describe("ProfileCard 官网入口", () => {
     expect(hookSource).toContain("void fetchBalance(manual).finally(() => setBalanceRefreshing(false));");
     expect(authQuotaErrorKind("refresh_token 被服务端拒绝，该账号需要重新登录")).toBe("auth_expired"); // i18n-exempt: Backend error fixture.
     expect(authQuotaErrorKind("Network request timed out")).toBe("query_failed");
-    expect(hookSource).toContain('feedback.error(t(authInvalid ? "balance.authInvalidToast" : "balance.queryFailedToast"));');
+    expect(hookSource).toContain('feedback.error(t(kind === "auth_expired" ? "balance.authInvalidToast" : "balance.queryFailedToast"));');
     // 单飞去重把在途 promise 交回调用方：指示器跟随真正落地的查询，不留真空期
     expect(hookSource).toContain("if (balanceInFlightRef.current) return balanceInFlightRef.current;");
   });

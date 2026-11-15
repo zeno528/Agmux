@@ -13,12 +13,12 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { useFixedMenuPosition } from "../../components/useFixedMenuPosition";
 import { useMenuDismiss } from "../../components/useMenuDismiss";
 import { getCachedClaudeDesktopProfiles, loadClaudeDesktopProfiles, setClaudeDesktopProfilesCache } from "../../app/managementDataCache";
-import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
+import { connectionErrorMessage, connectionExceptionMessage, missingProviderFields } from "../profiles/connectionText";
 import { useFeedback } from "../../app/Feedback";
 import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
 import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
-import { ProfileCardActions, ProfileCardContent, connectionGate } from "../profiles/ProfileCard";
+import { ProfileCardActions, ProfileCardContent } from "../profiles/ProfileCard";
 import ClaudeDesktopProfileEdit from "./ClaudeDesktopProfileEdit";
 import ClaudeDesktopDiagnostics from "./ClaudeDesktopDiagnostics";
 import type { ClaudeDesktopAppStatus, ClaudeDesktopMode, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary, ProfileBalanceInfo, SyncFailure } from "../../types";
@@ -102,24 +102,19 @@ function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, act
 }) {
   const feedback = useFeedback();
   const { t: tProfiles } = useTranslation("profiles");
-  const { t: tClaude } = useTranslation("claude");
   const { t: tDesktop } = useTranslation("claudeDesktop");
   const supportsBalance = claudeBalanceQueryKinds.has(profile.kind ?? "");
   const balance = useProfileBalance({
     profileId: profile.id,
     showBalance: profile.show_balance,
     supportsBalance,
+    hasEndpoint: Boolean(profile.base_url?.trim()),
     hasCredential: profile.has_key,
     active,
     activationEpoch,
     coldStart,
     cachedBalance: balanceCache[profile.id],
     source: "claude-desktop",
-  });
-  const connection = connectionGate(Boolean(profile.base_url), profile.has_key, {
-    ready: tClaude("testConnection"),
-    missingEndpoint: tClaude("checkProviderFields"),
-    missingKey: tClaude("checkProviderFields"),
   });
   return (
     <SortableCard id={profile.id} active={active && Boolean(onApply)} onClick={onEdit} title={tProfiles("card.clickToEdit")} handleTitle={tProfiles("card.dragToReorder")}>
@@ -135,7 +130,7 @@ function ClaudeDesktopProfileCard({ profile, active, reapply, busy, testing, act
           selected: defaultMember,
           onSelect: onDefaultMember,
         } : undefined}
-        connectionDisabled={connection.disabled} connectionTitle={connection.title} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
+        onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
     </SortableCard>
   );
 }
@@ -347,6 +342,8 @@ export default function ClaudeDesktopProfilesView({ activeId, status, onChanged,
 
   const testProfile = async (profile: ClaudeDesktopProfileSummary) => {
     if (testingId) return;
+    const missing = missingProviderFields(Boolean(profile.base_url?.trim()), Boolean(profile.has_key), tProfiles);
+    if (missing) { feedback.warning(missing); return; }
     setTestingId(profile.id);
     try {
       const result = await api.claudeDesktopTestProfile(profile.id);

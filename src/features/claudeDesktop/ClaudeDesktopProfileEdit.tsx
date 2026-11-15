@@ -8,7 +8,7 @@ import EndpointField from "../../components/EndpointField";
 import { ProviderIdentityFields, ProviderModelFields, ProviderSecretField } from "../../components/ProviderFields";
 import { ProviderCreate, ProviderPresetControls } from "../../components/ProviderSetup";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
-import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
+import { confirmSaveWithoutKey, missingProviderFields, connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import { claudeBalanceQueryKinds, claudePresetByKind, claudePresets, presetConnectionName, type ClientPreset } from "../../presets";
 import type { ClaudeDesktopModelSlot, ClaudeDesktopProfileDetail, ClaudeDesktopProfileSummary } from "../../types";
 
@@ -118,7 +118,9 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
   }));
 
   const testConnection = async () => {
-    if (testing || !baseUrl.trim() || !apiKey.trim()) return;
+    if (testing) return;
+    const missing = missingProviderFields(Boolean(baseUrl.trim()), Boolean(apiKey.trim()), tProfiles);
+    if (missing) { feedback.warning(missing); return; }
     setTesting(true);
     try {
       const result = await api.claudeTestConnection(baseUrl.trim(), apiKey.trim());
@@ -135,6 +137,7 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
     if (saving || !name.trim() || (!create && !initialDetail)) return;
     setSaving(true);
     try {
+      if (!apiKey.trim() && !await confirmSaveWithoutKey(feedback, tProfiles)) return;
       await api.claudeDesktopSaveProfile({
         id: profile?.id,
         name: name.trim(),
@@ -202,7 +205,7 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
                 description: tProfiles("edit.descriptionLabel"), descriptionPlaceholder: tProfiles("edit.descriptionPlaceholder"),
               }}
             />
-            <label className="field-label mb-1.5 mt-4 block">{t("edit.baseUrl")}</label>
+            <label className="field-label mb-1.5 mt-4 block">{tProfiles("edit.requestUrlLabel")}</label>
             {presetEndpoints?.length ? (
               <EndpointField
                 value={baseUrl}
@@ -210,7 +213,7 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
                 endpoints={presetEndpoints}
                 onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }}
                 placeholder={tClaude("baseUrlPlaceholder")}
-                label={t("edit.baseUrl")}
+                label={tProfiles("edit.requestUrlLabel")}
               />
             ) : (
               <input className="app-input" placeholder={tClaude("baseUrlPlaceholder")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
@@ -221,7 +224,6 @@ function ClaudeDesktopEditor({ profile, create = false, initialDetail = null, on
               onToggle={() => setShowKey((visible) => !visible)}
               showLabel={tProfiles("edit.showApiKey")} hideLabel={tProfiles("edit.hideApiKey")}
               testLabel={tProfiles("edit.testConnection")}
-              testTitle={!apiKey.trim() || !baseUrl.trim() ? tProfiles("edit.checkProviderFields") : undefined}
               testing={testing} onTest={() => void testConnection()}
             />
             {supportsBalance ? <div className="mt-4 flex min-h-[var(--input-min-height)] items-center justify-between gap-4"><div className="min-w-0"><div className="setting-title">{tProfiles("edit.balanceUsage")}</div><div className="setting-description mt-0.5">{tProfiles("edit.balanceAutoRefresh")}</div></div><AppSwitch checked={showBalance} disabled={saving} label={tProfiles("edit.balanceUsage")} onCheckedChange={setShowBalance} /></div> : null}

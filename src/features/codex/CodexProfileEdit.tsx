@@ -2,7 +2,7 @@ import { ChevronLeft, CodeXml, Download, ExternalLink, FileBraces, Save, Setting
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
-import { connectionErrorMessage, connectionExceptionMessage, connectionFailureMessage } from "../profiles/connectionText";
+import { confirmSaveWithoutKey, missingProviderFields, connectionErrorMessage, connectionExceptionMessage, connectionFailureMessage } from "../profiles/connectionText";
 import { useFeedback } from "../../app/Feedback";
 import { AuthSourceIcon } from "../../components/AuthSourceIcon";
 import { AppSelect } from "../../components/AppSelect";
@@ -370,17 +370,18 @@ function CodexProfileEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configText]);
 
-  useEffect(() => {
-    if (!initialized.current) return;
-    const fields = readProviderFields(configText);
-    if (fields.found || !configText.trim()) {
+  const editConfigText = (value: string) => {
+    setConfigText(value);
+    // 表单生成的 TOML 不回填输入框，避免 trim 等规范化打断正在输入的值。
+    const fields = readProviderFields(value);
+    if (fields.found || !value.trim()) {
       if (fields.base_url !== baseUrl) setBaseUrl(fields.base_url);
       if (!fields.tokenMasked) {
         const key = /^<.*>$/.test(fields.experimental_bearer_token) ? "" : fields.experimental_bearer_token;
         if (key !== apiKey) setApiKey(key);
       }
     }
-  }, [configText]);
+  };
 
   useEffect(() => {
     if (create && configText !== liveConfigFragment) setConfigTouched(true);
@@ -465,8 +466,8 @@ function CodexProfileEditor({
 
   const testConnection = async () => {
     if (testing) return;
-    if (!baseUrl.trim()) { feedback.warning(t("edit.baseUrlRequired")); return; }
-    if (!apiKey.trim()) { feedback.warning(t("edit.apiKeyRequired")); return; }
+    const missing = missingProviderFields(Boolean(baseUrl.trim()), Boolean(apiKey.trim()), t);
+    if (missing) { feedback.warning(missing); return; }
     setTesting(true);
     try {
       const result = create ? await api.codexTestProviderConnection(baseUrl.trim(), apiKey.trim()) : await api.codexTestProfileConnection(profile!.id, baseUrl.trim(), apiKey.trim());
@@ -545,17 +546,10 @@ function CodexProfileEditor({
   };
 
   const notifySaved = (message: string) => {
-    const missingApiKey = !apiKey.trim();
-    const missingBaseUrl = !baseUrl.trim();
-    if (!isOfficial && showProviderFields && (missingApiKey || missingBaseUrl)) {
-      const fields = missingApiKey && missingBaseUrl
-        ? t("edit.apiKeyAndRequestUrl")
-        : missingApiKey
-          ? t("edit.apiKeyLabel")
-          : t("edit.requestUrlLabel");
+    if (!isOfficial && showProviderFields && !baseUrl.trim()) {
       feedback.warning(t("edit.savedWithMissingFields", {
         message: create ? t("edit.providerAdded") : t("edit.providerUpdated"),
-        fields,
+        fields: t("edit.requestUrlLabel"),
       }));
       return;
     }
@@ -567,6 +561,7 @@ function CodexProfileEditor({
     if (create && isCustom && !configText.trim()) { feedback.error(t("edit.saveConfigRequired")); return; }
     setSaving(true);
     try {
+      if (!isOfficial && showProviderFields && !apiKey.trim() && !await confirmSaveWithoutKey(feedback, t)) return;
       if (create && isCustom) {
         const created = await api.codexAddCustomProfile(name.trim() || t("edit.customProviderName"), description, configText, baseUrl.trim() || undefined, apiKey.trim() || undefined, adminUrl.trim() || undefined, liveCatalogPath && catalogText.trim() ? catalogText : null, authText.trim() ? authText : null);
         if (fetchedModels.length) await api.codexSetProfileFetchedModels(created.id, fetchedModels, fetchedModelEfforts.current, fetchedModelDefaults.current);
@@ -658,7 +653,6 @@ function CodexProfileEditor({
                   onToggle={() => setShowApiKey((visible) => !visible)}
                   showLabel={t("edit.showApiKey")} hideLabel={t("edit.hideApiKey")}
                   testLabel={t("edit.testConnection")}
-                  testTitle={!apiKey.trim() || !baseUrl.trim() ? t("edit.checkProviderFields") : undefined}
                   testing={testing} onTest={() => void testConnection()}
                   help={isOpenCode && create ? (
                     <button type="button" className="apple-inline-btn !h-5" onClick={() => void api.openUrl("https://opencode.ai/go?ref=APHY0DXATH").catch((error) => feedback.error(String(error)))}>
@@ -740,7 +734,7 @@ function CodexProfileEditor({
               </div>
             </div>
             <div className="editor-attach-group">
-              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={(value) => setConfigText(value)} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
+              <div className="flex flex-col">{activeTab === "config" ? <ConfigTextEditor ref={editorRef} value={configText} language="toml" placeholder={create ? t("edit.configPlaceholderCreate") : t("edit.configPlaceholderEdit")} onChange={editConfigText} onDiagnostics={setEditorDiagnostics} /> : activeTab === "auth" ? <ConfigTextEditor ref={editorRef} value={authText} language="json" readOnly={authPreviewOnly} placeholder={create && isOfficial && authPreviewReady ? t("edit.desktopAuthMissing") : t("edit.authPlaceholder")} onChange={setAuthText} onDiagnostics={setEditorDiagnostics} /> : <ConfigTextEditor ref={editorRef} value={catalogText} language="json" placeholder={t("edit.catalogPlaceholder")} onChange={(value) => setCatalogText(value)} onDiagnostics={setEditorDiagnostics} />}</div>
             </div>
           </div>}
         </div>

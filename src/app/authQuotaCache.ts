@@ -43,8 +43,13 @@ export function setAuthQuotaSuccess(cacheKey: string, balance: ProfileBalanceInf
   errorCache.delete(cacheKey);
 }
 
-export function authQuotaErrorKind(message: string): "auth_expired" | "query_failed" {
-  const normalized = message.toLowerCase();
+export function authQuotaErrorKind(message: string): "auth_missing" | "auth_expired" | "query_failed" {
+  const normalized = message.trim().toLowerCase();
+  if (normalized === "该 codex 配置尚未保存有效登录" // i18n-exempt: Match backend auth errors.
+    || normalized === "未检测到有效的 codex 登录" // i18n-exempt: Match backend auth errors.
+    || normalized === "oauth 配置未绑定订阅账号" // i18n-exempt: Match backend auth errors.
+    || normalized === "官方配置缺少登录方式" // i18n-exempt: Match backend auth errors.
+    || normalized === "官方配置缺少认证来源") return "auth_missing"; // i18n-exempt: Match backend auth errors.
   const refreshTokenRejected = normalized.includes("refresh_token")
     && ["拒绝", "invalid", "revok", "expired", "失效", "过期"].some((part) => normalized.includes(part)); // i18n-exempt: Match backend auth error text.
   const expired = normalized === "auth_expired"

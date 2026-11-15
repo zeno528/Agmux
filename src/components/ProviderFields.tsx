@@ -58,7 +58,7 @@ export function ProviderIdentityFields({ idPrefix, name, description, icon, icon
   );
 }
 
-export function ProviderSecretField({ label, placeholder, value, onChange, visible, onToggle, showLabel, hideLabel, testLabel, testTitle, testing, onTest, help }: {
+export function ProviderSecretField({ label, placeholder, value, onChange, visible, onToggle, showLabel, hideLabel, testLabel, testing, onTest, help }: {
   label: string;
   placeholder: string;
   value: string;
@@ -68,7 +68,6 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
   showLabel: string;
   hideLabel: string;
   testLabel: string;
-  testTitle?: string;
   testing: boolean;
   onTest: () => void;
   help?: ReactNode;
@@ -79,7 +78,7 @@ export function ProviderSecretField({ label, placeholder, value, onChange, visib
       {help}
       <button
         type="button" className="apple-inline-btn apple-inline-btn--quiet !h-5"
-        disabled={testing || Boolean(testTitle)} title={testTitle} onClick={onTest}
+        disabled={testing} onClick={onTest}
       >
         {testing ? <LoadingSpinner /> : <Wifi className="h-3 w-3" strokeWidth={2} aria-hidden="true" />}
         {testLabel}

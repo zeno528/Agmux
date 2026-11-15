@@ -70,24 +70,14 @@ export function ProfileCardContent({
         </div>
         {!hideModel || (supportsBalance && profile.show_balance) ? <div className="profile-card-meta muted mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
           {!hideModel ? <><span className="min-w-0 truncate">{profile.model ?? t("card.notSet")}</span>{profile.reasoning_effort ? <><span aria-hidden="true">·</span><span>{profile.reasoning_effort}</span></> : null}</> : null}
-          {supportsBalance && profile.show_balance ? <button type="button" className="apple-chip" title={balanceError ? t("balance.queryFailedRetry") : t("balance.clickToRefresh")} aria-label={isSubscriptionProfile ? t("balance.chatgptQuota") : balanceLabel} aria-busy={balanceRefreshing} onClick={(event) => { event.stopPropagation(); onRefreshBalance?.(true); }}>
+          {supportsBalance && profile.show_balance ? <button type="button" className="apple-chip" title={balanceError === t("balance.queryFailed") ? t("balance.queryFailedRetry") : balanceError || t("balance.clickToRefresh")} aria-label={isSubscriptionProfile ? t("balance.chatgptQuota") : balanceLabel} aria-busy={balanceRefreshing} onClick={(event) => { event.stopPropagation(); onRefreshBalance?.(true); }}>
             {balanceRefreshing ? <LoadingSpinner size="sm" /> : <Gauge className={`h-3 w-3${balanceError ? " chip-danger" : ""}`} strokeWidth={2} aria-hidden="true" />}
-            {balanceError ? <span>{t("balance.queryFailed")}</span> : primaryUsagePercent != null ? <><span>{primaryUsageText}</span><span className={balanceChipClass(balanceInfo?.usage_percent ?? null)}>{primaryUsagePercent}%</span>{balanceInfo?.usage_reset ? <span> {balanceInfo.usage_reset}</span> : null}{weeklyUsagePercent != null ? <><span> · {weeklyUsageText}</span><span className={balanceChipClass(balanceInfo?.weekly_usage_percent ?? null)}>{weeklyUsagePercent}%</span>{balanceInfo?.weekly_reset ? <span> {balanceInfo.weekly_reset}</span> : null}</> : null}</> : balanceInfo && !isUsageProvider ? <><span>{t("balance.balancePrefix")}</span>{balanceInfos.map((info, index) => <span key={info.currency || index} className="inline-flex items-center gap-1">{index > 0 ? <span aria-hidden="true">/</span> : null}<span className={balanceChipClass(null, info.total_balance)}>{info.total_balance.startsWith("-") ? "-" : ""}{info.currency === "USD" ? "$" : "¥"}{info.total_balance.replace(/^-/, "")}</span><span> {info.currency}</span></span>)}</> : <span>{`${balanceLabel} --`}</span>}
+            {balanceError ? <span>{balanceError}</span> : primaryUsagePercent != null ? <><span>{primaryUsageText}</span><span className={balanceChipClass(balanceInfo?.usage_percent ?? null)}>{primaryUsagePercent}%</span>{balanceInfo?.usage_reset ? <span> {balanceInfo.usage_reset}</span> : null}{weeklyUsagePercent != null ? <><span> · {weeklyUsageText}</span><span className={balanceChipClass(balanceInfo?.weekly_usage_percent ?? null)}>{weeklyUsagePercent}%</span>{balanceInfo?.weekly_reset ? <span> {balanceInfo.weekly_reset}</span> : null}</> : null}</> : balanceInfo && !isUsageProvider ? <><span>{t("balance.balancePrefix")}</span>{balanceInfos.map((info, index) => <span key={info.currency || index} className="inline-flex items-center gap-1">{index > 0 ? <span aria-hidden="true">/</span> : null}<span className={balanceChipClass(null, info.total_balance)}>{info.total_balance.startsWith("-") ? "-" : ""}{info.currency === "USD" ? "$" : "¥"}{info.total_balance.replace(/^-/, "")}</span><span> {info.currency}</span></span>)}</> : <span>{`${balanceLabel} --`}</span>}
           </button> : null}
         </div> : null}
       </div>
     </div>
   );
-}
-
-/** 卡片测试连通按钮的通用门控与悬停文案：缺什么报什么，其余一律 ready 文案。
- *  Codex 与 Claude 卡片共用同一判定，避免按钮行各写一套。 */
-export function connectionGate(hasBaseUrl: boolean, hasKey: boolean, titles: { ready: string; missingEndpoint: string; missingKey: string }) {
-  const disabled = !hasBaseUrl || !hasKey;
-  return {
-    disabled,
-    title: !disabled ? titles.ready : !hasBaseUrl ? titles.missingEndpoint : titles.missingKey,
-  };
 }
 
 interface ProfileCardActionsProps {
@@ -99,9 +89,6 @@ interface ProfileCardActionsProps {
   reapply?: boolean;
   modelControl?: ReactNode;
   firstMenuAction?: { label: string; selected?: boolean; onSelect: () => void };
-  /** 测试连通按钮是否禁用（调用方按各自领域判定：缺地址/缺密钥）。 */
-  connectionDisabled: boolean;
-  connectionTitle: string;
   /** 传入供应商 id 才渲染终端入口：目前只有 Claude Code 卡片要，Codex 不传即不出现。 */
   terminalProfileId?: string;
   onApply?: () => void;
@@ -110,7 +97,7 @@ interface ProfileCardActionsProps {
   onRemove?: () => void;
 }
 
-export function ProfileCardActions({ active, reapply = false, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, firstMenuAction, connectionDisabled, connectionTitle, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
+export function ProfileCardActions({ active, reapply = false, busy, testing, allowInactiveDeleteWhileBusy = false, modelControl, firstMenuAction, terminalProfileId, onApply, onDuplicate, onTest, onRemove }: ProfileCardActionsProps) {
   const applied = active && !reapply;
   const { t } = useTranslation("profiles");
   const switchLabel = t("actions.switch");
@@ -129,7 +116,7 @@ export function ProfileCardActions({ active, reapply = false, busy, testing, all
           <span className="flex items-center gap-2"><FirstMenuIcon className="h-4 w-4" strokeWidth={2} aria-hidden="true" />{firstMenuAction.label}</span>
         </button>
       ) : null}
-      <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={connectionDisabled || testing} title={connectionTitle} onClick={() => { setMenuOpen(false); onTest?.(); }}>
+      <button type="button" role="menuitem" className="app-select-option app-selection-state disabled:cursor-not-allowed disabled:opacity-40" disabled={testing} title={t("connection.test")} onClick={() => { setMenuOpen(false); onTest?.(); }}>
         <span className="flex items-center gap-2">{testing ? <LoadingSpinner size="sm" /> : <Wifi className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}{t("connection.test")}</span>
       </button>
       <button type="button" role="menuitem" className="app-select-option app-selection-state" onClick={() => { setMenuOpen(false); onDuplicate?.(); }}>

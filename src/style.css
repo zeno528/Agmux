@@ -2516,6 +2516,7 @@ pre.mcp-diff-line--add {
   transition: background-color 0.15s, color 0.15s;
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
   white-space: nowrap;
 }
 
@@ -3221,8 +3222,11 @@ button:focus-visible {
 }
 
 .app-toast-viewport {
+  --toast-line-height: 22.4px;
+  --toast-padding-block: 10px;
   position: fixed;
-  top: 2.5rem;
+  /* 与页面顶栏的控件中心对齐。1px 是工作区卡片的上边框。 */
+  top: calc(var(--window-chrome-height) + 1px + var(--toolbar-height) / 2 - var(--toast-line-height) / 2 - var(--toast-padding-block));
   left: 0;
   right: 0;
   z-index: 6000;
@@ -3254,13 +3258,13 @@ button:focus-visible {
   background: color-mix(in srgb, var(--panel-bg) 88%, white);
   box-shadow:
     0 0 0 1px var(--panel-ring),
-    0 3px 6px -4px rgb(0 0 0 / 0.12),
-    0 6px 16px 0 rgb(0 0 0 / 0.08),
-    0 9px 28px 8px rgb(0 0 0 / 0.05);
-  padding: 10px 12px;
+    0 3px 6px -4px rgb(0 0 0 / 0.06),
+    0 6px 16px 0 rgb(0 0 0 / 0.04),
+    0 9px 28px 8px rgb(0 0 0 / 0.025);
+  padding: var(--toast-padding-block) 12px;
   color: inherit;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: var(--toast-line-height);
   opacity: 1;
   transform: translateY(var(--toast-offset)) scale(var(--toast-scale));
   transform-origin: top center;
@@ -3590,21 +3594,21 @@ button:focus-visible {
   -moz-appearance: textfield;
 }
 
-/* 两端共用的压缩数值输入：固定宽度，数值与默认占位文字使用正常文字色；[type] 优先于 .app-input。 */
-.compact-token-input[type="number"] {
+/* 两端共用的压缩数值输入：固定宽度，数值与默认占位文字使用正常文字色。 */
+.app-input.compact-token-input {
   width: 4.5rem;
 }
 
-.compact-token-input[type="number"]:enabled:not([readonly]) {
+.app-input.compact-token-input:enabled:not([readonly]) {
   color: var(--text-primary);
 }
 
-.compact-token-input[type="number"]::placeholder {
+.app-input.compact-token-input::placeholder {
   color: inherit;
 }
 
 /* 启用但未聚焦时复用紧凑按钮的淡描边；聚焦时沿用 .app-input 的蓝色描边。 */
-.compact-token-input[type="number"].compact-token-input--on:enabled:not(:focus) {
+.app-input.compact-token-input.compact-token-input--on:enabled:not(:focus) {
   border-color: var(--panel-ring);
 }
 

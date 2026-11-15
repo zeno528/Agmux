@@ -124,9 +124,10 @@ describe("ProfileEdit 用量查询", () => {
     expect(enLocale).toContain('balanceAutoRefresh: "Shown on provider cards; refreshes when the window is active"');
   });
 
-  it("新建和编辑配置缺少密钥或 API 端点时只发合并通知并仍允许保存", () => {
+  it("新建和编辑配置缺少密钥时先确认，缺少 API 端点时保存后提示", () => {
     expect(source).toContain("const notifySaved = (message: string) => {");
-    expect(source).toContain("if (!isOfficial && showProviderFields && (missingApiKey || missingBaseUrl)) {");
+    expect(source.indexOf("await confirmSaveWithoutKey(feedback, t)")).toBeLessThan(source.indexOf("await api.codexAddCustomProfile("));
+    expect(source).toContain("if (!isOfficial && showProviderFields && !baseUrl.trim()) {");
     expect(source).toContain('feedback.warning(t("edit.savedWithMissingFields", {');
     expect(source).toContain('message: create ? t("edit.providerAdded") : t("edit.providerUpdated"),');
     expect(source).toContain('notifySaved(t("edit.customProviderAdded"));');

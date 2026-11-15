@@ -355,6 +355,13 @@ describe("settings.json 全文与表单同步", () => {
     expect(JSON.parse(configured)).toEqual({ env: { KEEP: "keep", CLAUDE_CODE_EFFORT_LEVEL: "max" } });
   });
 
+  it("移除自定义压缩窗口时保留自动压缩开关和其他配置", () => {
+    const raw = '{"autoCompactEnabled":true,"autoCompactWindow":500000,"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"200000","KEEP":"keep"}}';
+    const cleared = patchEnvValue(raw, "CLAUDE_CODE_AUTO_COMPACT_WINDOW", null, "autoCompactWindow");
+    expect(JSON.parse(cleared)).toEqual({ autoCompactEnabled: true, env: { KEEP: "keep" } });
+    expect(readAdvancedSettings(cleared).autoCompactWindow).toBe("");
+  });
+
   it("按官方优先级回显顶层自动压缩设置，切换和清空时移除冲突写法", () => {
     const raw = '{"autoCompactEnabled":false,"autoCompactWindow":500000,"hooks":{"Stop":[]},"env":{"KEEP":"keep"}}';
     expect(readAdvancedSettings(raw)).toMatchObject({ autoCompactDisabled: true, autoCompactWindow: "500000" });

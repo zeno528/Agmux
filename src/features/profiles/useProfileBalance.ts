@@ -4,6 +4,7 @@ import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { authQuotaErrorKind, getAuthQuotaError, getVisibleAuthQuota, setAuthQuotaFailure, setAuthQuotaSuccess } from "../../app/authQuotaCache";
 import type { ProfileBalanceInfo } from "../../types";
+import { missingProviderFields } from "./connectionText";
 
 const balanceInfoCache = new Map<string, ProfileBalanceInfo>();
 const balanceErrorCache = new Map<string, string>();
@@ -23,6 +24,7 @@ interface UseProfileBalanceOptions {
   profileId: string;
   showBalance: boolean;
   supportsBalance: boolean;
+  hasEndpoint: boolean;
   hasCredential: boolean;
   active: boolean;
   activationEpoch: number;
@@ -32,9 +34,10 @@ interface UseProfileBalanceOptions {
   source: "codex" | "claude" | "claude-desktop";
 }
 
-export function useProfileBalance({ profileId, showBalance, supportsBalance, hasCredential, active, activationEpoch, coldStart, cachedBalance, authQuotaKey, source }: UseProfileBalanceOptions) {
+export function useProfileBalance({ profileId, showBalance, supportsBalance, hasEndpoint, hasCredential, active, activationEpoch, coldStart, cachedBalance, authQuotaKey, source }: UseProfileBalanceOptions) {
   const feedback = useFeedback();
   const { t } = useTranslation("profiles");
+  const missing = missingProviderFields(hasEndpoint, hasCredential, t);
   const restoreCachedBalance = () => {
     const error = getCachedProfileBalanceError(profileId, authQuotaKey);
     const info = getCachedProfileBalance(profileId, cachedBalance ?? null, authQuotaKey);
@@ -56,8 +59,9 @@ export function useProfileBalance({ profileId, showBalance, supportsBalance, has
   const fetchBalance = async (manual = false): Promise<void> => {
     if (balanceInFlightRef.current) return balanceInFlightRef.current;
     if (!supportsBalance || !showBalance) return;
-    if (!hasCredential) {
-      invalidateBalance(t("balance.missingApiKey"));
+    if (missing) {
+      invalidateBalance(missing);
+      if (manual) feedback.warning(missing);
       return;
     }
     const request = (async () => {
@@ -78,8 +82,9 @@ export function useProfileBalance({ profileId, showBalance, supportsBalance, has
         const message = String(error);
         invalidateBalance(message);
         if (manual) {
-          const authInvalid = authQuotaErrorKind(message) === "auth_expired";
-          feedback.error(t(authInvalid ? "balance.authInvalidToast" : "balance.queryFailedToast"));
+          const kind = authQuotaErrorKind(message);
+          if (kind === "auth_missing") feedback.warning(t("balance.authMissing"));
+          else feedback.error(t(kind === "auth_expired" ? "balance.authInvalidToast" : "balance.queryFailedToast"));
         }
       } finally {
         balanceInFlightRef.current = null;
@@ -102,14 +107,17 @@ export function useProfileBalance({ profileId, showBalance, supportsBalance, has
     const timer = window.setTimeout(() => void fetchBalance(), coldStart ? (active ? 900 : 1200) : 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activationEpoch, profileId, showBalance, supportsBalance, authQuotaKey]);
+  }, [activationEpoch, profileId, showBalance, supportsBalance, authQuotaKey, hasEndpoint, hasCredential]);
 
   useEffect(() => {
     if (!active || !supportsBalance || !showBalance) return;
     const timer = window.setInterval(() => void fetchBalance(), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, profileId, showBalance, supportsBalance]);
+  }, [active, profileId, showBalance, supportsBalance, hasEndpoint, hasCredential]);
 
-  return { balanceInfos, balanceError, balanceRefreshing, refreshBalance };
+  const errorLabel = missing ?? (balanceError
+    ? t(authQuotaErrorKind(balanceError) === "auth_missing" ? "balance.authMissing" : "balance.queryFailed")
+    : "");
+  return { balanceInfos: missing ? [] : balanceInfos, balanceError: errorLabel, balanceRefreshing, refreshBalance };
 }

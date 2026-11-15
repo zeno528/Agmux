@@ -5,7 +5,7 @@ import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { createPortal } from "react-dom";
 import { api } from "../../api";
-import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
+import { connectionErrorMessage, connectionExceptionMessage, missingProviderFields } from "../profiles/connectionText";
 import { useFeedback } from "../../app/Feedback";
 import { getCachedClaudeProfiles, loadClaudeProfiles, setClaudeProfilesCache } from "../../app/managementDataCache";
 import { CliUpgradePill } from "../../components/CliUpgradePill";
@@ -13,7 +13,7 @@ import { SyncFailureIndicator } from "../../components/SyncFailureIndicator";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import SortableCard, { CardDragPreview } from "../../components/SortableCard";
 import { useCardDragReorder } from "../../components/useCardDragReorder";
-import { ProfileCardActions, ProfileCardContent, connectionGate } from "../profiles/ProfileCard";
+import { ProfileCardActions, ProfileCardContent } from "../profiles/ProfileCard";
 import { useProfileBalance } from "../profiles/useProfileBalance";
 import ProfileNameDialog from "../profiles/ProfileNameDialog";
 import { claudeBalanceQueryKinds } from "../../presets";
@@ -55,23 +55,18 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
 }) {
   const feedback = useFeedback();
   const { t } = useTranslation("profiles");
-  const { t: tClaude } = useTranslation("claude");
   const supportsBalance = claudeBalanceQueryKinds.has(profile.kind ?? "");
   const balance = useProfileBalance({
     profileId: profile.id,
     showBalance: profile.show_balance,
     supportsBalance,
+    hasEndpoint: Boolean(profile.base_url?.trim()),
     hasCredential: Boolean(profile.has_token),
     active,
     activationEpoch,
     coldStart,
     cachedBalance: balanceCache[profile.id],
     source: "claude",
-  });
-  const connection = connectionGate(Boolean(profile.base_url), profile.has_token, {
-    ready: tClaude("testConnection"),
-    missingEndpoint: tClaude("checkProviderFields"),
-    missingKey: tClaude("checkProviderFields"),
   });
   return (
     <SortableCard id={profile.id} active={active} onClick={onEdit} title={t("card.clickToEdit")} handleTitle={t("card.dragToReorder")}>
@@ -101,7 +96,7 @@ function ClaudeProfileCard({ profile, active, busy, testing, activationEpoch, co
               adminUrl: detail.admin_url, extraEnv: detail.extra_env, rawSettings, icon: detail.icon, showBalance: detail.show_balance });
             await onChanged();
           }} />
-      } active={active} busy={busy} testing={testing} connectionDisabled={connection.disabled} connectionTitle={connection.title} terminalProfileId={profile.id} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
+      } active={active} busy={busy} testing={testing} terminalProfileId={profile.id} onApply={onApply} onDuplicate={onDuplicate} onTest={onTest} onRemove={onRemove} />
     </SortableCard>
   );
 }
@@ -246,6 +241,8 @@ export default function ClaudeProfilesView({ activeId, onChanged, activationEpoc
 
   const testProfile = async (profile: ClaudeProfileSummary) => {
     if (testingId) return;
+    const missing = missingProviderFields(Boolean(profile.base_url?.trim()), Boolean(profile.has_token), tProfiles);
+    if (missing) { feedback.warning(missing); return; }
     setTestingId(profile.id);
     try {
       const result = await api.claudeTestProfile(profile.id);

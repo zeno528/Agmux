@@ -116,7 +116,6 @@ export default {
     emptyHint: "添加供应商以开始配置。",
   },
   edit: {
-    baseUrl: "API 地址",
     modelSlots: "模型映射",
     modelSlotHint:
       "只填请求模型，显示名可选。DeepSeek 官方接口可直连，别名自动处理。其他接口按兼容性选择路由或聚合。",

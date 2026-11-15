@@ -1,6 +1,22 @@
+import type { useFeedback } from "../../app/Feedback";
 import type { TFunction } from "i18next";
 import type { CodexProfileConnectionResult } from "../../types";
 import { authQuotaErrorKind } from "../../app/authQuotaCache";
+
+export function missingProviderFields(hasEndpoint: boolean, hasKey: boolean, t: TFunction<"profiles">) {
+  if (!hasEndpoint) return t(hasKey ? "connection.missingApiEndpointWarning" : "connection.missingApiFields", { endpoint: t("edit.requestUrlLabel") });
+  if (!hasKey) return t("connection.missingApiKeyWarning");
+  return null;
+}
+
+export function confirmSaveWithoutKey(feedback: Pick<ReturnType<typeof useFeedback>, "confirm">, t: TFunction<"profiles">) {
+  return feedback.confirm({
+    title: t("edit.saveWithoutKeyTitle"),
+    description: t("edit.saveWithoutKeyDescription"),
+    confirmText: t("edit.saveWithoutKeyConfirm"),
+    warning: true,
+  });
+}
 
 const httpErrorKinds = {
   400: "badRequest", 401: "unauthorized", 402: "billing", 403: "forbidden",
@@ -32,7 +48,9 @@ export function connectionExceptionMessage(error: unknown, t: TFunction<"profile
 
 /** Codex 登录失效提示也必须保留本次响应的真实状态码。 */
 export function connectionFailureMessage(error: string, t: TFunction<"profiles">, status: number | null = null) {
-  const expired = authQuotaErrorKind(error) === "auth_expired";
+  const kind = authQuotaErrorKind(error);
+  if (kind === "auth_missing") return t("balance.authMissing");
+  const expired = kind === "auth_expired";
   const message = expired ? t("balance.authInvalidToast") : error;
   const prefix = status != null && !message.startsWith(`HTTP ${status}:`) ? `HTTP ${status}: ` : "";
   return t(expired ? "connection.testFailed" : "connection.failed", { error: `${prefix}${message}` });

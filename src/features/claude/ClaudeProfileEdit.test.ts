@@ -11,8 +11,8 @@ describe("Claude 新建配置隔离", () => {
     expect(openEdit).toMatch(/try \{\s*const detail = await api.claudeGetProfile\(profile.id\);\s*setEditDetail\(detail\);\s*setEditingProfile\(profile\);\s*\} catch \(error\) \{\s*feedback.error/);
     expect(editSource).toContain("(!create && !initialDetail)");
   });
-  it("新建从空 settings 开始，不读取当前 live 配置", () => {
-    expect(editSource).toMatch(/const initialEnvText = useMemo\(\s*\(\) => create \? patchEnvFields\("\{\}"/);
+  it("新建默认隐藏 AI 署名，不读取当前 live 配置", () => {
+    expect(editSource).toMatch(/const initialEnvText = useMemo\(\s*\(\) => create \? patchEnvFields\(patchGitAttribution\("\{\}", true\)/);
     expect(editSource).not.toContain("initialSettingsText");
     expect(viewSource).not.toContain("claudeLiveSettings");
   });
@@ -29,7 +29,6 @@ describe("Claude 新建配置隔离", () => {
   });
 
   it("高级控制使用 Claude Code 官方 env 字段并复用编辑器控制样式", () => {
-    expect(editSource).toContain("DISABLE_AUTO_COMPACT");
     expect(editSource).toContain("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
     expect(editSource).not.toContain("CLAUDE_CODE_ATTRIBUTION_HEADER");
     expect(editSource).toContain("patchGitAttribution");
@@ -39,8 +38,11 @@ describe("Claude 新建配置隔离", () => {
     expect(editSource).toContain("editor-ghost-group");
   });
 
-  it("自动压缩开启的唯一高亮是阈值药丸描边（数值保持正常文字色），标签文字不分块转 accent", () => {
-    expect(editSource).toContain('<label className="editor-ghost" title={t("advanced.autoCompactTitle")}>');
-    expect(editSource).toContain("compact-token-input ${autoCompactDisabled ? \"\" : \"compact-token-input--on\"} h-6 text-center");
+  it("压缩窗口草稿越界阻断保存，未提交草稿随保存落盘", () => {
+    expect(editSource).toContain("|| (Number(compactWindowDraft) >= 100000 && Number(compactWindowDraft) <= 1000000)");
+    expect(editSource).toContain("if (showCompactWindow && !compactWindowValid) {");
+    expect(editSource).toContain('feedback.warning(t("advanced.compactWindowRange"));');
+    expect(editSource).toContain('patchEnvValue(envText, "CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindowDraft, "autoCompactWindow")');
+    expect(editSource).toContain("onBlur={commitCompactWindow}");
   });
 });

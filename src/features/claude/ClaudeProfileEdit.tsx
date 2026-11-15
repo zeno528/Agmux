@@ -15,7 +15,7 @@ import {
   presetConnectionName, type ClientPreset, type PresetConnection,
 } from "../../presets";
 import ProfileIconEdit from "../profiles/ProfileIconEdit";
-import { connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
+import { confirmSaveWithoutKey, missingProviderFields, connectionErrorMessage, connectionExceptionMessage } from "../profiles/connectionText";
 import ClaudeCommonTemplateEdit from "./ClaudeCommonTemplateEdit";
 import { extractClaudeCommonSettings, fillClaudeCommonSettings, patchBuiltinWebTools, patchBypassPermissions } from "./profileEnvText";
 import { buildSettingsText, formatJsonText, hasOneMillionModelSuffix, patchEnvFields, patchEnvValue, patchGitAttribution, patchModelDisplayNames, patchModelMappings, readAdvancedSettings, readEnvFields, readEnvValue, readGitAttributionDisabled, readModelDisplayNames, readModelMappings, setOneMillionModelSuffix, splitEnvExtras, type ClaudeModelDisplayKey, type ClaudeModelDisplayNames, type ClaudeModelMappingKey, type ClaudeModelMappings } from "./profileEnvText";
@@ -63,9 +63,9 @@ function ClaudeProfileEditor({
   const { t } = useTranslation("claude");
   // 图标编辑复用 Codex 的 ProfileIconEdit 页（文案也直接用 profiles 资源，不另造 key）
   const { t: tProfiles } = useTranslation("profiles");
-  // 新建从干净 settings.json 开始；只有编辑已有配置才回显已保存全文。
+  // 新建默认隐藏 AI 署名；只有编辑已有配置才回显已保存全文。
   const initialEnvText = useMemo(
-    () => create ? patchEnvFields("{}", { baseUrl: initialPreset!.base_url, authToken: "", model: "" }, initialPreset!.kind) : buildSettingsText({
+    () => create ? patchEnvFields(patchGitAttribution("{}", true), { baseUrl: initialPreset!.base_url, authToken: "", model: "" }, initialPreset!.kind) : buildSettingsText({
       raw_settings: initialDetail?.raw_settings ?? null,
       base_url: initialDetail?.base_url ?? null,
       auth_token: initialDetail?.auth_token ?? null,
@@ -106,7 +106,10 @@ function ClaudeProfileEditor({
   const [editorDiagnostics, setEditorDiagnostics] = useState({ count: 0, firstLine: null as number | null });
   const editorRef = useRef<ConfigTextEditorHandle>(null);
   const envDirty = envText !== initialEnvText;
+  const [editingCompactWindow, setEditingCompactWindow] = useState(false);
+  const [compactWindowDraft, setCompactWindowDraft] = useState<string | null>(null);
   const { autoCompactDisabled, autoCompactWindow, effortLevel, autoMemoryEnabled, bashEditDiffEnabled, bypassPermissionsEnabled, webToolsDisabled } = readAdvancedSettings(envText);
+  const showCompactWindow = !autoCompactDisabled && (editingCompactWindow || Boolean(autoCompactWindow));
   const gitAttributionHidden = readGitAttributionDisabled(envText);
   const agentTeamsEnabled = readEnvValue(envText, "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") === "1";
   useEffect(() => () => { templateRequest.current += 1; }, []);
@@ -200,8 +203,7 @@ function ClaudeProfileEditor({
     setFetchedModels([]);
   };
 
-  // 表单三键 ↔ env 编辑器双向同步（与 Codex 地址/密钥/model 的 effect 对同一模式）：
-  // 表单改动 patch 进 env 文本；编辑器改动读回表单。同值 patch 幂等，不会成环。
+  // 表单改动写入 env；只有用户直接编辑 JSON 时才回填表单。
   useEffect(() => {
     setEnvText((current) => {
       const next = patchEnvFields(current, { baseUrl, authToken, model }, kind);
@@ -210,28 +212,22 @@ function ClaudeProfileEditor({
       return named === current ? current : named;
     });
   }, [baseUrl, authToken, model, modelMappings, modelDisplayNames, kind]);
-  useEffect(() => {
-    const fields = readEnvFields(envText, kind);
+  const editEnvText = (value: string) => {
+    setEnvText(value);
+    const fields = readEnvFields(value, kind);
     if (!fields) return;
     if (fields.baseUrl !== baseUrl) setBaseUrl(fields.baseUrl);
     if (fields.authToken !== authToken) setAuthToken(fields.authToken);
-    const nextMappings = readModelMappings(envText);
+    const nextMappings = readModelMappings(value);
     if (!sameModelMappings(nextMappings, modelMappings)) setModelMappings(nextMappings);
-    const nextDisplayNames = readModelDisplayNames(envText);
+    const nextDisplayNames = readModelDisplayNames(value);
     if (!sameModelDisplayNames(nextDisplayNames, modelDisplayNames)) setModelDisplayNames(nextDisplayNames);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envText]);
+  };
 
   // 获取模型与测试连通复用 GET /models，不发送推理请求。
   const fetchModelList = async (): Promise<string[]> => {
-    if (!baseUrl.trim()) {
-      feedback.warning(t("baseUrlRequired"));
-      return [];
-    }
-    if (!authToken.trim()) {
-      feedback.warning(t("tokenRequired"));
-      return [];
-    }
+    const missing = missingProviderFields(Boolean(baseUrl.trim()), Boolean(authToken.trim()), tProfiles);
+    if (missing) { feedback.warning(missing); return []; }
     setFetchingModels(true);
     const request = ++modelListRequest.current;
     try {
@@ -250,7 +246,9 @@ function ClaudeProfileEditor({
   };
 
   const testConnection = async () => {
-    if (testing || !baseUrl.trim() || !authToken.trim()) return;
+    if (testing) return;
+    const missing = missingProviderFields(Boolean(baseUrl.trim()), Boolean(authToken.trim()), tProfiles);
+    if (missing) { feedback.warning(missing); return; }
     setTesting(true);
     try {
       const result = await api.claudeTestConnection(baseUrl.trim(), authToken.trim());
@@ -282,6 +280,15 @@ function ClaudeProfileEditor({
     setEnvText(next);
   };
 
+  const compactWindowValid = compactWindowDraft === null || compactWindowDraft === ""
+    || (Number(compactWindowDraft) >= 100000 && Number(compactWindowDraft) <= 1000000);
+
+  const commitCompactWindow = () => {
+    if (compactWindowDraft === null || !compactWindowValid) return;
+    updateEnvValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindowDraft, "autoCompactWindow");
+    setCompactWindowDraft(null);
+  };
+
   const toggleGitAttribution = (enabled: boolean) => {
     const next = patchGitAttribution(envText, enabled);
     if (enabled) editorRef.current?.revealField(next, "commit");
@@ -307,7 +314,14 @@ function ClaudeProfileEditor({
   const save = async () => {
     if (saving || fillingTemplate || !name.trim() || (!create && !initialDetail)) return;
     // 非法 JSON 不落库：托管键以外的内容不会被静默丢弃
-    const settingsText = patchEnvFields(envText, { baseUrl, authToken, model }, kind);
+    if (showCompactWindow && !compactWindowValid) {
+      feedback.warning(t("advanced.compactWindowRange"));
+      return;
+    }
+    const settings = showCompactWindow && compactWindowDraft !== null
+      ? patchEnvValue(envText, "CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindowDraft, "autoCompactWindow")
+      : envText;
+    const settingsText = patchEnvFields(settings, { baseUrl, authToken, model }, kind);
     const extras = splitEnvExtras(settingsText);
     if (extras === undefined) {
       feedback.error(t("envInvalid"));
@@ -315,6 +329,7 @@ function ClaudeProfileEditor({
     }
     setSaving(true);
     try {
+      if (!accountLogin && !authToken.trim() && !await confirmSaveWithoutKey(feedback, tProfiles)) return;
       await api.claudeSaveProfile({
         id: profile?.id,
         name: name.trim(),
@@ -398,7 +413,7 @@ function ClaudeProfileEditor({
               <Webhook className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden="true" />
               <span className="shrink-0 font-medium text-(--text-secondary)">{t("protocolAnthropic")}</span>
             </div>
-            <label className="field-label mb-1.5 mt-4 block">{t("baseUrlLabel")}</label>
+            <label className="field-label mb-1.5 mt-4 block">{tProfiles("edit.requestUrlLabel")}</label>
             {presetEndpoints ? (
               <EndpointField
                 value={baseUrl}
@@ -406,7 +421,7 @@ function ClaudeProfileEditor({
                 endpoints={presetEndpoints}
                 onPick={(endpoint) => { if (endpoint.admin_url) setAdminUrl(endpoint.admin_url); }}
                 placeholder={t("baseUrlPlaceholder")}
-                label={t("baseUrlLabel")}
+                label={tProfiles("edit.requestUrlLabel")}
               />
             ) : (
               <input className="app-input" placeholder={t("baseUrlPlaceholder")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
@@ -417,7 +432,6 @@ function ClaudeProfileEditor({
               onToggle={() => setShowToken((visible) => !visible)}
               showLabel={tProfiles("edit.showApiKey")} hideLabel={tProfiles("edit.hideApiKey")}
               testLabel={tProfiles("edit.testConnection")}
-              testTitle={!authToken.trim() || !baseUrl.trim() ? tProfiles("edit.checkProviderFields") : undefined}
               testing={testing} onTest={() => void testConnection()}
             />
             </> : null}
@@ -485,16 +499,23 @@ function ClaudeProfileEditor({
               </div>
               <div className="editor-attach-bar flex-nowrap! items-start!">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                  <div className="editor-ghost-group pl-1">
-                    <label className="editor-ghost" title={t("advanced.autoCompactTitle")}>
-                      <input type="checkbox" checked={!autoCompactDisabled} onChange={(event) => updateEnvValue("DISABLE_AUTO_COMPACT", event.target.checked ? null : "1", "autoCompactEnabled")} />
-                      <span className="whitespace-nowrap font-medium">{t("advanced.autoCompactLabel")}</span>
+                  <div className="editor-ghost-group">
+                    <label className={`editor-ghost ${autoCompactDisabled ? "opacity-40" : ""}`} title={t(autoCompactDisabled ? "advanced.compactWindowDisabled" : "advanced.compactThresholdTitle")}>
+                      <input type="checkbox" checked={showCompactWindow} disabled={autoCompactDisabled} onChange={(event) => {
+                        const checked = event.target.checked;
+                        setEditingCompactWindow(checked);
+                        if (!checked) {
+                          setCompactWindowDraft(null);
+                          updateEnvValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW", null, "autoCompactWindow");
+                        }
+                      }} />
+                      <span className="font-medium">{t("advanced.compactThresholdLabel")}</span>
                     </label>
-                    <span className="editor-ghost-group__separator" aria-hidden="true" />
-                    <label className={`editor-ghost ${autoCompactDisabled ? "opacity-40 pointer-events-none" : ""}`} title={t("advanced.compactThresholdTitle")}>
-                      <span className="whitespace-nowrap">{t("advanced.compactThresholdLabel")}</span>
-                      <input className={`app-input app-input--compact compact-token-input ${autoCompactDisabled ? "" : "compact-token-input--on"} h-6 text-center`} type="number" min={100000} max={1000000} step={100000} inputMode="numeric" value={autoCompactWindow} placeholder={t("advanced.compactWindowPlaceholder")} disabled={autoCompactDisabled} onChange={(event) => updateEnvValue("CLAUDE_CODE_AUTO_COMPACT_WINDOW", event.target.value, "autoCompactWindow")} />
-                    </label>
+                    {showCompactWindow && (
+                      <input className="app-input app-input--compact compact-token-input compact-token-input--on h-6 text-center" type="text" inputMode="numeric" maxLength={7} aria-label={t("advanced.compactThresholdLabel")} value={compactWindowDraft ?? autoCompactWindow} placeholder={t("advanced.compactWindowPlaceholder")} title={t("advanced.compactThresholdTitle")} onChange={(event) => {
+                        setCompactWindowDraft(event.target.value.replace(/[^0-9]/g, ""));
+                      }} onBlur={commitCompactWindow} />
+                    )}
                   </div>
                   <label className="editor-ghost" title={t("advanced.gitAttributionTitle")}>
                     <input type="checkbox" checked={gitAttributionHidden} onChange={(event) => toggleGitAttribution(event.target.checked)} />
@@ -574,7 +595,7 @@ function ClaudeProfileEditor({
             </div>
             <div className="editor-attach-group">
               <div className="flex flex-col">
-                <ConfigTextEditor ref={editorRef} value={envText} language="json" placeholder={t("envPlaceholder")} onChange={setEnvText} onDiagnostics={setEditorDiagnostics} />
+                <ConfigTextEditor ref={editorRef} value={envText} language="json" placeholder={t("envPlaceholder")} onChange={editEnvText} onDiagnostics={setEditorDiagnostics} />
               </div>
             </div>
           </div>
