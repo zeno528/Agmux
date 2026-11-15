@@ -19,15 +19,16 @@ export default {
     sonnet: "Sonnet",
     haiku: "Haiku",
     subagent: "Subagent",
-    customOption: "Custom",
+    customOption: "Custom model",
   },
   // Wording follows the official env-vars / model-config / settings-reference docs
   modelMappingHints: {
     current: "Main model for the session; after switching providers, use /model in the current terminal to select the new model",
     subagent: "Default model for subagents (Task, agent teams); a subagent can override it with its own model field",
-    customOption: "Adds one custom entry at the bottom of the /model picker without replacing built-in aliases",
+    customOption: "Adds one custom model option to the /model picker",
   },
   mappingTitle: "Model mapping",
+  advancedMappingTitle: "Advanced model mappings",
   mappingDescription: "Request models are used for actual calls; selecting 1M enables a million-token context window, requiring support from both the model and provider",
   quickSet: "Quick set",
   modelRoleLabel: "Model role",

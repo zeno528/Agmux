@@ -1,5 +1,6 @@
 import { Download, Eye, EyeOff, Pencil, Trash2, Wand2, Wifi } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { AppDisclosure } from "./AppDisclosure";
 import { AppSelect } from "./AppSelect";
 import { AppTooltip } from "./AppTooltip";
 import { LoadingSpinner } from "./LoadingSpinner";
@@ -104,6 +105,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
   onApplyModel?: (value: string) => void;
   mappingFields: Array<{
     key: string;
+    advanced?: boolean;
     label: string;
     value: string;
     onChange: (value: string) => void;
@@ -125,6 +127,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
     fetchFirst: string;
     quickSet?: string;
     mappingTitle?: string;
+    advancedMappingTitle?: string;
     mappingDescription?: string;
     role?: string;
     displayName?: string;
@@ -146,6 +149,48 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
     if (!optionsByLabel.has(label)) optionsByLabel.set(label, item);
   }
   const modelOptions = [...optionsByLabel].map(([label, value]) => ({ label, value }));
+  const advancedFields = mappingFields.filter((field) => field.advanced);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const renderMappingField = (field: (typeof mappingFields)[number]) => {
+    const empty = !displayModelLabel(field.value).trim();
+    const selected = modelOptions.find((option) => option.label === displayModelLabel(field.value.trim()))?.value ?? null;
+    return (
+      <div key={field.key} className="grid grid-cols-1 gap-2 border-t border-(--panel-divider) px-3 py-2 sm:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem_max-content_2rem] sm:items-center">
+        <div className="flex min-w-0 items-center">
+          <span className="inline-flex min-h-8 w-full min-w-0 items-center rounded-lg bg-(--tile-bg) px-3 text-sm font-medium text-(--text-secondary)" title={field.label}>{field.label}</span>
+        </div>
+        <input
+          className="app-input app-input--compact min-w-0"
+          aria-label={`${field.label} ${labels.displayName ?? ""}`}
+          placeholder={field.displayPlaceholder ?? ""}
+          value={field.displayValue ?? ""}
+          disabled={field.displayDisabled ?? !field.onDisplayChange}
+          onChange={(event) => field.onDisplayChange?.(event.target.value)}
+        />
+        <input className="app-input app-input--compact min-w-0" aria-label={`${field.label} ${labels.requestModel ?? labels.model}`} title={field.hint} value={displayModelLabel(field.value)} onChange={(event) => field.onChange(event.target.value)} />
+        <AppSelect
+          value={selected}
+          options={modelOptions}
+          onChange={field.onChange}
+          placeholder={models.length ? labels.select : labels.fetchFirst}
+          disabled={disabled || !models.length}
+          iconOnly
+          searchable
+        />
+        {field.onToggleOneMillion && labels.oneMillion ? (
+          <label className={`editor-ghost !h-8 shrink-0 !px-2 justify-self-center ${!empty && field.oneMillion ? "on" : ""}`} title={labels.oneMillionTitle} aria-disabled={empty}>
+            <input type="checkbox" checked={!empty && (field.oneMillion ?? false)} disabled={empty} aria-label={`${field.label} ${labels.oneMillion}`} onChange={(event) => field.onToggleOneMillion?.(event.target.checked)} />
+            <span className="meta-xs font-medium">{labels.oneMillion}</span>
+          </label>
+        ) : null}
+        {labels.clear ? (
+          <button type="button" className="apple-icon-button shrink-0 text-[var(--danger)]/60 enabled:hover:bg-(--danger)/10 enabled:hover:text-[var(--danger)] disabled:text-(--text-secondary) disabled:opacity-40" disabled={empty && !field.displayValue?.trim()} aria-label={`${labels.clear} ${field.label}`} onClick={() => { field.onChange(""); field.onDisplayChange?.(""); }}>
+            <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -192,46 +237,17 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
           <span className="meta-xs muted whitespace-nowrap text-center font-medium">{labels.oneMillionColumn ?? labels.oneMillion}</span>
           <span aria-hidden="true" />
         </div>
-        {mappingFields.map((field) => {
-          const empty = !displayModelLabel(field.value).trim();
-          const selected = modelOptions.find((option) => option.label === displayModelLabel(field.value.trim()))?.value ?? null;
-          return (
-            <div key={field.key} className="grid grid-cols-1 gap-2 border-t border-(--panel-divider) px-3 py-2 sm:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem_max-content_2rem] sm:items-center">
-              <div className="flex min-w-0 items-center">
-                <span className="inline-flex min-h-8 w-full min-w-0 items-center rounded-lg bg-(--tile-bg) px-3 text-sm font-medium text-(--text-secondary)" title={field.label}>{field.label}</span>
-              </div>
-              <input
-                className="app-input app-input--compact min-w-0"
-                aria-label={`${field.label} ${labels.displayName ?? ""}`}
-                placeholder={field.displayPlaceholder ?? ""}
-                value={field.displayValue ?? ""}
-                disabled={field.displayDisabled ?? !field.onDisplayChange}
-                onChange={(event) => field.onDisplayChange?.(event.target.value)}
-              />
-              <input className="app-input app-input--compact min-w-0" aria-label={`${field.label} ${labels.requestModel ?? labels.model}`} title={field.hint} value={displayModelLabel(field.value)} onChange={(event) => field.onChange(event.target.value)} />
-              <AppSelect
-                value={selected}
-                options={modelOptions}
-                onChange={field.onChange}
-                placeholder={models.length ? labels.select : labels.fetchFirst}
-                disabled={disabled || !models.length}
-                iconOnly
-                searchable
-              />
-              {field.onToggleOneMillion && labels.oneMillion ? (
-                <label className={`editor-ghost !h-8 shrink-0 !px-2 justify-self-center ${!empty && field.oneMillion ? "on" : ""}`} title={labels.oneMillionTitle} aria-disabled={empty}>
-                  <input type="checkbox" checked={!empty && (field.oneMillion ?? false)} disabled={empty} aria-label={`${field.label} ${labels.oneMillion}`} onChange={(event) => field.onToggleOneMillion?.(event.target.checked)} />
-                  <span className="meta-xs font-medium">{labels.oneMillion}</span>
-                </label>
-              ) : null}
-              {labels.clear ? (
-                <button type="button" className="apple-icon-button shrink-0 text-[var(--danger)]/60 enabled:hover:bg-(--danger)/10 enabled:hover:text-[var(--danger)] disabled:text-(--text-secondary) disabled:opacity-40" disabled={empty && !field.displayValue?.trim()} aria-label={`${labels.clear} ${field.label}`} onClick={() => { field.onChange(""); field.onDisplayChange?.(""); }}>
-                  <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
+        {mappingFields.filter((field) => !field.advanced).map(renderMappingField)}
+        {advancedFields.length > 0 && labels.advancedMappingTitle ? (
+          <AppDisclosure
+            className="provider-model-disclosure border-t border-(--panel-divider)"
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            summary={<span className="meta-xs muted font-medium">{labels.advancedMappingTitle}</span>}
+          >
+            {advancedFields.map(renderMappingField)}
+          </AppDisclosure>
+        ) : null}
       </div>
     </div>
   );

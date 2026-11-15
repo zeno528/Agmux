@@ -157,13 +157,11 @@ function ClaudeProfileEditor({
     }
   };
   const modelMappingLabels = [
-    ["ANTHROPIC_MODEL", "current"],
     ["ANTHROPIC_DEFAULT_FABLE_MODEL", "fable"],
     ["ANTHROPIC_DEFAULT_OPUS_MODEL", "opus"],
     ["ANTHROPIC_DEFAULT_SONNET_MODEL", "sonnet"],
     ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "haiku"],
     ["CLAUDE_CODE_SUBAGENT_MODEL", "subagent"],
-    ["ANTHROPIC_CUSTOM_MODEL_OPTION", "customOption"],
   ] as const;
   const applyModelToMappings = (value: string) => {
     const selected = value.trim();
@@ -174,12 +172,18 @@ function ClaudeProfileEditor({
       return next;
     });
   };
-  const modelMappingFields = modelMappingLabels.map(([key, label]) => {
+  const modelMappingFields = [
+    ...modelMappingLabels,
+    ["ANTHROPIC_MODEL", "current"],
+    ["ANTHROPIC_CUSTOM_MODEL_OPTION", "customOption"],
+  ] as const;
+  const modelMappingRows = modelMappingFields.map(([key, label]) => {
     const displayKey = modelDisplayKeyByModelKey[key];
     // 悬停提示 = 环境变量名 + 作用简述（只有主会话/新会话/子代理/自定义有简述，其余只给变量名）
     const purpose = t(`modelMappingHints.${label}`, { defaultValue: "" });
     return {
       key,
+      advanced: label === "current" || label === "customOption",
       label: t(`modelMappings.${label}`),
       value: modelMappings[key],
       hint: purpose ? `${key} — ${purpose}` : key,
@@ -452,7 +456,7 @@ function ClaudeProfileEditor({
               models={fetchedModels} fetching={fetchingModels}
               disabled={!authToken.trim() || !baseUrl.trim()} onFetch={() => void fetchModelList()}
               onApplyModel={applyModelToMappings}
-              mappingFields={modelMappingFields}
+              mappingFields={modelMappingRows}
               labels={{
                 model: tProfiles("edit.modelIdLabel"),
                 models: tProfiles("edit.modelsLabel"), fetch: tProfiles("edit.fetchModels"),
@@ -460,6 +464,7 @@ function ClaudeProfileEditor({
                 select: tProfiles("edit.selectModel"), fetchFirst: tProfiles("edit.fetchModelsFirst"),
                 quickSet: t("quickSet"),
                 mappingTitle: t("mappingTitle"), mappingDescription: t("mappingDescription"),
+                advancedMappingTitle: t("advancedMappingTitle"),
                 role: t("modelRoleLabel"), displayName: t("displayNameLabel"), requestModel: t("requestModelLabel"),
                 oneMillion: t("oneMillionLabel"), oneMillionTitle: t("oneMillionTitle"),
                 oneMillionColumn: t("oneMillionColumn"),

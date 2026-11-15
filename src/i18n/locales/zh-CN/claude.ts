@@ -19,15 +19,16 @@ export default {
     sonnet: "Sonnet",
     haiku: "Haiku",
     subagent: "子代理",
-    customOption: "自定义",
+    customOption: "自定义模型",
   },
   // 悬停提示里的作用简述，措辞依据官方文档（env-vars / model-config / settings-reference）
   modelMappingHints: {
     current: "会话主模型；切换供应商后，在当前终端用 /model 选择新模型",
     subagent: "子代理（Task、agent team）默认模型；单个子代理可用自己的 model 字段覆盖",
-    customOption: "在 /model 菜单底部追加一条自定义模型项，不替换内置别名",
+    customOption: "在 /model 选择器中添加一个自定义模型选项",
   },
   mappingTitle: "模型映射",
+  advancedMappingTitle: "高级模型映射",
   mappingDescription: "请求模型用于实际调用；勾选 1M 启用百万 token 上下文，需模型和供应商支持",
   quickSet: "一键设置",
   modelRoleLabel: "模型角色",

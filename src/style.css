@@ -3685,6 +3685,10 @@ button:focus-visible {
 .apple-disclosure--open .apple-disclosure__body { margin-bottom: -3px; padding-top: var(--gap-section); padding-bottom: 3px; }
 .apple-disclosure--open .apple-disclosure__icon { color: var(--accent); transform: rotate(90deg); }
 
+.provider-model-disclosure .apple-disclosure__summary { padding-inline: 0.75rem; }
+.provider-model-disclosure .apple-disclosure__summary:focus-visible { outline-offset: -2px; }
+.provider-model-disclosure.apple-disclosure--open .apple-disclosure__body { padding-top: 0; }
+
 /* 代理地址区内部已有留白：纵向间距固定，展开收起只走共享的高度与透明度动画。 */
 .proxy-address-disclosure .apple-disclosure__content,
 .proxy-address-disclosure .apple-disclosure__body {
