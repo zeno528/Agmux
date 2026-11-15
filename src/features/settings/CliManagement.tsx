@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, Terminal } from "lucide-react";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { api } from "../../api";
 import { useFeedback } from "../../app/Feedback";
 import { clearCachedCliUpdate, getCachedCliStatus, getCachedCliUpdate, runCliUpdateCheck, setCliStatusCache, subscribeCliUpdate, touchCliUpdateCheckedAt } from "../../app/managementDataCache";
+import { AppDisclosure } from "../../components/AppDisclosure";
 import { CliUpgradePill, cliFailure, cliFailureMessage } from "../../components/CliUpgradePill";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import type { CliStatus } from "../../types";
@@ -11,14 +12,12 @@ import type { CliStatus } from "../../types";
 const clients = {
   codex: {
     label: "Codex", icon: "/codex.svg", installer: "https://chatgpt.com/codex/install",
-    homepage: "https://openai.com/codex/", homepageLabel: "openai.com/codex",
-    description: "cli.description.codex" as const,
+    repository: "openai/codex",
     status: api.codexGetCliStatus, check: api.codexCheckCliUpdate, install: api.codexInstallCli,
   },
   claude: {
     label: "Claude Code", icon: "/claude-code.svg", installer: "https://claude.ai/install",
-    homepage: "https://claude.com/product/claude-code", homepageLabel: "claude.com/product/claude-code",
-    description: "cli.description.claude" as const,
+    repository: "anthropics/claude-code",
     status: api.claudeGetCliStatus, check: api.claudeCheckCliUpdate, install: api.claudeInstallCli,
   },
 };
@@ -37,7 +36,6 @@ function installCommand(client: Client, platform: string) {
 }
 
 /// 标注安装命令实际使用的 Shell。
-const shellLabel = (client: Client, platform: string) => (platform.startsWith("win32-") ? "PowerShell" : client === "codex" ? "sh" : "Bash");
 
 // 在 SettingsView 中调用；切分区只隐藏卡片，不丢失任务和错误。
 export function useCliManagement(client: Client, active: boolean) {
@@ -203,15 +201,33 @@ export function useCliManagement(client: Client, active: boolean) {
   return { status, busy, operation, update, flash, bodyRef, refresh, check, run };
 }
 
-export function CliCard({ client, management }: { client: Client; management: ReturnType<typeof useCliManagement> }) {
+export function AgentToolHeader({ name, icon }: {
+  name: string;
+  icon: string;
+}) {
+  return (
+    <span className="cli-card__head">
+      <span className="cli-card__icon"><img src={icon} alt="" draggable={false} /></span>
+      <span className="setting-title">{name}</span>
+    </span>
+  );
+}
+
+export function CliCard({ client, management, sidebarControl }: {
+  client: Client;
+  management: ReturnType<typeof useCliManagement>;
+  sidebarControl?: ReactNode;
+}) {
   const { t } = useTranslation("settings");
   const { success, error: reportError } = useFeedback();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const { status, busy, operation, update, flash, bodyRef, check, refresh, run } = management;
   const native = status?.installation === "native";
   const unavailable = !status || status.busy || !["missing", "broken", "native"].includes(status.installation);
   // 检查进度放在按钮上；原生安装的外部任务由升级胶囊反馈。
   const showProgress = busy && operation === "install";
   const command = status ? installCommand(client, status.platform) : "";
+  const repository = `github.com/${clients[client].repository}`;
   const stateText = status && !["missing", "native"].includes(status.installation)
     ? t(status.installation === "broken" ? "cli.broken" : status.installation === "other" ? "cli.other" : "cli.conflict")
     : null;
@@ -224,78 +240,79 @@ export function CliCard({ client, management }: { client: Client; management: Re
   const showUpgrade = native && !busy && (update?.available || status?.busy);
   const upToDate = !update?.available;
 
-  // 中部：原生安装看详情，其余看安装命令（命令块只在需要装的时候出现）。
+  const heading = <AgentToolHeader name={clients[client].label} icon={clients[client].icon} />;
+  const version = <div className="cli-card__revision">
+    <span className="cli-card__version">
+      {status?.version ?? "—"}
+      {status?.version && upToDate ? <Check className="cli-card__status" size={16} strokeWidth={3} role="img" aria-label={t("cli.upToDate")}><title>{t("cli.upToDate")}</title></Check> : null}
+    </span>
+    {update?.available && native ? <span className="meta-xs muted">{t("cli.updateReady")}</span> : null}
+    {stateText ? <span className="setting-description">{stateText}</span> : null}
+    {status?.busy && !native && !showProgress ? (
+      <span className="inline-flex items-center gap-1.5 text-(--text-secondary)" role="status" aria-live="polite">
+        <LoadingSpinner size="md" />
+        <span className="meta-xs">{t("cli.working")}</span>
+      </span>
+    ) : null}
+  </div>;
+
   const body = !status ? null : native || status.installation === "other" || status.installation === "conflict" ? (
-    <section className="cli-card__section">
-      <h2 className="setting-title cli-card__section-title">{t("cli.detailsTitle")}</h2>
+    <section>
       {/* dt/dd 直接做 grid 子项：包裹 div 会各自占一列，错开标签与值。 */}
       <dl className="cli-details">
-        {status.version ? (<>
-          <dt>{t("cli.installed")}</dt>
-          <dd className="cli-card__version">
-            {status.version}
-            {upToDate ? <Check className="cli-card__status" size={16} strokeWidth={3} role="img" aria-label={t("cli.upToDate")}><title>{t("cli.upToDate")}</title></Check> : null}
-          </dd>
-        </>) : null}
+        {status.source && status.source !== "embedded" ? <>
+          <dt>{t("cli.sourceLabel")}</dt>
+          <dd><span className="plan-badge cli-card__source">{t(`cli.sources.${client}.${status.source}`, { defaultValue: status.source })}</span></dd>
+        </> : null}
         <dt>{t("cli.pathLabel")}</dt>
         <dd title={status.path ?? undefined}>{status.path ?? t("cli.pathUnavailable")}</dd>
         {status.other_paths.map((path) => (
           <Fragment key={path}><dt /><dd title={path}>{path}</dd></Fragment>
         ))}
-        <dt>{t("cli.homepage")}</dt>
+        <dt>{t("cli.repository")}</dt>
         <dd>
-          <button type="button" className="cli-card__link" onClick={() => void api.openUrl(clients[client].homepage).catch((error) => reportError(String(error)))}>
-            {clients[client].homepageLabel} ↗
+          <button type="button" className="cli-card__link" onClick={() => void api.openUrl(`https://${repository}`).catch((error) => reportError(String(error)))}>
+            {repository}<ExternalLink className="ml-1 inline h-3 w-3 align-middle" strokeWidth={2} aria-hidden="true" />
           </button>
         </dd>
       </dl>
     </section>
   ) : (
-    <section className="cli-card__section">
-      <h2 className="setting-title cli-card__section-title">{t("cli.installCommandTitle")}<span className="plan-badge cli-command__platform">{shellLabel(client, status.platform)}</span></h2>
+    <section>
+      <h2 className="setting-description">{t("cli.installCommandTitle")}</h2>
       <div className="cli-command">
-        <Terminal size={16} strokeWidth={2} aria-hidden="true" />
         <code className="cli-command__code">{command}</code>
         <button type="button" className="apple-icon-button" title={t("cli.copyCommand")} aria-label={t("cli.copyCommand")} onClick={() => void copyCommand()}>
           <Copy size={16} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
-      <p className="setting-description cli-command__note">{t("cli.commandHint")}</p>
     </section>
   );
 
   return (
-    <div className={`apple-group cli-card${flash ? " cli-card--flash" : ""}`}>
-      <div className="cli-card__head">
-        <span className="cli-card__icon"><img src={clients[client].icon} alt="" draggable={false} /></span>
-        <div className="cli-card__main">
-          <div className="cli-card__name-row">
-            <span className="setting-title">{clients[client].label}</span>
-            {status?.source && status.source !== "embedded" ? (
-              <span className="plan-badge cli-card__source">{t(`cli.sources.${client}.${status.source}`, { defaultValue: status.source })}</span>
-            ) : null}
-            {status?.busy && !native && !showProgress ? (
-              <span className="inline-flex items-center gap-1.5 text-(--text-secondary)" role="status" aria-live="polite">
-                <LoadingSpinner size="md" />
-                <span className="meta-xs">{t("cli.working")}</span>
-              </span>
-            ) : null}
+    <div className={`cli-card${flash ? " cli-card--flash" : ""}`}>
+      {body ? (
+        <AppDisclosure className="cli-card__details" open={detailsOpen} onOpenChange={setDetailsOpen} summary={heading}>
+          <div className="cli-card__body" ref={bodyRef}>
+            {body}
           </div>
-          <p className="setting-description cli-card__desc">{stateText ?? t(clients[client].description)}</p>
+        </AppDisclosure>
+      ) : heading}
+      {version}
+      {body ? (
+        <div className="cli-card__actions">
+          {showUpgrade ? <CliUpgradePill client={client} className="apple-action-button app-button--primary" busy={status.busy || busy} onUpdated={() => void refresh()} /> : <button type="button" className={native ? "apple-action-button" : "apple-action-button app-button--primary"}
+            style={busy && operation === "refresh" && !unavailable ? { opacity: 1 } : undefined}
+            disabled={busy || unavailable} onClick={() => native ? void check() : void run()}>
+            {showProgress
+              ? <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><LoadingSpinner size="md" />{t("cli.installing")}</span>
+              : busy && operation === "check"
+              ? <span role="status" aria-live="polite">{t("cli.checkingUpdate")}</span>
+              : t(native ? "cli.checkUpdate" : "cli.install")}
+          </button>}
         </div>
-      </div>
-      <div className="cli-card__body" ref={bodyRef}>{body}</div>
-      <div className="cli-card__actions">
-        {showUpgrade ? <CliUpgradePill client={client} className="apple-action-button app-button--primary" busy={status.busy || busy} onUpdated={() => void refresh()} /> : <button type="button" className={native ? "apple-action-button" : "apple-action-button app-button--primary"}
-          style={busy && operation === "refresh" && !unavailable ? { opacity: 1 } : undefined}
-          disabled={busy || unavailable} onClick={() => native ? void check() : void run()}>
-          {showProgress
-            ? <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><LoadingSpinner size="md" />{t("cli.installing")}</span>
-            : busy && operation === "check"
-            ? <span role="status" aria-live="polite">{t("cli.checkingUpdate")}</span>
-            : t(native ? "cli.checkUpdate" : "cli.install")}
-        </button>}
-      </div>
+      ) : null}
+      {sidebarControl ? <div className="cli-card__controls">{sidebarControl}</div> : null}
     </div>
   );
 }

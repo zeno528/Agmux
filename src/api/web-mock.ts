@@ -711,6 +711,7 @@ function webState(): AppState {
     },
     claude_desktop: {
       installed: true,
+      version: null,
       running: false,
       display_path: "/Applications/Claude.app",
       source: "auto",
@@ -1527,7 +1528,7 @@ export async function webInvoke<T>(command: string, args?: Record<string, unknow
     case "claude_desktop_get_diagnostics":
       throw new Error("接入概览需要在桌面版读取实际配置与请求记录，浏览器不模拟运行状态");
     case "claude_desktop_get_status":
-      return webState().claude_desktop as T;
+      return { ...webState().claude_desktop, version: "1.2.3" } as T;
     case "claude_desktop_restore_official":
       webDesktopSelectedMembers ??= [...webDesktopMembers];
       webActiveClaudeDesktopProfileId = null;

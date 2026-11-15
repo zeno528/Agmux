@@ -34,7 +34,7 @@ describe("aggregate banner", () => {
     kind: null, admin_url: null, icon: null, show_balance: false, updated_at: "0",
   });
   const status = (overrides: Partial<ClaudeDesktopAppStatus>): ClaudeDesktopAppStatus => ({
-    installed: true, running: false, display_path: "", source: "auto", deployment_mode: "3p",
+    installed: true, version: null, running: false, display_path: "", source: "auto", deployment_mode: "3p",
     mode: "aggregate", members: [], selected_members: null, gateway_running: true, ...overrides,
   });
   const render = (activeId: string | null, state: ClaudeDesktopAppStatus) => renderToStaticMarkup(createElement(FeedbackProvider, null,

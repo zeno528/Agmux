@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { api, isTauri } from "../api";
-import type { AppView, AppState, AuthStatus, CodexAppStatus, Settings } from "../types";
+import type { AppView, AppState, AuthStatus, ClientSidebarView, CodexAppStatus, Settings } from "../types";
 
 export type { AppView };
 
@@ -198,4 +198,22 @@ export function useSidebar() {
     setSidebarFlyoutArmed,
     toggleSidebar,
   };
+}
+
+const hiddenClientsKey = "agmux.sidebar-hidden-clients";
+
+export function useSidebarClientVisibility() {
+  const [hiddenClients, setHiddenClients] = useState(
+    () => new Set((localStorage.getItem(hiddenClientsKey) ?? "").split(",").filter(Boolean)),
+  );
+
+  const setClientVisible = (client: ClientSidebarView, visible: boolean) => {
+    const next = new Set(hiddenClients);
+    if (visible) next.delete(client);
+    else next.add(client);
+    localStorage.setItem(hiddenClientsKey, [...next].join(","));
+    setHiddenClients(next);
+  };
+
+  return { hiddenClients, setClientVisible };
 }

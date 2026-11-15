@@ -619,6 +619,7 @@ pub struct ClaudeDesktopProfileInput {
 #[derive(Debug, Clone, Serialize)]
 pub struct ClaudeDesktopAppStatus {
     pub installed: bool,
+    pub version: Option<String>,
     pub running: bool,
     pub display_path: String,
     pub source: String,

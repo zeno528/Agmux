@@ -474,8 +474,17 @@ impl AppContext {
 
     /// 每帧刷新的应用状态（get_state 与 claude_desktop_get_status 命令共用）。
     pub fn claude_desktop_status(&self) -> AppResult<ClaudeDesktopAppStatus> {
+        self.desktop_status(false)
+    }
+
+    pub fn claude_desktop_status_with_version(&self) -> AppResult<ClaudeDesktopAppStatus> {
+        self.desktop_status(true)
+    }
+
+    fn desktop_status(&self, include_version: bool) -> AppResult<ClaudeDesktopAppStatus> {
         let routing = self.database.claude_desktop_routing()?;
-        let mut status = claude_desktop_app_status(&self.paths.claude_desktop_base);
+        let mut status =
+            claude_desktop_app_status(&self.paths.claude_desktop_base, include_version);
         status.mode = routing.mode;
         status.members = routing.members;
         status.selected_members = routing.selected_members;
@@ -1398,8 +1407,47 @@ fn claude_desktop_install() -> Option<(PathBuf, &'static str)> {
     }
 }
 
-/// 每帧 get_state 刷新的应用状态（对齐 CodexAppStatus 语义）。
-pub fn claude_desktop_app_status(base: &Path) -> ClaudeDesktopAppStatus {
+#[cfg(any(target_os = "macos", windows))]
+fn claude_desktop_version(path: &Path, _source: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    let output = super::cli::command(Path::new("/usr/bin/plutil"))
+        .args(["-extract", "CFBundleShortVersionString", "raw", "-o", "-"])
+        .arg(path.join("Contents/Info.plist"))
+        .output()
+        .ok()?;
+
+    #[cfg(windows)]
+    let output = {
+        let powershell = PathBuf::from(std::env::var_os("SystemRoot")?)
+            .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        let script = if _source == "local_msix" {
+            "Get-AppxPackage -Name Claude | Where-Object PackageFamilyName -eq $env:AGMUX_CLAUDE_DESKTOP_PACKAGE | Select-Object -First 1 -ExpandProperty Version"
+        } else {
+            "(Get-Item -LiteralPath $env:AGMUX_CLAUDE_DESKTOP_EXE).VersionInfo.ProductVersion"
+        };
+        super::cli::command(&powershell)
+            .env("AGMUX_CLAUDE_DESKTOP_EXE", path)
+            .env("AGMUX_CLAUDE_DESKTOP_PACKAGE", WINDOWS_PACKAGE_DIR)
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .ok()?
+    };
+
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8(output.stdout).ok()?;
+    let version = version.trim();
+    (!version.is_empty()).then(|| version.to_owned())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn claude_desktop_version(_path: &Path, _source: &str) -> Option<String> {
+    None
+}
+
+/// get_state 不读取版本，只有 Agent 工具页主动请求时才探测。
+fn claude_desktop_app_status(base: &Path, include_version: bool) -> ClaudeDesktopAppStatus {
     let install = claude_desktop_install();
     let running = claude_desktop_is_running();
     let deployment_mode = read_json_object(&resolve_desktop3p(base).p3_config, CONFIG_FILE_NAME)
@@ -1413,6 +1461,11 @@ pub fn claude_desktop_app_status(base: &Path) -> ClaudeDesktopAppStatus {
     match install {
         Some((path, source)) => ClaudeDesktopAppStatus {
             installed: true,
+            version: if include_version {
+                claude_desktop_version(&path, source)
+            } else {
+                None
+            },
             running,
             display_path: path.display().to_string(),
             source: source.to_string(),
@@ -1424,6 +1477,7 @@ pub fn claude_desktop_app_status(base: &Path) -> ClaudeDesktopAppStatus {
         },
         None => ClaudeDesktopAppStatus {
             installed: false,
+            version: None,
             running,
             display_path: "未识别".into(),
             source: "not_found".into(),
@@ -1586,6 +1640,28 @@ impl AppContext {
 mod tests {
     use super::*;
     use crate::services::AppContext;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn desktop_version_comes_from_the_bundle_marketing_version() {
+        let app = tempfile::tempdir().unwrap();
+        let contents = app.path().join("Contents");
+        std::fs::create_dir(&contents).unwrap();
+        assert_eq!(claude_desktop_version(app.path(), "auto"), None);
+        std::fs::write(
+            contents.join("Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleVersion</key><string>124</string>
+<key>CFBundleShortVersionString</key><string>5.11.2</string>
+</dict></plist>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            claude_desktop_version(app.path(), "auto").as_deref(),
+            Some("5.11.2")
+        );
+    }
 
     fn test_context() -> (tempfile::TempDir, AppContext) {
         let home = tempfile::tempdir().unwrap();

@@ -507,10 +507,13 @@ pub async fn claude_desktop_get_diagnostics(
 }
 
 #[tauri::command]
-pub fn claude_desktop_get_status(
+pub async fn claude_desktop_get_status(
     state: State<'_, AppContext>,
 ) -> AppResult<ClaudeDesktopAppStatus> {
-    state.claude_desktop_status()
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.claude_desktop_status_with_version())
+        .await
+        .map_err(|error| app_err!("Claude Desktop 状态读取失败: {error}"))?
 }
 
 #[tauri::command]

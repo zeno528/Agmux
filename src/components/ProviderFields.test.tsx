@@ -6,6 +6,13 @@ import { patchModelMappings, readModelMappings, patchModelDisplayNames, readMode
 import { ProviderModelFields } from "./ProviderFields";
 import { AppSelect } from "./AppSelect";
 
+// 组件带一个 useState（高级映射折叠态）；本文件按普通函数直接调用组件，真实 hook 没有 dispatcher 会抛错。
+// 测试从不切换该开关，恒返回初始值即可；renderToStaticMarkup 内的真实组件也只渲染初始态，输出不变。
+vi.mock("react", async (original) => ({
+  ...await original<typeof import("react")>(),
+  useState: (initial: unknown) => [typeof initial === "function" ? (initial as () => unknown)() : initial, () => {}],
+}));
+
 setupI18n("zh-CN");
 
 type ControlProps = { children?: ReactNode; "aria-label"?: string; disabled?: boolean; checked?: boolean; onClick?: () => void;

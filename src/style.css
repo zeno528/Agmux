@@ -70,6 +70,7 @@
   --gap-main: 2.1666666667rem;
   /* 操作按钮（药丸）之间的统一间距：弹窗底部与编辑页操作栏共用 */
   --gap-actions: 0.75rem;
+  --switch-rail-width-md: 40px;
   /* 弹窗内容/操作区到弹窗底边的统一留白（标准弹窗、hero 弹窗操作区、oauth 弹窗共用） */
   --dialog-pad-bottom: 1.5rem;
   /* 全局控件与窗口几何：页面、编辑页和侧边栏只从这里取尺寸 */
@@ -523,47 +524,78 @@ button.plan-badge:hover:not(:disabled) {
   color: var(--text-secondary);
 }
 
-/* Agent 工具卡片按内容高度排列（覆盖编辑正文默认的 flex 布局）：
-   两张卡的内容高度不同，等高会在卡片底部留出空白，也会吃掉安装完成时的长高动画。 */
-.apple-edit-content.cli-cards {
-  align-content: start;
+/* Agent 工具的设置行，CLI 附带详情与安装或升级操作。 */
+.cli-card {
   display: grid;
-  flex: 0 1 auto;
-  grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: auto;
+  grid-template-columns: minmax(0, 1.7fr) minmax(6rem, 1fr) minmax(10rem, 1fr)
+    minmax(0, 0.3fr) [visibility-start] var(--switch-rail-width-md) [visibility-end] minmax(0, 0.3fr);
+  align-items: center;
+  column-gap: var(--gap-section);
+  min-width: 0;
+  padding-block: calc(var(--gap-card) / 2);
+  padding-inline: var(--gap-card-inline);
 }
 
-/* ===== Agent 工具卡片 =====
-   结构：图标 + 名称/说明 + 右上角状态槽位 → 详情或安装命令 → 底部操作按钮。 */
-.cli-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-section);
-  min-width: 0;
-  padding: var(--gap-card) var(--gap-card-inline);
+.cli-card--header {
+  background: color-mix(in srgb, var(--tile-bg) 50%, transparent);
+  padding-block: calc(var(--gap-section) * 0.75);
+}
+
+.cli-card--header > :first-child {
+  padding-inline-start: calc(var(--control-height) + var(--gap-actions));
+}
+
+.agent-tools-list {
+  padding-bottom: calc(var(--gap-section) / 2);
+}
+
+.agent-tools-list > .apple-list-card {
+  padding-inline: var(--gap-card-inline);
+}
+
+.agent-tools-list .apple-list-card .cli-card {
+  padding-inline: 0;
+}
+
+.agent-tools-group-title {
+  padding-top: var(--gap-section);
+}
+
+.agent-tools-list .apple-list-card > * + * > .agent-tools-group-title {
+  padding-top: calc(var(--gap-section) * 1.5);
+}
+
+.cli-card__details { display: contents; }
+.cli-card__details > .apple-disclosure__summary { grid-area: 1 / 1; padding-inline-end: 0.25rem; }
+.cli-card__details > .apple-disclosure__summary > .apple-disclosure__icon { margin-inline-start: 0; }
+.cli-card__details > .apple-disclosure__content { grid-area: 2 / 1 / 3 / visibility-end; }
+.cli-card__details.apple-disclosure--open .apple-disclosure__body { padding-top: calc(var(--gap-section) / 2); }
+
+.cli-card__controls {
+  grid-area: 1 / visibility-start / 2 / visibility-end;
+  justify-self: center;
 }
 
 /* 安装完成瞬间的成功描边（与项目动效同源的绿色） */
 .cli-card--flash {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 45%, transparent), var(--card-edge-shadow);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--success) 45%, transparent);
+  border-radius: var(--radius-control);
 }
 
 .cli-card__head {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
   gap: var(--gap-actions);
-  flex-wrap: wrap;
 }
 
 .cli-card__icon {
-  align-self: stretch;
   background: var(--provider-icon-bg);
   border-radius: var(--radius-control);
   display: grid;
   flex: none;
-  min-height: calc(var(--gap-card) * 2);
+  height: var(--control-height);
   place-items: center;
-  width: calc(var(--gap-card) * 2);
+  width: var(--control-height);
 }
 
 .cli-card__icon img {
@@ -571,20 +603,12 @@ button.plan-badge:hover:not(:disabled) {
   width: var(--icon-button-size);
 }
 
-.cli-card__main {
-  flex: 1;
-  min-width: 0;
-}
-
-.cli-card__name-row {
+.cli-card__revision {
+  grid-area: 1 / 2;
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-
-.cli-card__desc {
-  margin: 0.125rem 0 0;
 }
 
 .cli-card__source {
@@ -597,7 +621,8 @@ button.plan-badge:hover:not(:disabled) {
 .cli-card__version {
   align-items: center;
   display: flex;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
   gap: calc(var(--gap-actions) / 2);
 }
 
@@ -619,26 +644,19 @@ button.plan-badge:hover:not(:disabled) {
 
 .cli-card__body {
   min-width: 0;
-}
-
-.cli-card__section {
-  border-top: 1px solid var(--panel-divider);
-  padding-top: var(--gap-section);
-}
-
-.cli-card__section-title {
-  align-items: center;
-  display: flex;
-  gap: 0.5rem;
-  margin: 0 0 0.5rem;
+  background: color-mix(in srgb, var(--tile-bg) 50%, transparent);
+  border-radius: var(--radius-control);
+  margin-inline-start: calc(var(--control-height) + var(--gap-actions) - var(--gap-section));
+  padding: calc(var(--gap-section) * 0.75) var(--gap-section);
 }
 
 /* 详情表：标签灰、值深，路径沿用界面字体。 */
 .cli-details {
+  align-items: center;
   column-gap: 0.75rem;
   display: grid;
   font-size: 0.8125rem;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   margin: 0;
   row-gap: 0.5rem;
 }
@@ -664,33 +682,20 @@ button.plan-badge:hover:not(:disabled) {
   text-decoration: underline;
 }
 
-/* 卡片继承 apple-group 的面板色，命令复用全局代码表面与控件圆角。 */
+/* 命令沿用展开区底色，仅用等宽字体区分。 */
 .cli-command {
   align-items: center;
-  background: var(--main-surface-bg);
-  border-radius: var(--radius-control);
   display: flex;
   gap: var(--gap-actions);
-  padding: calc(var(--gap-section) / 2) var(--gap-actions);
-}
-
-.cli-command > svg {
-  color: var(--text-secondary);
-  flex: none;
 }
 
 .cli-command > button {
   flex: none;
 }
 
-.cli-command__platform {
-  color: var(--text-secondary);
-}
-
 .cli-command__code {
   color: var(--text-primary);
-  flex: 1;
-  font-family: var(--font-ui);
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   min-width: 0;
   overflow-x: auto;
@@ -698,14 +703,9 @@ button.plan-badge:hover:not(:disabled) {
   white-space: nowrap;
 }
 
-.cli-command__note {
-  margin: 0.5rem 0 0;
-}
-
 .cli-card__actions {
-  display: flex;
-  gap: var(--gap-actions);
-  justify-content: flex-start;
+  grid-area: 1 / 3;
+  justify-self: center;
 }
 
 /* 设置页图标容器：边界复用全局面板，图标颜色跟随主按钮的深浅主题语义色 */
@@ -3956,7 +3956,7 @@ textarea.app-input::-webkit-scrollbar { width: 0; height: 0; display: none; }
   --switch-button-width: 18px;
   --switch-button-width-pressed: 24px;
   --switch-rail-height: 22px;
-  --switch-rail-width: 40px;
+  --switch-rail-width: var(--switch-rail-width-md);
 }
 
 .app-switch-rail {

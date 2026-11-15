@@ -200,7 +200,7 @@ export function ProviderModelFields({ models: fetchedModels, fetching, disabled,
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {onApplyModel && labels.quickSet ? (
-            <div className="w-32 shrink-0">
+            <div className="w-max shrink-0">
               <AppSelect
                 value={null}
                 options={models.map((item) => ({ label: item, value: item }))}

@@ -235,6 +235,7 @@ export interface ClaudeDesktopProfileDetail {
 
 export interface ClaudeDesktopAppStatus {
   installed: boolean;
+  version: string | null;
   running: boolean;
   display_path: string;
   source: string;
@@ -330,7 +331,8 @@ export interface AuthStatus {
 export type LanguageSetting = "system" | "zh-CN" | "en-US";
 
 /** 侧栏顶层视图；startup_view 用它做冷启动落页。 */
-export type AppView = "codexProfiles" | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools" | "claudeProfiles" | "claudeDesktopProfiles";
+export type ClientSidebarView = "codexProfiles" | "claudeProfiles" | "claudeDesktopProfiles";
+export type AppView = ClientSidebarView | "mcp" | "plugins" | "skills" | "accounts" | "settings" | "agentTools";
 
 export interface Settings {
   theme: "system" | "light" | "dark";

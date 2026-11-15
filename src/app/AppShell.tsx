@@ -8,7 +8,7 @@ import { McpIcon } from "../components/McpIcon";
 import { FeedbackProvider, useFeedback } from "./Feedback";
 import { authQuotaErrorKind } from "./authQuotaCache";
 import { armCliUpdateTicker, getCachedCliUpdate, getMcpDiffBadge, loadClaudeMcpServers, loadClaudeProfiles, loadMcpServers, loadPluginMarketplaces, loadPlugins, loadSkills, mcpDiffBadgeText, setMcpDiffBadge, subscribeCliUpdate, subscribeMcpDiffBadge } from "./managementDataCache";
-import { asAppView, useActivationRefresh, useAppState, useDesktopStatusPolling, useSidebar, useThemeMode, type AppView } from "./appShellHooks";
+import { asAppView, useActivationRefresh, useAppState, useDesktopStatusPolling, useSidebar, useSidebarClientVisibility, useThemeMode, type AppView } from "./appShellHooks";
 import CodexProfilesView from "../features/codex/CodexProfilesView";
 import McpView from "../features/mcp/McpView";
 import PluginsView from "../features/plugins/PluginsView";
@@ -231,7 +231,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
         ) : null}
       </div>
       <nav className="mx-1.5 mt-3 flex flex-1 flex-col gap-3">
-        {sidebarGroups.map((group) => (
+        {sidebarGroups.map((group) => group.items.length ? (
           <div key={group.key} className={`apple-sidebar-group ${group.key === "common" ? "apple-sidebar-group--content" : ""} ${group.key === "footer" ? "mt-auto pb-3" : ""}`} role="group">
             {group.key === "footer" ? <UpdateNotice className="update-notice--sidebar" sidebarCollapsed={sidebar.sidebarCollapsed} sidebarFlyoutArmed={sidebar.sidebarFlyoutArmed} onMouseEnter={() => sidebar.setSidebarFlyoutArmed(true)} /> : null}
             <div className="space-y-1">
@@ -247,7 +247,7 @@ function AppSidebar({ view, sidebarGroups }: { view: AppView; sidebarGroups: Sid
               ))}
             </div>
           </div>
-        ))}
+        ) : null)}
       </nav>
     </aside>
   );
@@ -257,6 +257,7 @@ export default function AppShell() {
   // 冷启动落页：首帧同步读缓存直出（与 sidebar-collapsed 同款 localStorage 先例），
   // 第二次冷启动起首帧即目标页不闪；settings 到达后由下方 effect 校准真值并刷新缓存。
   const [view, setView] = useState<AppView>(() => asAppView(localStorage.getItem("agmux.startup-view")));
+  const { hiddenClients, setClientVisible } = useSidebarClientVisibility();
   // 重复点击当前视图的侧栏按钮 = 弹回该视图一级；点其他按钮 = 正常切换，目标视图保活现场不受影响。
   // popRequest 只对目标视图递增，各视图自带"无子页时零反应"守卫（一级时 setState 同值跳过）。
   const [popRequest, setPopRequest] = useState<{ view: AppView; epoch: number } | null>(null);
@@ -474,7 +475,7 @@ export default function AppShell() {
       claudeDesktopProfiles: <ClaudeDesktopProfilesView activeId={state.active_claude_desktop_profile_id} status={state.claude_desktop} onChanged={refresh} activationEpoch={activationEpoch} coldStart={!startupReady} balanceCache={state.balance_cache} popEpoch={popEpochOf("claudeDesktopProfiles")} syncFailure={state.sync_failures.find((failure) => failure.client === "claude-desktop")} />,
       accounts: <AccountsView initialStatus={state.auth_status} balanceCache={state.balance_cache} onAuthStatusChange={updateAuthStatus} active={view === "accounts"} />,
       settings: <SettingsView state={state} onPreviewTheme={previewTheme} onRefresh={refresh} onSaved={updateSettings} />,
-      agentTools: <AgentToolsView active={view === "agentTools"} />,
+      agentTools: <AgentToolsView active={view === "agentTools"} desktopInstalled={state.claude_desktop.installed} hiddenClients={hiddenClients} onClientVisibilityChange={setClientVisible} />,
     };
     return (Object.keys(pages) as AppView[]).map((pageView) =>
       visitedViews.has(pageView) ? (
@@ -489,11 +490,11 @@ export default function AppShell() {
   const sidebarGroups: SidebarGroup[] = [
     {
       key: "clients",
-      items: [
+      items: ([
         { view: "codexProfiles", labelKey: "nav.groupCodex", icon: <img src="/codex.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "codex"), badgeDot: Boolean(codexCliUpdate?.available), titleText: codexCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Codex", version: codexCliUpdate.latest_version, channel: codexCliUpdate.channel }) : undefined, onSelect: () => navTo("codexProfiles") },
         { view: "claudeProfiles", labelKey: "nav.groupClaude", icon: <img src="/claude-code.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "claude"), badgeDot: Boolean(claudeCliUpdate?.available), titleText: claudeCliUpdate ? t("cliUpdate.upgradeTitle", { client: "Claude Code", version: claudeCliUpdate.latest_version, channel: claudeCliUpdate.channel }) : undefined, onSelect: () => navTo("claudeProfiles") },
         { view: "claudeDesktopProfiles", labelKey: "nav.groupClaudeDesktop", icon: <img src="/claude.svg" alt="" />, syncFailed: state?.sync_failures.some((failure) => failure.client === "claude-desktop"), onSelect: () => navTo("claudeDesktopProfiles") },
-      ],
+      ] satisfies SidebarGroup["items"]).filter((item) => !hiddenClients.has(item.view)),
     },
     {
       key: "common",

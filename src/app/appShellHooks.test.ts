@@ -22,7 +22,7 @@ vi.mock("react", () => ({
       if (hookIndex === 0) mocks.stateUpdates.push(value);
       if (hookIndex === 2) mocks.errorUpdates.push(String(value));
     };
-    return [initial, setValue];
+    return [typeof initial === "function" ? initial() : initial, setValue];
   },
 }));
 
@@ -35,6 +35,26 @@ describe("asAppView 坏值回落", () => {
     expect(asAppView("bogus")).toBe("codexProfiles");
     expect(asAppView(null)).toBe("codexProfiles");
   });
+});
+
+it("记住各客户端的侧栏显示设置，重新显示时不影响其他客户端", async () => {
+  mocks.getState.mockResolvedValue({ settings: {} });
+  const { useSidebarClientVisibility } = await import("./appShellHooks");
+  const stored = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  try {
+    expect(useSidebarClientVisibility().hiddenClients.size).toBe(0);
+    useSidebarClientVisibility().setClientVisible("codexProfiles", false);
+    useSidebarClientVisibility().setClientVisible("claudeDesktopProfiles", false);
+    expect([...useSidebarClientVisibility().hiddenClients]).toEqual(["codexProfiles", "claudeDesktopProfiles"]);
+    useSidebarClientVisibility().setClientVisible("codexProfiles", true);
+    expect([...useSidebarClientVisibility().hiddenClients]).toEqual(["claudeDesktopProfiles"]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 describe("useAppState 启动状态读取", () => {
