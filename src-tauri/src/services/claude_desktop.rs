@@ -125,8 +125,9 @@ impl Desktop3pPaths {
     }
 }
 
-/// 解析 3P 目录。macOS 唯一候选；Windows 优先 MSIX 虚拟化路径
-/// （目录存在才用，零注册表依赖），否则按官网安装的 `%LOCALAPPDATA%` 根。
+/// 解析 3P 目录。macOS 唯一候选；Windows 先按官网安装的 `%LOCALAPPDATA%` 根，
+/// 仅当物理侧两个目录都不存在而 MSIX LocalCache 有（旧版真虚拟化）才走 LocalCache。
+/// 物理「存在即优先」：目录判定会被 Agmux 自己的写入污染，必须让 Claude 真身所在侧胜出。
 pub(crate) fn resolve_desktop3p(base: &Path) -> Desktop3pPaths {
     #[cfg(windows)]
     {
@@ -135,7 +136,9 @@ pub(crate) fn resolve_desktop3p(base: &Path) -> Desktop3pPaths {
             .join(WINDOWS_PACKAGE_DIR)
             .join("LocalCache")
             .join("Local");
-        let selected = if msix.join("Claude-3p").is_dir() || msix.join("Claude").is_dir() {
+        let selected = if base.join("Claude-3p").is_dir() || base.join("Claude").is_dir() {
+            base.to_path_buf()
+        } else if msix.join("Claude-3p").is_dir() || msix.join("Claude").is_dir() {
             msix
         } else {
             base.to_path_buf()
@@ -1341,8 +1344,10 @@ fn is_claude_desktop_executable(exe: &Path) -> bool {
     if !exe_text.ends_with("\\claude.exe") {
         return false;
     }
+    // pzs8sxrjxfjjc 是包族发布者哈希，同时命中 WindowsApps 真身
+    // （claude_<版本>__pzs8sxrjxfjjc\app）与 Packages 虚拟化目录。
     exe_text.contains("\\anthropicclaude\\")
-        || exe_text.contains("\\packages\\claude_pzs8sxrjxfjjc\\")
+        || exe_text.contains("pzs8sxrjxfjjc")
         || exe_text.ends_with("\\claude\\claude.exe")
 }
 
@@ -1400,6 +1405,11 @@ fn claude_desktop_install() -> Option<(PathBuf, &'static str)> {
             .find(|path| path.is_file());
         // shortcut: 官网 exe 的真实目录名需真机核对；AnthropicClaude 是历史 Squirrel 布局
         exe.map(|path| (path, "local_installer"))
+            // Store 版 5.x 关闭虚拟化后只有物理 Claude-3p、无 exe：交给 AUMID 启动兜底
+            .or_else(|| {
+                let dir = local.join("Claude-3p");
+                dir.is_dir().then_some((dir, "local_msix"))
+            })
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {
@@ -2959,5 +2969,47 @@ mod tests {
         assert!(!is_claude_desktop_executable(Path::new(
             "/usr/local/bin/claude"
         )));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_filter_matches_store_and_installer_layouts() {
+        // MSIX 真身：WindowsApps 目录带版本号，exe 在 app 子目录
+        assert!(is_claude_desktop_executable(Path::new(
+            r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\Claude.exe"
+        )));
+        assert!(is_claude_desktop_executable(Path::new(
+            r"C:\Users\me\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\AnthropicClaude\claude.exe"
+        )));
+        assert!(is_claude_desktop_executable(Path::new(
+            r"C:\Users\me\AppData\Local\AnthropicClaude\claude.exe"
+        )));
+        // VSCode Claude Code CLI 与无关应用都不算桌面端
+        assert!(!is_claude_desktop_executable(Path::new(
+            r"c:\Users\me\.vscode\extensions\anthropic.claude-code-2.1.325-win32-x64\resources\native-binary\claude.exe"
+        )));
+        assert!(!is_claude_desktop_executable(Path::new(
+            r"C:\Program Files\OtherApp\claude.exe"
+        )));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn desktop3p_resolution_prefers_claude_physical_home() {
+        let base = tempfile::tempdir().unwrap();
+        let msix = base
+            .path()
+            .join("Packages")
+            .join(WINDOWS_PACKAGE_DIR)
+            .join("LocalCache")
+            .join("Local");
+        // 全新机器：物理不存在 → 写物理根（现代 Store 版即在此读写）
+        assert!(resolve_desktop3p(base.path()).library.starts_with(base.path()));
+        // 旧版真虚拟化：物理没有而 LocalCache 有 → LocalCache
+        std::fs::create_dir_all(msix.join("Claude-3p")).unwrap();
+        assert!(resolve_desktop3p(base.path()).library.starts_with(&msix));
+        // 物理出现（虚拟化关闭的真身）→ 物理胜出，Agmux 写过的 LocalCache 不再自我确认
+        std::fs::create_dir_all(base.path().join("Claude-3p")).unwrap();
+        assert!(resolve_desktop3p(base.path()).library.starts_with(base.path()));
     }
 }
