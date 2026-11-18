@@ -3004,12 +3004,16 @@ mod tests {
             .join("LocalCache")
             .join("Local");
         // 全新机器：物理不存在 → 写物理根（现代 Store 版即在此读写）
-        assert!(resolve_desktop3p(base.path()).library.starts_with(base.path()));
+        assert!(resolve_desktop3p(base.path())
+            .library
+            .starts_with(base.path()));
         // 旧版真虚拟化：物理没有而 LocalCache 有 → LocalCache
         std::fs::create_dir_all(msix.join("Claude-3p")).unwrap();
         assert!(resolve_desktop3p(base.path()).library.starts_with(&msix));
         // 物理出现（虚拟化关闭的真身）→ 物理胜出，Agmux 写过的 LocalCache 不再自我确认
         std::fs::create_dir_all(base.path().join("Claude-3p")).unwrap();
-        assert!(resolve_desktop3p(base.path()).library.starts_with(base.path()));
+        assert!(resolve_desktop3p(base.path())
+            .library
+            .starts_with(base.path()));
     }
 }
